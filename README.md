@@ -7,9 +7,9 @@
 </p>
 
 `UniFiWiFiOptimizer` is a Bash tool for post-placement UniFi WLAN review and RF tuning.
-It reads radio configuration and WLAN settings from the UniFi Network API, compares them against shipped best-practice WLAN profiles, collects AP-to-AP neighbor scan data via SSH, and generates recommendations for:
+It reads radio configuration and WLAN settings from the UniFi Network API, compares them against shipped WLAN profiles, collects AP-to-AP neighbor scan data via SSH, and generates recommendations for:
 
-- profile-based WLAN best practices for general, IoT, and guest networks
+- profile-based WLAN best practices for Standard, IoT, Hotspot, Throughput, and Latency profiles
 - access point settings: `Transmit Power`, `Roaming Assistant`, `Minimum RSSI`
 
 It does not write changes back to the controller — all recommendations must be applied manually. The SSH neighbor scan uses dedicated scan interfaces, so normal client WiFi service should remain unaffected on supported UniFi APs and firmware.
@@ -25,15 +25,32 @@ It does not write changes back to the controller — all recommendations must be
 
 ## Quick Start
 
-1. In UniFi Network: **Settings → System → Device SSH Settings** — enable `Device SSH Authentication`, set `Username` and `Password`, and optionally add an SSH public key.
-2. In UniFi Network: **Settings → Integrations → Create API Key** — create a key and copy it.
-3. Copy `config.yaml.example` to `config.yaml`, set `controller.url`, `api_key`, and `devices.ssh` credentials.
-4. Define your AP neighbor model in `config.yaml` and review `profiles.yaml`.
-5. Run `./UniFiWiFiOptimizer`.
+1. In UniFi Network, enable `Device SSH Authentication` and either set a password or add an SSH key.
+2. Create a UniFi Network API key.
+3. Copy `config.minimal.yaml` to `config.yaml` and fill only the controller connection:
+
+```bash
+cp config.minimal.yaml config.yaml
+```
+
+4. Discover the site and generate a site skeleton:
+
+```bash
+./UniFiWiFiOptimizer --sites
+./UniFiWiFiOptimizer --site <siteid>
+./UniFiWiFiOptimizer --config <siteid> >> config.yaml
+```
+
+5. Complete `environment`, `wlans`, and `neighbors`, then run `./UniFiWiFiOptimizer`.
 
 ## Configuration
 
 Site configuration lives in `config.yaml`. Reusable WLAN baselines live in `profiles.yaml`.
+
+Starter files:
+
+- `config.minimal.yaml`: controller-only starter config
+- `config.example.yaml`: complete example config
 
 `config.yaml`:
 
@@ -42,19 +59,18 @@ controller:
   url: https://unifi.example.local
   api_key: ...
 
-devices:
-  ssh:
-    user: ubnt
-    password: ...
-
 sites:
   default:
-    environment: residential
+    ssh:
+      user: ubnt
+      password: ...
+
+    environment: Residential
 
     wlans:
-      General: general_5g
-      IoT: iot
-      Guest: guest_5g
+      Main: Throughput
+      IoT: IoT
+      Guest: Hotspot
 
     neighbors:
       AP1: [AP2, AP4]
@@ -64,24 +80,41 @@ sites:
       AP5: [AP2, AP3, AP4]
 ```
 
+Recommended flow:
+
+1. Copy `config.minimal.yaml` to `config.yaml` and fill `controller.url` and `controller.api_key`.
+2. Run `./UniFiWiFiOptimizer --sites` to list valid UniFi site IDs.
+3. Run `./UniFiWiFiOptimizer --site <siteid>` to inspect WLANs and access points for that site.
+4. Run `./UniFiWiFiOptimizer --config <siteid> >> config.yaml` to append a site-specific config skeleton.
+5. Adjust `environment`, WLAN profile mappings, and AP neighbors.
+
 Key settings:
 
 | Key | Description |
 |---|---|
 | `controller.url` | Base URL of the UniFi Network application |
 | `controller.api_key` | API key for all read-only controller requests |
-| `devices.ssh.user` | SSH username from `Device SSH Authentication` |
-| `devices.ssh.password` | SSH password for password-based login; omit to use key/agent auth |
+| `sites.<site>.ssh.user` | SSH username from `Device SSH Authentication` for that site |
+| `sites.<site>.ssh.password` | SSH password for password-based login for that site; omit to use key/agent auth |
 | `sites.<site>.environment` | RF environment preset or custom path loss exponent used to derive the TX corridor |
 | `sites.<site>.wlans` | Maps UniFi WLAN names to profile names |
 | `sites.<site>.neighbors` | AP-to-AP neighbor model; names must match UniFi device names exactly (case-sensitive) |
 
+Notes:
+
+- Use the UniFi site ID as the key under `sites:` in `config.yaml`.
+- `--sites` lists the available site IDs from the UniFi controller.
+- `--site <siteid>` shows WLANs and access points for exactly that site ID.
+- `--config <siteid>` prints a config skeleton for exactly that site ID.
+- `--config <siteid> >> config.yaml` is safe when `config.yaml` still contains only the controller section from `config.minimal.yaml`.
+- The generated skeleton auto-fills `ssh.user` from UniFi `Device SSH Authentication` when available.
+
 Environment presets:
 
-- `open`: large open spaces, retail, low attenuation
-- `residential`: homes and apartments
-- `office`: typical office floorplans
-- `obstructed`: concrete, brick, multi-wall layouts
+- `Open`: large open spaces, retail, low attenuation
+- `Residential`: homes and apartments
+- `Office`: typical office floorplans
+- `Obstructed`: concrete, brick, multi-wall layouts
 - custom value: typical practical values are around `2.0` to `4.0`
 
 `config.yaml` contains the API key and optionally the SSH password — protect it accordingly:
@@ -96,11 +129,12 @@ For SSH, prefer key-based authentication (see [SSH Access](#ssh-access)).
 
 ```yaml
 profiles:
-  general_5g:
+  Throughput:
     wifi_bands:
       - 2g
       - 5g
     fast_roaming: true
+    minrate_mode: manual
     minrate_24_kbps: 11000
     minrate_5_kbps: 24000
     multicast_broadcast_blocker: false
@@ -116,38 +150,39 @@ profiles:
     sae_sync_time: 5
     bss_transition: true
     uapsd: false
-    dtim_24: 1
+    dtim_mode: custom
+    dtim_24: 3
     dtim_5: 3
     group_rekey: 3600
     ap_name_in_beacon: false
 ```
 
-Profiles ship ready-to-use and can be adjusted if your environment or policy requires different WLAN settings. The shipped presets are `general_5g`, `general_6g`, `guest_5g`, `guest_6g`, and `iot`. Boolean and enum fields are compared directly against the controller; numeric fields define expected best-practice values.
+Profiles ship ready-to-use and can be adjusted if your environment or policy requires different WLAN settings. The shipped presets are `Standard`, `IoT`, `Hotspot`, `Throughput`, and `Latency`. Boolean and enum fields are compared directly against the controller; `minrate_mode` and `dtim_mode` decide whether the per-band numeric values are checked.
 
 Common field groups in `profiles.yaml`:
 
-- `wifi_bands`, `mlo`: expected band availability and 6 GHz/MLO behavior
+- `wifi_bands`: expected band availability
 - `fast_roaming`, `bss_transition`, `uapsd`: roaming and client behavior controls
-- `minrate_*`, `dtim_*`, `group_rekey`: baseline performance and airtime settings
+- `minrate_mode`, `minrate_*`: minimum data rate mode and per-band values
+- `dtim_mode`, `dtim_*`, `group_rekey`: DTIM mode, per-band DTIM values, and group rekey
 - `multicast_*`, `proxy_arp`, `client_device_isolation`: broadcast/multicast handling and client isolation
 - `security_protocols`, `pmf`, `sae_*`: security posture and WPA3/SAE-related expectations
 - `hide_wifi_name`, `ap_name_in_beacon`: SSID visibility and beacon presentation
 
-- `mlo` and `dtim_6` are only required in profiles that include `6g`
-- `minrate_*` and `dtim_*` are only required for bands listed in `wifi_bands`
+- `minrate_*` is only required when `minrate_mode: manual`
+- `dtim_*` is only required when `dtim_mode: custom`
+- `minrate_*` and `dtim_*` only apply to bands listed in `wifi_bands`
 - `group_rekey: 0` renders as `Disabled`
 
 ## Profiles
 
 | Profile | Intent |
 |---|---|
-| `general_5g` | Performance and security for primary WLANs on 2.4/5 GHz (WPA2/WPA3, fast roaming, high data rates) |
-| `general_6g` | Same baseline with 6 GHz and MLO checks enabled |
-| `guest_5g` | Security isolation and compatibility for guest/public networks on 2.4/5 GHz (client isolation, broad protocol support) |
-| `guest_6g` | Same baseline with 6 GHz and MLO checks enabled |
-| `iot` | Compatibility for older or fragile devices, ideally on 2.4 GHz only (low data rates, broad protocol support) |
-
-Use `*_6g` profiles only when the WLAN should actually use 6 GHz. If not all relevant APs support it, `general_5g` / `guest_5g` are the safer default.
+| `Standard` | Mirrors the current UniFi `Standard/Auto` baseline on 2.4/5 GHz |
+| `IoT` | Mirrors the current UniFi `IoT/Auto` baseline on 2.4 GHz |
+| `Hotspot` | Public hotspot baseline with client isolation, proxy ARP, and broadcast blocker enabled |
+| `Throughput` | Throughput-oriented primary WLAN profile with manual rates and less frequent DTIM beacons |
+| `Latency` | Latency-oriented primary WLAN profile for voice/VoIP with UAPSD enabled and frequent DTIM beacons |
 
 ## SSH Access
 
@@ -157,18 +192,20 @@ SSH key authentication is recommended:
 ssh-copy-id ubnt@your-ap.local
 ```
 
-Password-based login also works — set `devices.ssh.password` in `config.yaml`. In that case, `sshpass` must be installed. If the key is omitted, key/agent auth is used automatically.
+Password-based login also works — set `sites.<site>.ssh.password` in `config.yaml`. In that case, `sshpass` must be installed. If the key is omitted, key/agent auth is used automatically.
 
 ## Recommended Workflow
 
-1. Place APs correctly.
-2. Let UniFi handle channel planning first (e.g. Channel AI).
-3. Map each WLAN to the appropriate profile in `config.yaml`.
-4. Define the AP neighbor model in `config.yaml`.
-5. Run `./UniFiWiFiOptimizer`.
-6. Fix per-WLAN profile deviations first.
-7. Apply per-AP RF recommendations that make sense for your site.
-8. Re-test with real clients.
+1. Set up API access and device SSH access in UniFi Network.
+2. Copy `config.minimal.yaml` to `config.yaml` and enter the controller details.
+3. Discover the site with `--sites` and inspect it with `--site <siteid>`.
+4. Generate and append a site skeleton with `--config <siteid> >> config.yaml`.
+5. Complete WLAN mappings and AP neighbors.
+6. Let UniFi handle channel planning first if you want a baseline (for example Channel AI).
+7. Run `./UniFiWiFiOptimizer`.
+8. Fix per-WLAN profile deviations first.
+9. Apply per-AP RF recommendations that make sense for your site.
+10. Re-test with real clients.
 
 ## Output
 

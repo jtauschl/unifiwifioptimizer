@@ -1,0 +1,23 @@
+controller:
+  url: https://unifi.example.com
+  api_key: YOUR_API_KEY
+
+sites:
+  YOUR_SITE_ID:
+    ssh:
+      user: YOUR_SSH_USER
+      # Set a password or remove this line for SSH key-based login.
+      password: YOUR_SSH_PASSWORD
+
+    # Open, Residential, Office, Obstructed, or a custom path-loss exponent
+    environment: Residential
+
+    # Standard, IoT, Hotspot, Throughput, or Latency
+    wlans:
+      YOUR_WIFI: Throughput
+
+    # Add neighbor AP names as a comma-separated list in brackets.
+    neighbors:
+      YOUR_AP1: [YOUR_AP2]
+      YOUR_AP2: [YOUR_AP1, YOUR_AP3]
+      YOUR_AP3: [YOUR_AP2]

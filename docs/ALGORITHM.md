@@ -88,10 +88,10 @@ Path loss exponent `n` is set per site in `config.yaml` via `environment:`. Valu
 
 | Preset | n | ΔdB | TX_LO | TX_HI | ITU-R P.1238 category |
 |--------|---|-----|-------|-------|-----------------------|
-| `open` | 2.2 | 4.88 | −72 | −66 | Commercial (large open spaces, retail) |
-| `residential` | 2.8 | 6.21 | −73 | −67 | Residential *(default)* |
-| `office` | 3.0 | 6.65 | −74 | −68 | Office |
-| `obstructed` | 4.0 | 8.87 | −76 | −70 | Obstructed (concrete, brick, multi-wall) |
+| `Open` | 2.2 | 4.88 | −72 | −66 | Commercial (large open spaces, retail) |
+| `Residential` | 2.8 | 6.21 | −73 | −67 | Residential *(default)* |
+| `Office` | 3.0 | 6.65 | −74 | −68 | Office |
+| `Obstructed` | 4.0 | 8.87 | −76 | −70 | Obstructed (concrete, brick, multi-wall) |
 | `<number>` | x | — | — | — | Custom n |
 
 The same TX_LO/TX_HI apply to all bands.

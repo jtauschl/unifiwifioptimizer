@@ -1,13 +1,13 @@
-# Example Layout
+# Example Workflow
 
 This document shows a five-AP example for `UniFiWiFiOptimizer`.
-It demonstrates the `neighbors` model in `config.yaml` and the resulting script output.
+It starts with a minimal controller-only config, then shows how to discover the site, generate a site config block, and complete the `neighbors` model.
 
 <p align="center">
   <img src="img/Example.png" alt="Example layout with five access points" width="600">
 </p>
 
-## AP Layout
+## Example Layout
 
 - upper row: `AP1`, `AP2`, `AP3`
 - lower row: `AP4`, `AP5`
@@ -25,26 +25,122 @@ The neighbor list describes where clients are expected to roam between APs:
 - `AP4`: `AP1`, `AP2`, `AP5`
 - `AP5`: `AP2`, `AP3`, `AP4`
 
-## config.yaml
+## 1. Set Up API and SSH Access
+
+In UniFi Network:
+
+- enable `Device SSH Authentication`
+- set a device SSH password or add an SSH key
+- create an API key
+
+Create `config.yaml` from the minimal starter:
+
+```bash
+cp config.minimal.yaml config.yaml
+```
+
+Then enter your controller URL and API key in `config.yaml`.
+
+## 2. Discover the Site and Generate a Config Block
+
+List the available site IDs:
+
+```bash
+./UniFiWiFiOptimizer --sites
+```
+
+Example output:
+
+```text
+  Site ID               Site Name                 Access Points
+  default               Default                   5
+```
+
+Inspect one site:
+
+```bash
+./UniFiWiFiOptimizer --site default
+```
+
+Example output:
+
+```text
+  Site ID:   default
+  Site Name: Default
+
+  WLANs:
+    General (enabled)
+    IoT (enabled)
+    Guest (enabled)
+
+  Access Points:
+    Device Name   State   IP             MAC
+    AP1           ONLINE  172.20.1.101   f4:92:bf:aa:11:22
+    AP2           ONLINE  172.20.1.102   f4:92:bf:aa:33:44
+    AP3           ONLINE  172.20.1.103   f4:92:bf:aa:55:66
+    AP4           ONLINE  172.20.1.104   f4:92:bf:aa:77:88
+    AP5           ONLINE  172.20.1.105   f4:92:bf:aa:99:aa
+```
+
+Generate a site-specific config skeleton:
+
+```bash
+./UniFiWiFiOptimizer --config default >> config.yaml
+```
+
+This appends a site block to `config.yaml`. At this point, no backup is needed because `config.yaml` still only contains the controller settings from `config.minimal.yaml`.
+
+The appended block looks like this:
+
+```yaml
+sites:
+  default:
+    ssh:
+      user: ubnt
+      # Set a password or remove this line for SSH key-based login.
+      password: YOUR_SSH_PASSWORD
+
+    # Open, Residential, Office, Obstructed, or a custom path-loss exponent
+    environment: Residential
+
+    # Standard, IoT, Hotspot, Throughput, or Latency
+    wlans:
+      General: Throughput
+      IoT: IoT
+      Guest: Hotspot
+
+    # Add neighbor AP names as a comma-separated list in brackets.
+    neighbors:
+      AP1: []
+      AP2: []
+      AP3: []
+      AP4: []
+      AP5: []
+```
+
+## 3. Complete the Site Config
+
+Use the floorplan or layout sketch to define AP neighbors and verify the WLAN profile mapping.
+
+Final `config.yaml`:
 
 ```yaml
 controller:
   url: https://unifi.example.local
-  api_key: ...
-
-devices:
-  ssh:
-    user: ubnt
-    password: ...
+  api_key: YOUR_API_KEY
 
 sites:
   default:
-    environment: residential
+    ssh:
+      user: ubnt
+      password: YOUR_SSH_PASSWORD
+
+    environment: Residential
 
     wlans:
-      General: general_5g
-      IoT: iot
-      Guest: guest_5g
+      General: Throughput
+      IoT: IoT
+      Guest: Hotspot
 
     neighbors:
       AP1: [AP2, AP4]
@@ -54,7 +150,13 @@ sites:
       AP5: [AP2, AP3, AP4]
 ```
 
-## Example Output (abbreviated)
+## 4. Example Output (abbreviated)
+
+Run the script with the completed configuration:
+
+```bash
+./UniFiWiFiOptimizer
+```
 
 The script first shows the site-level RF parameters, then checks each WLAN against its profile, and finally produces per-AP recommendations.
 
@@ -67,7 +169,7 @@ Roaming Assistant:         -67 dBm
 Minimum RSSI:              -73 dBm
 ```
 
-These values are derived from `environment: residential` and are the same for all APs on the site.
+These values are derived from `environment: Residential` and are the same for all APs on the site.
 
 ### Per-WLAN Profile Check
 
@@ -75,13 +177,14 @@ Each WLAN is checked against its assigned profile:
 
 ```text
 WLAN       General
-Profile    general_5g
+Profile    Throughput
 
   Radio Setup:
   ✓ WiFi Band                        2.4 GHz, 5 GHz
   Roaming Assistance:
   ✓ Fast Roaming                     Enabled
   Hi-Capacity Tuning:
+  ✓ Minimum Data Rate Mode           Manual
   ✓ Minimum Data Rate 2.4 GHz        11 Mbps
   ✓ Minimum Data Rate 5 GHz          24 Mbps
   ✓ Multicast and Broadcast Blocker  Disabled
@@ -97,7 +200,8 @@ Profile    general_5g
   Behaviour Controls:
   ✓ BSS Transition                   Enabled
   ✓ UAPSD                            Disabled
-  ✓ DTIM Period 2.4 GHz              1
+  ✓ DTIM Mode                        Custom
+  ✓ DTIM Period 2.4 GHz              3
   ✓ DTIM Period 5 GHz                3
   ✓ Group Rekey Interval             3600 s
   ✓ Show Access Point Name in Beacon Disabled

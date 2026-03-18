@@ -1,81 +1,50 @@
 profiles:
   # Shipped WLAN baselines. Ready to use as-is, but adjust them if your
   # environment, client mix, or security policy needs something different.
-  # Available presets: general_5g, general_6g, guest_5g, guest_6g, iot
+  # Available presets: Standard, IoT, Hotspot, Throughput, Latency
   #
   # Profile field guide:
-  # - wifi_bands: expected WLAN bands (2g, 5g, 6g)
+  # - wifi_bands: expected WLAN bands (2g, 5g)
   # - security_protocols: allowed security modes for a matching WLAN
   # - fast_roaming, bss_transition, uapsd, proxy_arp, multicast_*,
   #   pmf, hide_wifi_name, client_device_isolation, ap_name_in_beacon:
   #   controller settings compared directly against the WLAN
-  # - minrate_*, dtim_*, group_rekey, sae_*:
-  #   expected best-practice baseline values for the WLAN
-  # - mlo and dtim_6 are only needed for profiles that include 6g
+  # - minrate_mode: auto or manual
+  # - dtim_mode: default or custom
+  # - minrate_*: expected values when minrate_mode is manual
+  # - dtim_*: expected values when dtim_mode is custom
+  # - group_rekey: always checked
+  # - sae_*: checked when the WLAN uses a SAE-based security protocol
 
-  # High-performance baseline for primary client WLANs on 2.4/5 GHz.
-  general_5g:
+  # Baseline matching the current UniFi "Standard/Auto" 2.4/5 GHz WLAN behavior.
+  Standard:
     wifi_bands:
       - 2g
       - 5g
-    fast_roaming: true
-    minrate_24_kbps: 11000
-    minrate_5_kbps: 24000
+    fast_roaming: false
+    minrate_mode: auto
     multicast_broadcast_blocker: false
     multicast_to_unicast: false
-    proxy_arp: true
+    proxy_arp: false
     security_protocols:
-      - WPA2/WPA3
-      - WPA2/WPA3 Enterprise
-    pmf: Optional
+      - WPA2
+    pmf: Disabled
     hide_wifi_name: false
     client_device_isolation: false
-    sae_anti_clogging: 10
+    sae_anti_clogging: 5
     sae_sync_time: 5
     bss_transition: true
     uapsd: false
-    dtim_24: 1
-    dtim_5: 3
-    group_rekey: 3600
+    dtim_mode: default
+    group_rekey: 0
     ap_name_in_beacon: false
 
-  # High-performance baseline for primary client WLANs with 6 GHz enabled.
-  general_6g:
-    wifi_bands:
-      - 2g
-      - 5g
-      - 6g
-    mlo: false
-    fast_roaming: true
-    minrate_24_kbps: 11000
-    minrate_5_kbps: 24000
-    multicast_broadcast_blocker: false
-    multicast_to_unicast: false
-    proxy_arp: true
-    security_protocols:
-      - WPA2/WPA3
-      - WPA3
-      - WPA2/WPA3 Enterprise
-      - WPA3 Enterprise
-    pmf: Optional
-    hide_wifi_name: false
-    client_device_isolation: false
-    sae_anti_clogging: 10
-    sae_sync_time: 5
-    bss_transition: true
-    uapsd: false
-    dtim_24: 1
-    dtim_5: 3
-    dtim_6: 3
-    group_rekey: 3600
-    ap_name_in_beacon: false
-
-  # Compatibility-first baseline for legacy and IoT devices, preferably on 2.4 GHz only.
-  iot:
+  # Baseline matching the current UniFi "IoT/Auto" 2.4 GHz WLAN behavior.
+  IoT:
     wifi_bands:
       - 2g
     fast_roaming: false
-    minrate_24_kbps: 5500
+    minrate_mode: auto
     multicast_broadcast_blocker: false
     multicast_to_unicast: false
     proxy_arp: false
@@ -88,60 +57,85 @@ profiles:
     sae_sync_time: 5
     bss_transition: false
     uapsd: false
-    dtim_24: 1
-    group_rekey: 7200
+    dtim_mode: default
+    group_rekey: 0
     ap_name_in_beacon: false
 
-  # Guest baseline for 2.4/5 GHz with broad compatibility and stronger confidentiality.
-  guest_5g:
+  # Public hotspot baseline, close to UniFi defaults with guest isolation.
+  Hotspot:
     wifi_bands:
       - 2g
       - 5g
-    fast_roaming: true
-    minrate_24_kbps: 11000
-    minrate_5_kbps: 24000
+    fast_roaming: false
+    minrate_mode: auto
     multicast_broadcast_blocker: true
     multicast_to_unicast: false
     proxy_arp: true
     security_protocols:
-      - WPA2/WPA3
-    pmf: Optional
+      - Open
+    pmf: Disabled
     hide_wifi_name: false
     client_device_isolation: true
     sae_anti_clogging: 5
     sae_sync_time: 5
     bss_transition: true
     uapsd: false
-    dtim_24: 1
+    dtim_mode: default
+    group_rekey: 0
+    ap_name_in_beacon: false
+
+  # Throughput-oriented baseline for primary client WLANs on 2.4/5 GHz.
+  Throughput:
+    wifi_bands:
+      - 2g
+      - 5g
+    fast_roaming: true
+    minrate_mode: manual
+    minrate_24_kbps: 11000
+    minrate_5_kbps: 24000
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    proxy_arp: true
+    security_protocols:
+      - WPA2/WPA3
+      - WPA2/WPA3 Enterprise
+    pmf: Optional
+    hide_wifi_name: false
+    client_device_isolation: false
+    sae_anti_clogging: 10
+    sae_sync_time: 5
+    bss_transition: true
+    uapsd: false
+    dtim_mode: custom
+    dtim_24: 3
     dtim_5: 3
     group_rekey: 3600
     ap_name_in_beacon: false
 
-  # Guest baseline with 6 GHz enabled.
-  guest_6g:
+  # Latency-oriented baseline for primary client WLANs on 2.4/5 GHz.
+  Latency:
     wifi_bands:
       - 2g
       - 5g
-      - 6g
-    mlo: false
     fast_roaming: true
+    minrate_mode: manual
     minrate_24_kbps: 11000
     minrate_5_kbps: 24000
-    multicast_broadcast_blocker: true
+    multicast_broadcast_blocker: false
     multicast_to_unicast: false
     proxy_arp: true
     security_protocols:
       - WPA2/WPA3
-      - WPA3
+      - WPA2/WPA3 Enterprise
     pmf: Optional
     hide_wifi_name: false
-    client_device_isolation: true
-    sae_anti_clogging: 5
+    client_device_isolation: false
+    sae_anti_clogging: 10
     sae_sync_time: 5
     bss_transition: true
-    uapsd: false
+    uapsd: true
+    dtim_mode: custom
     dtim_24: 1
-    dtim_5: 3
-    dtim_6: 3
+    dtim_5: 1
     group_rekey: 3600
     ap_name_in_beacon: false

@@ -12,6 +12,9 @@
 #
 # Usage:
 #   ./UniFiWiFiOptimizer
+#   ./UniFiWiFiOptimizer --sites
+#   ./UniFiWiFiOptimizer --site <siteid>
+#   ./UniFiWiFiOptimizer --config <siteid>
 #
 
 set -euo pipefail
@@ -19,16 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${SCRIPT_DIR}/config.yaml"
 PROFILES_FILE="${SCRIPT_DIR}/profiles.yaml"
-
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo "ERROR: Config file not found: $CONFIG_FILE" >&2
-  exit 1
-fi
-
-if [[ ! -f "$PROFILES_FILE" ]]; then
-  echo "ERROR: Profiles file not found: $PROFILES_FILE" >&2
-  exit 1
-fi
+WLAN_FIELD_SEP=$'\037'
 
 # Default optimizer parameters
 #
@@ -51,13 +45,13 @@ ROAM_TARGET=-67   # RSSI at the overlap point (dBm) — Cisco VoWLAN: -67 dBm ce
 OVERLAP_DIST=60   # overlap point as % of AP-to-AP distance (~20% area overlap)
 CORRIDOR_WIDTH=6  # corridor width in dB
 #
-# Path loss exponent n: set environment per site in config.yaml (default: residential)
+# Path loss exponent n: set environment per site in config.yaml (default: Residential)
 # Values based on ITU-R P.1238-13, Table 2 (1.8–2.0 GHz)
 #   Preset        n     ΔdB    TX_LO   ITU-R P.1238 category
-#   open          2.2   4.88   −72     Commercial (large open spaces, retail)
-#   residential   2.8   6.21   −73     Residential (default)
-#   office        3.0   6.65   −74     Office
-#   obstructed    4.0   8.87   −76     Obstructed (concrete, brick, multi-wall)
+#   Open          2.2   4.88   −72     Commercial (large open spaces, retail)
+#   Residential   2.8   6.21   −73     Residential (default)
+#   Office        3.0   6.65   −74     Office
+#   Obstructed    4.0   8.87   −76     Obstructed (concrete, brick, multi-wall)
 #   <number>      x     —      —       Custom value (e.g. 3.5 → TX_LO ≈ −75)
 #
 # Conservative fallback limits if the controller does not expose per-radio
@@ -93,6 +87,52 @@ CONTROLLER_SITES_FILE="${tmpdir}/controller-sites.txt"
 # Helper Functions
 # ============================================================================
 
+print_usage() {
+  cat <<'EOF'
+Usage:
+  ./UniFiWiFiOptimizer
+  ./UniFiWiFiOptimizer --sites
+  ./UniFiWiFiOptimizer --site <siteid>
+  ./UniFiWiFiOptimizer --config <siteid>
+EOF
+}
+
+require_config_file() {
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "ERROR: Config file not found: $CONFIG_FILE" >&2
+    exit 1
+  fi
+}
+
+require_profiles_file() {
+  if [[ ! -f "$PROFILES_FILE" ]]; then
+    echo "ERROR: Profiles file not found: $PROFILES_FILE" >&2
+    exit 1
+  fi
+}
+
+load_controller_config() {
+  ruby - "$CONFIG_FILE" "$tmpdir" <<'RUBY'
+require "yaml"
+require "shellwords"
+
+config_path, out_dir = ARGV
+config = YAML.load_file(config_path) || {}
+controller = config["controller"] || {}
+
+abort("ERROR: config.yaml is missing controller.url") if controller["url"].to_s.empty?
+abort("ERROR: config.yaml is missing controller.api_key") if controller["api_key"].to_s.empty?
+
+env_lines = []
+env_lines << "UNIFI_URL=#{Shellwords.escape(controller['url'].to_s)}"
+env_lines << "UNIFI_API_KEY=#{Shellwords.escape(controller['api_key'].to_s)}"
+File.write(File.join(out_dir, "controller.env"), env_lines.join("\n") + "\n")
+RUBY
+
+  # shellcheck source=/dev/null
+  . "$ENV_FILE"
+}
+
 check_dependencies() {
   local missing=()
   local cmd
@@ -103,14 +143,16 @@ check_dependencies() {
     fi
   done
 
-  if [[ -n "${SSH_PASSWORD:-}" ]] && ! command -v sshpass >/dev/null 2>&1; then
-    missing+=("sshpass")
+  if awk -F '\t' 'NF >= 5 && $5 != "" { found=1 } END { exit found ? 0 : 1 }' "$SITES_FILE"; then
+    if ! command -v sshpass >/dev/null 2>&1; then
+      missing+=("sshpass")
+    fi
   fi
 
   if (( ${#missing[@]} > 0 )); then
     printf 'ERROR: Missing required command(s): %s\n' "${missing[*]}" >&2
     if [[ " ${missing[*]} " == *" sshpass "* ]]; then
-      printf '%s\n' "Set devices.ssh.password: \"\" in config.yaml to use SSH key authentication instead." >&2
+      printf '%s\n' "Omit sites.<site>.ssh.password in config.yaml to use SSH key authentication instead." >&2
     fi
     exit 1
   fi
@@ -126,21 +168,16 @@ config = YAML.load_file(config_path) || {}
 profiles_doc = YAML.load_file(profiles_path) || {}
 
 controller = config["controller"] || {}
-devices = config["devices"] || {}
-ssh = devices["ssh"] || {}
 sites = config["sites"] || {}
 profiles = profiles_doc["profiles"] || {}
 abort("ERROR: config.yaml is missing controller.url") if controller["url"].to_s.empty?
 abort("ERROR: config.yaml is missing controller.api_key") if controller["api_key"].to_s.empty?
-abort("ERROR: config.yaml is missing devices.ssh.user") if ssh["user"].to_s.empty?
 abort("ERROR: config.yaml must define at least one site under sites") if sites.empty?
 abort("ERROR: profiles.yaml must define at least one profile") if profiles.empty?
 
 env_lines = []
 env_lines << "UNIFI_URL=#{Shellwords.escape(controller['url'].to_s)}"
 env_lines << "UNIFI_API_KEY=#{Shellwords.escape(controller['api_key'].to_s)}"
-env_lines << "SSH_USER=#{Shellwords.escape(ssh['user'].to_s)}"
-env_lines << "SSH_PASSWORD=#{Shellwords.escape((ssh['password'] || '').to_s)}"
 File.write(File.join(out_dir, "controller.env"), env_lines.join("\n") + "\n")
 
 File.write(File.join(out_dir, "sites.tsv"), "")
@@ -152,6 +189,7 @@ profile_fields = %w[
   wifi_bands
   mlo
   fast_roaming
+  minrate_mode
   minrate_24_kbps
   minrate_5_kbps
   multicast_broadcast_blocker
@@ -165,6 +203,7 @@ profile_fields = %w[
   sae_sync_time
   bss_transition
   uapsd
+  dtim_mode
   dtim_24
   dtim_5
   dtim_6
@@ -174,13 +213,28 @@ profile_fields = %w[
 
 profiles.each do |name, values|
   wifi_bands = Array(values["wifi_bands"]).map(&:to_s)
+  minrate_mode = values["minrate_mode"].to_s
+  dtim_mode = values["dtim_mode"].to_s
+  abort("ERROR: profile #{name}: minrate_mode must be auto or manual") unless %w[auto manual].include?(minrate_mode)
+  abort("ERROR: profile #{name}: dtim_mode must be default or custom") unless %w[default custom].include?(dtim_mode)
   optional_fields = []
   optional_fields << "mlo" unless wifi_bands.include?("6g")
-  optional_fields << "minrate_24_kbps" unless wifi_bands.include?("2g")
-  optional_fields << "minrate_5_kbps" unless wifi_bands.include?("5g")
-  optional_fields << "dtim_24" unless wifi_bands.include?("2g")
-  optional_fields << "dtim_5" unless wifi_bands.include?("5g")
-  optional_fields << "dtim_6" unless wifi_bands.include?("6g")
+  if minrate_mode != "manual"
+    optional_fields << "minrate_24_kbps"
+    optional_fields << "minrate_5_kbps"
+  else
+    optional_fields << "minrate_24_kbps" unless wifi_bands.include?("2g")
+    optional_fields << "minrate_5_kbps" unless wifi_bands.include?("5g")
+  end
+  if dtim_mode != "custom"
+    optional_fields << "dtim_24"
+    optional_fields << "dtim_5"
+    optional_fields << "dtim_6"
+  else
+    optional_fields << "dtim_24" unless wifi_bands.include?("2g")
+    optional_fields << "dtim_5" unless wifi_bands.include?("5g")
+    optional_fields << "dtim_6" unless wifi_bands.include?("6g")
+  end
 
   missing = profile_fields.reject do |field|
     values.key?(field) || optional_fields.include?(field)
@@ -188,8 +242,10 @@ profiles.each do |name, values|
   abort("ERROR: profile #{name} is missing keys: #{missing.join(', ')}") unless missing.empty?
   defaults = {
     "mlo" => false,
+    "minrate_mode" => "manual",
     "minrate_24_kbps" => 0,
     "minrate_5_kbps" => 0,
+    "dtim_mode" => "custom",
     "dtim_24" => 0,
     "dtim_5" => 0,
     "dtim_6" => 0,
@@ -204,9 +260,13 @@ profiles.each do |name, values|
 end
 
 sites.each do |site_name, site_cfg|
+  site_ssh = site_cfg["ssh"] || {}
+  ssh_user = site_ssh["user"].to_s
+  ssh_password = (site_ssh["password"] || "").to_s
   neighbors = site_cfg["neighbors"] || {}
   wlans = site_cfg["wlans"] || {}
 
+  abort("ERROR: site #{site_name} is missing ssh.user") if ssh_user.empty?
   abort("ERROR: site #{site_name} must define neighbors") if neighbors.empty?
 
   rf_presets = {
@@ -215,17 +275,18 @@ sites.each do |site_name, site_cfg|
     "office"      => [3.0, "Office"],
     "obstructed"  => [4.0, "Obstructed"],
   }
-  rf_env = (site_cfg["environment"] || "residential").to_s
-  if rf_presets.key?(rf_env)
-    n, env_label = rf_presets[rf_env]
+  rf_env = (site_cfg["environment"] || "Residential").to_s
+  rf_env_key = rf_env.downcase
+  if rf_presets.key?(rf_env_key)
+    n, env_label = rf_presets[rf_env_key]
   else
     n = rf_env.to_f
-    abort("ERROR: site #{site_name}: environment must be open, residential, office, obstructed, or a positive number (got: #{rf_env})") unless n > 0
+    abort("ERROR: site #{site_name}: environment must be Open, Residential, Office, Obstructed, or a positive number (got: #{rf_env})") unless n > 0
     env_label = "Custom (n=#{rf_env})"
   end
 
   File.open(File.join(out_dir, "sites.tsv"), "a") do |f|
-    f.puts([site_name, n, env_label].join("\t"))
+    f.puts([site_name, n, env_label, ssh_user, ssh_password].join("\t"))
   end
 
   wlans.each do |wlan_name, profile_name|
@@ -263,6 +324,21 @@ site_wlans_tsv_path() {
   printf "%s/%s.wlans.tsv\n" "$tmpdir" "$(sanitize_token "$site")"
 }
 
+site_mgmt_json_path() {
+  local site=$1
+  printf "%s/%s.mgmt.json\n" "$tmpdir" "$(sanitize_token "$site")"
+}
+
+load_site_ssh_credentials() {
+  local site=$1 creds
+  creds=$(awk -F '\t' -v site="$site" '$1 == site { print $4 "\t" $5; exit }' "$SITES_FILE")
+  if [[ -z "$creds" ]]; then
+    printf 'ERROR: Could not load SSH credentials for site "%s"\n' "$site" >&2
+    exit 1
+  fi
+  IFS=$'\t' read -r SITE_SSH_USER SITE_SSH_PASSWORD <<< "$creds"
+}
+
 fetch_controller_sites() {
   curl -k -s --max-time 10 \
     -H "X-API-KEY: ${UNIFI_API_KEY}" \
@@ -273,21 +349,41 @@ import sys, json
 try:
     d = json.load(sys.stdin)
     for site in d.get('data', []):
-        print(site.get('name', ''))
+        fields = [
+            site.get('name', ''),
+            site.get('desc', '') or site.get('name', ''),
+            site.get('attr_hidden_id', '') or site.get('name', ''),
+            site.get('device_count', ''),
+        ]
+        print('\t'.join(str(field).replace('\t', ' ') for field in fields))
 except Exception:
     pass
 " 2>/dev/null > "$CONTROLLER_SITES_FILE"
 }
 
 validate_config_sites() {
-  local site _n _label
-  while IFS=$'\t' read -r site _n _label; do
+  local site _n _label _ssh_user _ssh_password
+  while IFS=$'\t' read -r site _n _label _ssh_user _ssh_password; do
     [[ -z "$site" ]] && continue
-    if ! grep -Fxq "$site" "$CONTROLLER_SITES_FILE"; then
+    if ! awk -F '\t' -v site="$site" '$1 == site { found=1 } END { exit found ? 0 : 1 }' "$CONTROLLER_SITES_FILE"; then
       printf 'ERROR: Site "%s" from config.yaml was not found in the UniFi controller\n' "$site" >&2
       exit 1
     fi
   done < "$SITES_FILE"
+}
+
+resolve_site_id() {
+  local site_id=$1
+  local match
+
+  match=$(awk -F '\t' -v site_id="$site_id" '$1 == site_id { print; exit }' "$CONTROLLER_SITES_FILE")
+  if [[ -n "$match" ]]; then
+    printf '%s\n' "$match"
+    return
+  fi
+
+  printf 'ERROR: Site ID "%s" was not found. Use --sites to list available site IDs.\n' "$site_id" >&2
+  exit 1
 }
 
 fetch_site_devices() {
@@ -310,12 +406,14 @@ import sys, json
 
 try:
     d = json.load(sys.stdin)
+    sep = '\x1f'
     for wlan in d.get('data', []):
         fields = [
             wlan.get('name', ''),
             wlan.get('enabled', ''),
             wlan.get('bss_transition', ''),
             wlan.get('fast_roaming_enabled', ''),
+            wlan.get('minrate_setting_preference', ''),
             wlan.get('minrate_ng_enabled', ''),
             wlan.get('minrate_ng_data_rate_kbps', ''),
             wlan.get('minrate_na_enabled', ''),
@@ -336,36 +434,68 @@ try:
             wlan.get('sae_anti_clogging', ''),
             wlan.get('sae_sync', ''),
             wlan.get('uapsd_enabled', ''),
+            wlan.get('dtim_mode', ''),
             wlan.get('dtim_ng', ''),
             wlan.get('dtim_na', ''),
             wlan.get('dtim_6e', ''),
             wlan.get('group_rekey', ''),
             wlan.get('advertise_device_name_in_beacon', ''),
         ]
-        print('\t'.join(str(field) for field in fields))
+        print(sep.join(str(field).replace(sep, ' ') for field in fields))
 except Exception:
     pass
 " 2>/dev/null > "$(site_wlans_tsv_path "$site")"
 }
 
+fetch_site_mgmt_settings() {
+  local site=$1
+  curl -k -s --max-time 15 \
+    -H "X-API-KEY: ${UNIFI_API_KEY}" \
+    -H "Accept: application/json" \
+    "${UNIFI_URL}/proxy/network/api/s/${site}/rest/setting/mgmt" \
+    2>/dev/null > "$(site_mgmt_json_path "$site")"
+}
+
+count_site_access_points() {
+  local site=$1
+
+  fetch_site_devices "$site"
+  python3 - "$(site_devices_json_path "$site")" <<'PY'
+import json
+import sys
+
+devices_path = sys.argv[1]
+with open(devices_path, "r", encoding="utf-8") as handle:
+    data = json.load(handle).get("data", [])
+
+count = 0
+for device in data:
+    if device.get("type") == "uap" or device.get("is_access_point") is True:
+        count += 1
+
+print(count)
+PY
+}
+
 build_site_inventory() {
-  local site
+  local site _n _label _ssh_user _ssh_password
 
   : > "$APS_FILE"
   fetch_controller_sites
   validate_config_sites
 
-  while IFS=$'\t' read -r site _n _label; do
+  while IFS=$'\t' read -r site _n _label _ssh_user _ssh_password; do
     [[ -z "$site" ]] && continue
     fetch_site_devices "$site"
     fetch_site_wlan_info "$site"
 
-    python3 - "$site" "$NEIGHBORS_FILE" "$(site_devices_json_path "$site")" >> "$APS_FILE" <<'PY'
+    python3 - "$site" "$NEIGHBORS_FILE" "$WLANS_FILE" "$(site_devices_json_path "$site")" "$(site_wlans_tsv_path "$site")" >> "$APS_FILE" <<'PY'
 import json
 import sys
 
-site_name, neighbors_path, devices_path = sys.argv[1:]
+site_name, neighbors_path, wlans_path, devices_path, site_wlans_path = sys.argv[1:]
 required = set()
+required_wlans = set()
 
 with open(neighbors_path, "r", encoding="utf-8") as handle:
     for line in handle:
@@ -377,6 +507,16 @@ with open(neighbors_path, "r", encoding="utf-8") as handle:
             continue
         required.add(ap_name)
         required.update(peer for peer in peers.split(",") if peer)
+
+with open(wlans_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        current_site, wlan_name, _profile = line.split("\t", 2)
+        if current_site != site_name:
+            continue
+        required_wlans.add(wlan_name)
 
 with open(devices_path, "r", encoding="utf-8") as handle:
     data = json.load(handle).get("data", [])
@@ -406,16 +546,232 @@ if missing:
     )
     sys.exit(1)
 
+site_wlans = set()
+sep = "\x1f"
+with open(site_wlans_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        fields = line.split(sep)
+        if fields:
+            site_wlans.add(fields[0])
+
+missing_wlans = sorted(name for name in required_wlans if name not in site_wlans)
+if missing_wlans:
+    sys.stderr.write(
+        f'ERROR: The following WLANs from config.yaml were not found in site "{site_name}": {", ".join(missing_wlans)}\n'
+    )
+    sys.stderr.write("Check the wlans mapping, then run the script again.\n")
+    sys.exit(1)
+
+not_ready = []
 for ap_name in sorted(required):
     ap = aps[ap_name]
     ip = ap.get("ip") or ap.get("inform_ip") or ""
+    if not ip:
+        not_ready.append(f"{ap_name} (missing IP)")
+        continue
     print("\t".join([site_name, ap_name, ap.get("mac", ""), ip]))
+
+if not_ready:
+    sys.stderr.write(
+        f'ERROR: The following APs in site "{site_name}" are not ready for SSH scanning: {", ".join(not_ready)}\n'
+    )
+    sys.stderr.write(
+        "Wait until they are online in UniFi Network, then run the script again.\n"
+    )
+    sys.exit(1)
 PY
   done < "$SITES_FILE"
 }
 
+show_sites() {
+  local site_id site_name _hidden_id _device_count ap_count
+
+  if [[ ! -s "$CONTROLLER_SITES_FILE" ]]; then
+    echo "No UniFi sites were returned by the controller."
+    return
+  fi
+
+  echo
+  printf "  %-20s  %-24s  %s\n" "Site ID" "Site Name" "Access Points"
+  while IFS=$'\t' read -r site_id site_name _hidden_id _device_count; do
+    [[ -z "$site_id" ]] && continue
+    ap_count=$(count_site_access_points "$site_id")
+    printf "  %-20s  %-24s  %s\n" "$site_id" "$site_name" "$ap_count"
+  done < "$CONTROLLER_SITES_FILE"
+  echo
+}
+
+show_site_env() {
+  local selector=$1
+  local resolved site_id site_name _hidden_id _device_count
+
+  resolved=$(resolve_site_id "$selector")
+  IFS=$'\t' read -r site_id site_name _hidden_id _device_count <<< "$resolved"
+
+  fetch_site_devices "$site_id"
+  fetch_site_wlan_info "$site_id"
+
+  echo
+  printf "  Site ID:   %s\n" "$site_id"
+  printf "  Site Name: %s\n" "$site_name"
+  echo
+
+  echo "  WLANs:"
+  if [[ -s "$(site_wlans_tsv_path "$site_id")" ]]; then
+    awk -F "$WLAN_FIELD_SEP" '
+      {
+        status = ($2 == "True" || $2 == "true") ? "enabled" : "disabled"
+        printf "    %s (%s)\n", $1, status
+      }
+    ' "$(site_wlans_tsv_path "$site_id")" | sort
+  else
+    echo "    none"
+  fi
+  echo
+
+  echo "  Access Points:"
+  python3 - "$(site_devices_json_path "$site_id")" <<'PY'
+import json
+import sys
+
+devices_path = sys.argv[1]
+with open(devices_path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+devices = []
+for device in data.get("data", []):
+    device_type = str(device.get("type", "")).lower()
+    if not (device_type == "uap" or device.get("is_access_point") is True):
+        continue
+
+    devices.append((
+        device.get("name", ""),
+        "ONLINE" if str(device.get("state", "")).lower() == "1" else str(device.get("state", "")),
+        device.get("ip", "") or device.get("inform_ip", ""),
+        device.get("mac", ""),
+    ))
+
+if not devices:
+    print("    none")
+else:
+    print("    Device Name   State   IP             MAC")
+    for name, state, ip, mac in sorted(devices, key=lambda row: row[0]):
+        print(f"    {name:<13} {state:<7} {ip:<14} {mac}")
+PY
+  echo
+}
+
+print_config_skeleton() {
+  local selector=$1
+  local resolved site_id site_name _hidden_id _device_count
+
+  resolved=$(resolve_site_id "$selector")
+  IFS=$'\t' read -r site_id site_name _hidden_id _device_count <<< "$resolved"
+
+  fetch_site_devices "$site_id"
+  fetch_site_wlan_info "$site_id"
+  fetch_site_mgmt_settings "$site_id"
+
+  python3 - "$site_id" "$(site_wlans_tsv_path "$site_id")" "$(site_devices_json_path "$site_id")" "$(site_mgmt_json_path "$site_id")" <<'PY'
+import json
+import sys
+
+site_id, wlans_path, devices_path, mgmt_path = sys.argv[1:]
+
+def yaml_scalar(value):
+    if value == "":
+        return '""'
+    safe = True
+    disallowed = set(':#{}[]&,*!?|>\'"%@`')
+    if value.strip() != value:
+        safe = False
+    if value.lower() in {"null", "~", "true", "false", "yes", "no", "on", "off"}:
+        safe = False
+    try:
+        float(value)
+        safe = False
+    except ValueError:
+        pass
+    if not value:
+        safe = False
+    if value[0] in "-?":
+        safe = False
+    if any(ch in disallowed for ch in value):
+        safe = False
+    if safe:
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+wlans = []
+sep = "\x1f"
+
+with open(wlans_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        fields = line.split(sep)
+        if fields:
+            wlans.append(fields[0])
+
+with open(devices_path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+ssh_user = "YOUR_SSH_USER"
+try:
+    with open(mgmt_path, "r", encoding="utf-8") as handle:
+        mgmt_doc = json.load(handle)
+    mgmt_items = mgmt_doc.get("data", [])
+    if mgmt_items:
+        candidate = (mgmt_items[0].get("x_ssh_username") or "").strip()
+        if candidate:
+            ssh_user = candidate
+except Exception:
+    pass
+
+aps = sorted(
+    device.get("name", "")
+    for device in data.get("data", [])
+    if (device.get("type") == "uap" or device.get("is_access_point") is True) and device.get("name")
+)
+
+print("")
+print("sites:")
+print(f"  {yaml_scalar(site_id)}:")
+print("    ssh:")
+print(f"      user: {yaml_scalar(ssh_user)}")
+print("      # Set a password or remove this line for SSH key-based login.")
+print("      password: YOUR_SSH_PASSWORD")
+print("")
+print("    # Open, Residential, Office, Obstructed, or a custom path-loss exponent")
+print("    environment: Residential")
+print("")
+print("    # Standard, IoT, Hotspot, Throughput, or Latency")
+print("    wlans:")
+if wlans:
+    for wlan in sorted(set(wlans)):
+        print(f"      {yaml_scalar(wlan)}: Throughput")
+else:
+    print("      # Add WLAN mappings here")
+print("")
+print("    # Add neighbor AP names as a comma-separated list in brackets.")
+print("    neighbors:")
+if aps:
+    for ap in aps:
+        print(f"      {yaml_scalar(ap)}: []")
+else:
+    print("      # Add AP neighbor relationships here")
+print("")
+PY
+}
+
 ssh_scan_ap() {
   local host="$1"
+  local ssh_password="${2:-}"
   local scan_script
   read -r -d '' scan_script <<'SCAN' || true
 ifconfig apcli0 up 2>/dev/null; sleep 1
@@ -438,8 +794,8 @@ SCAN
     -T
   )
 
-  if [[ -n "${SSH_PASSWORD:-}" ]]; then
-    SSHPASS="$SSH_PASSWORD" sshpass -e ssh \
+  if [[ -n "$ssh_password" ]]; then
+    SSHPASS="$ssh_password" sshpass -e ssh \
       -o PreferredAuthentications=password,keyboard-interactive \
       -o PubkeyAuthentication=no \
       -o KbdInteractiveAuthentication=yes \
@@ -744,6 +1100,74 @@ normalize_rekey() {
   fi
 }
 
+normalize_minrate_mode() {
+  local value
+  value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$value" in
+    auto|"") echo "auto" ;;
+    manual) echo "manual" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+minrate_mode_state() {
+  case "$(normalize_minrate_mode "$1")" in
+    auto) echo "Auto" ;;
+    manual) echo "Manual" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+normalize_dtim_mode() {
+  local value
+  value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$value" in
+    default|"") echo "default" ;;
+    custom) echo "custom" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+dtim_mode_state() {
+  case "$(normalize_dtim_mode "$1")" in
+    default) echo "Default" ;;
+    custom) echo "Custom" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+print_general_check_minrate_mode() {
+  local current=$1 expected=$2
+  local current_norm expected_norm current_state expected_state
+  current_norm=$(normalize_minrate_mode "$current")
+  expected_norm=$(normalize_minrate_mode "$expected")
+  current_state=$(minrate_mode_state "$current_norm")
+  expected_state=$(minrate_mode_state "$expected_norm")
+
+  if [[ "$current_norm" == "$expected_norm" ]]; then
+    printf "  ${GREEN}  ✓ %-${GENERAL_LABEL_WIDTH}s %s${RESET}\n" "Minimum Data Rate Mode" "$current_state"
+  else
+    flag_change
+    printf "  ${RED}  ✗ %-${GENERAL_LABEL_WIDTH}s %s${RESET}\n" "Minimum Data Rate Mode" "$expected_state"
+  fi
+}
+
+print_general_check_dtim_mode() {
+  local current=$1 expected=$2
+  local current_norm expected_norm current_state expected_state
+  current_norm=$(normalize_dtim_mode "$current")
+  expected_norm=$(normalize_dtim_mode "$expected")
+  current_state=$(dtim_mode_state "$current_norm")
+  expected_state=$(dtim_mode_state "$expected_norm")
+
+  if [[ "$current_norm" == "$expected_norm" ]]; then
+    printf "  ${GREEN}  ✓ %-${GENERAL_LABEL_WIDTH}s %s${RESET}\n" "DTIM Mode" "$current_state"
+  else
+    flag_change
+    printf "  ${RED}  ✗ %-${GENERAL_LABEL_WIDTH}s %s${RESET}\n" "DTIM Mode" "$expected_state"
+  fi
+}
+
 get_profile_row() {
   local profile=$1
   awk -F '\t' -v profile="$profile" '$1 == profile { print; exit }' "$PROFILES_TSV"
@@ -752,7 +1176,7 @@ get_profile_row() {
 get_site_wlan_row() {
   # site selects the TSV file (one file per site); the awk filter only needs wlan_name
   local site=$1 wlan_name=$2
-  awk -F '\t' -v wlan_name="$wlan_name" '$1 == wlan_name { print; exit }' "$(site_wlans_tsv_path "$site")"
+  awk -F "$WLAN_FIELD_SEP" -v wlan_name="$wlan_name" '$1 == wlan_name { print; exit }' "$(site_wlans_tsv_path "$site")"
 }
 
 print_header() {
@@ -934,16 +1358,17 @@ print_general_checks() {
   local matched=false
   local wlan_name profile_name actual_row profile_row
   local enabled bss_transition fast_roaming
+  local minrate_mode dtim_mode
   local minrate24_en minrate24 minrate5_en minrate5
   local bc_filter mcast_enhance proxy_arp
   local wlan_band wlan_bands mlo security wpa_mode wpa3_support wpa3_transition pmf
   local hide_ssid l2_isolation sae_anti_clogging sae_sync uapsd
   local dtim24 dtim5 dtim6 group_rekey ap_name_in_beacon
-  local profile expected_wifi_bands expected_mlo expected_fast_roaming expected_minrate24 expected_minrate5
+  local profile expected_wifi_bands expected_mlo expected_fast_roaming expected_minrate_mode expected_minrate24 expected_minrate5
   local expected_bc_filter expected_mcast_enhance expected_proxy_arp
   local expected_security_protocols expected_pmf expected_hide_wifi_name
   local expected_client_device_isolation expected_sae_anti_clogging expected_sae_sync_time
-  local expected_bss_transition expected_uapsd expected_dtim24 expected_dtim5 expected_dtim6
+  local expected_bss_transition expected_uapsd expected_dtim_mode expected_dtim24 expected_dtim5 expected_dtim6
   local expected_group_rekey expected_ap_name_in_beacon
   local actual_wifi_bands actual_security_protocol actual_pmf
 
@@ -960,17 +1385,18 @@ print_general_checks() {
 
     actual_row=$(get_site_wlan_row "$site" "$wlan_name")
     if [[ -z "$actual_row" ]]; then
-      print_general_check_missing "WLAN" "Expected profile ${profile_name}"
-      echo
-      continue
+      printf 'ERROR: WLAN "%s" from config.yaml was not found in site "%s". Check the wlans mapping, then run the script again.\n' "$wlan_name" "$site" >&2
+      exit 1
     fi
 
-    IFS=$'\t' read -r \
+    IFS="$WLAN_FIELD_SEP" read -r \
       _name enabled bss_transition fast_roaming \
+      minrate_mode \
       minrate24_en minrate24 minrate5_en minrate5 \
       bc_filter mcast_enhance proxy_arp \
       wlan_band wlan_bands mlo security wpa_mode wpa3_support wpa3_transition pmf \
       hide_ssid l2_isolation sae_anti_clogging sae_sync uapsd \
+      dtim_mode \
       dtim24 dtim5 dtim6 group_rekey ap_name_in_beacon <<< "$actual_row"
 
     if ! is_true "$enabled"; then
@@ -987,11 +1413,11 @@ print_general_checks() {
     fi
 
     IFS=$'\t' read -r \
-      profile expected_wifi_bands expected_mlo expected_fast_roaming expected_minrate24 expected_minrate5 \
+      profile expected_wifi_bands expected_mlo expected_fast_roaming expected_minrate_mode expected_minrate24 expected_minrate5 \
       expected_bc_filter expected_mcast_enhance expected_proxy_arp \
       expected_security_protocols expected_pmf expected_hide_wifi_name \
       expected_client_device_isolation expected_sae_anti_clogging expected_sae_sync_time \
-      expected_bss_transition expected_uapsd expected_dtim24 expected_dtim5 expected_dtim6 \
+      expected_bss_transition expected_uapsd expected_dtim_mode expected_dtim24 expected_dtim5 expected_dtim6 \
       expected_group_rekey expected_ap_name_in_beacon <<< "$profile_row"
 
     actual_wifi_bands=$(normalize_wifi_bands "$wlan_band" "$wlan_bands")
@@ -1010,11 +1436,14 @@ print_general_checks() {
 
     echo
     print_general_group_header "  Hi-Capacity Tuning:"
-    if wifi_band_includes "$expected_wifi_bands" "2g"; then
-      print_general_check_rate "Minimum Data Rate 2.4 GHz" "$expected_minrate24" "$minrate24_en" "$minrate24"
-    fi
-    if wifi_band_includes "$expected_wifi_bands" "5g"; then
-      print_general_check_rate "Minimum Data Rate 5 GHz" "$expected_minrate5" "$minrate5_en" "$minrate5"
+    print_general_check_minrate_mode "$minrate_mode" "$expected_minrate_mode"
+    if [[ "$(normalize_minrate_mode "$expected_minrate_mode")" == "manual" ]]; then
+      if wifi_band_includes "$expected_wifi_bands" "2g"; then
+        print_general_check_rate "Minimum Data Rate 2.4 GHz" "$expected_minrate24" "$minrate24_en" "$minrate24"
+      fi
+      if wifi_band_includes "$expected_wifi_bands" "5g"; then
+        print_general_check_rate "Minimum Data Rate 5 GHz" "$expected_minrate5" "$minrate5_en" "$minrate5"
+      fi
     fi
     print_general_check_bool "Multicast and Broadcast Blocker" "$expected_bc_filter" "$bc_filter"
     print_general_check_bool "Multicast to Unicast" "$expected_mcast_enhance" "$mcast_enhance"
@@ -1035,14 +1464,17 @@ print_general_checks() {
     print_general_group_header "  Behaviour Controls:"
     print_general_check_bool "BSS Transition" "$expected_bss_transition" "$bss_transition"
     print_general_check_bool "UAPSD" "$expected_uapsd" "$uapsd"
-    if wifi_band_includes "$expected_wifi_bands" "2g"; then
-      print_general_check_value "DTIM Period 2.4 GHz" "$expected_dtim24" "${dtim24:-n/a}"
-    fi
-    if wifi_band_includes "$expected_wifi_bands" "5g"; then
-      print_general_check_value "DTIM Period 5 GHz" "$expected_dtim5" "${dtim5:-n/a}"
-    fi
-    if wifi_band_includes "$expected_wifi_bands" "6g"; then
-      print_general_check_value "DTIM Period 6 GHz" "$expected_dtim6" "${dtim6:-n/a}"
+    print_general_check_dtim_mode "$dtim_mode" "$expected_dtim_mode"
+    if [[ "$(normalize_dtim_mode "$expected_dtim_mode")" == "custom" ]]; then
+      if wifi_band_includes "$expected_wifi_bands" "2g"; then
+        print_general_check_value "DTIM Period 2.4 GHz" "$expected_dtim24" "${dtim24:-n/a}"
+      fi
+      if wifi_band_includes "$expected_wifi_bands" "5g"; then
+        print_general_check_value "DTIM Period 5 GHz" "$expected_dtim5" "${dtim5:-n/a}"
+      fi
+      if wifi_band_includes "$expected_wifi_bands" "6g"; then
+        print_general_check_value "DTIM Period 6 GHz" "$expected_dtim6" "${dtim6:-n/a}"
+      fi
     fi
     print_general_check_rekey "Group Rekey Interval" "$expected_group_rekey" "${group_rekey:-0}"
     print_general_check_bool "Show Access Point Name in Beacon" "$expected_ap_name_in_beacon" "$ap_name_in_beacon"
@@ -1152,6 +1584,73 @@ ap_scan_prefix() {
 # Main: Scanning
 # ============================================================================
 
+MODE="run"
+SITE_SELECTOR=""
+
+case "${1:-}" in
+  "")
+    ;;
+  --sites)
+    [[ $# -eq 1 ]] || { print_usage >&2; exit 1; }
+    MODE="show-sites"
+    ;;
+  --site)
+    [[ $# -eq 2 ]] || { print_usage >&2; exit 1; }
+    MODE="show-site-env"
+    SITE_SELECTOR=$2
+    ;;
+  --config)
+    [[ $# -eq 2 ]] || { print_usage >&2; exit 1; }
+    MODE="print-config-skeleton"
+    SITE_SELECTOR=$2
+    ;;
+  --show-sites)
+    [[ $# -eq 1 ]] || { print_usage >&2; exit 1; }
+    MODE="show-sites"
+    ;;
+  --show-site-env)
+    [[ $# -eq 2 ]] || { print_usage >&2; exit 1; }
+    MODE="show-site-env"
+    SITE_SELECTOR=$2
+    ;;
+  --print-config-skeleton)
+    [[ $# -eq 2 ]] || { print_usage >&2; exit 1; }
+    MODE="print-config-skeleton"
+    SITE_SELECTOR=$2
+    ;;
+  -h|--help)
+    print_usage
+    exit 0
+    ;;
+  *)
+    printf 'ERROR: Unknown argument: %s\n' "$1" >&2
+    print_usage >&2
+    exit 1
+    ;;
+esac
+
+require_config_file
+load_controller_config
+
+case "$MODE" in
+  show-sites)
+    fetch_controller_sites
+    show_sites
+    exit 0
+    ;;
+  show-site-env)
+    fetch_controller_sites
+    show_site_env "$SITE_SELECTOR"
+    exit 0
+    ;;
+  print-config-skeleton)
+    fetch_controller_sites
+    print_config_skeleton "$SITE_SELECTOR"
+    exit 0
+    ;;
+esac
+
+require_profiles_file
 load_yaml_config
 check_dependencies
 
@@ -1164,14 +1663,22 @@ SITE_COUNT=$(wc -l < "$SITES_FILE" | tr -d '[:space:]')
 
 echo "  Scanning access points..."
 
+current_scan_site=""
+SITE_SSH_USER=""
+SITE_SSH_PASSWORD=""
 while IFS=$'\t' read -r site ap mac ip; do
   [[ -z "$site" ]] && continue
   scan_prefix=$(ap_scan_prefix "$site" "$ap")
   scan_err_file="${scan_prefix}.err"
 
+  if [[ "$site" != "$current_scan_site" ]]; then
+    load_site_ssh_credentials "$site"
+    current_scan_site="$site"
+  fi
+
   echo "    Scanning ${site}/${ap}..."
 
-  if ! ssh_scan_ap "${SSH_USER}@${ip}" > "${scan_prefix}.raw" 2> "$scan_err_file"; then
+  if ! ssh_scan_ap "${SITE_SSH_USER}@${ip}" "$SITE_SSH_PASSWORD" > "${scan_prefix}.raw" 2> "$scan_err_file"; then
     : > "${scan_prefix}.raw"
     if [[ -s "$scan_err_file" ]]; then
       printf "    SSH failed: %s\n" "$(tr '\n' ' ' < "$scan_err_file" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
@@ -1194,7 +1701,7 @@ echo
 # ============================================================================
 has_changes=false
 
-while IFS=$'\t' read -r site n env_label; do
+while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
   [[ -z "$site" ]] && continue
 
   # Compute TX corridor for this site from path loss model
