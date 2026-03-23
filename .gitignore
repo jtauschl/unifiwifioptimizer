@@ -6,3 +6,10 @@ config.yaml
 
 # Design source files (keep locally, not useful in repo)
 *.psd
+
+# Local IDE and AI agent context files - stay on this machine only
+.vscode/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+CODEX.md

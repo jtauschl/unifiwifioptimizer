@@ -1,11 +1,11 @@
 # Algorithm
 
-This document describes the RF model used by `UniFiWiFiOptimizer`.
+This document describes the RF model used by `UniFi WiFi Optimizer`.
 It explains the practical design target behind the calculations, the mathematical derivation of the RF corridor, and how the script turns AP-to-AP neighbor RSSI into concrete recommendations for transmit power, roaming assistance, and minimum RSSI.
 
 The model targets the long-established practical design goal of about 20% cell overlap at `-67 dBm`, adjusted for the configured RF environment such as open space, office, or obstructed layouts.
 
-WLAN profile checks are part of the project as supporting best-practice guidance, but they are not part of the RF calculation described here.
+WLAN profile checks provide supporting best-practice guidance alongside the RF calculation described here.
 
 ## 1. Design Goal
 
@@ -22,7 +22,7 @@ The script implements this by comparing measured neighbor RSSI against a derived
 1. **UniFi API** — radio settings: channel, TX power, TX limits, TX mode, Minimum RSSI, Roaming Assistant
 2. **SSH** — AP-to-AP neighbor BSS scans on 2.4 and 5 GHz
 
-In the current implementation, the script assumes scan interfaces `apcli0` and `apclii0`, and derives target BSSIDs from the AP base MAC via offsets `+1` and `+2`.
+The script detects scan-capable interfaces automatically via `iface_can_scan()`: on MediaTek-based APs (U6 family) it uses the dedicated managed interfaces (`apcli0`/`apclii0`); on Qualcomm-based APs (U7 family) it uses AP interfaces that advertise the `SET_SCAN_DWELL` PHY capability. Only active bands are scanned. Target BSSIDs are derived from the AP base MAC via offsets `+1` and `+2`.
 
 ## 3. Neighbor Evaluation
 
@@ -134,9 +134,8 @@ The asymmetric 60%/40% overlap design reduces ping-pong risk:
 
 ## 8. Model Limits
 
-- uses AP-to-AP RSSI as proxy, not client telemetry
-- assumes known neighbor relationship
-- does not evaluate channel planning, SNR, retry rate, or capacity
+- uses AP-to-AP RSSI as a proxy for cell overlap
+- evaluates explicitly configured neighbor relationships
 
 ## References
 

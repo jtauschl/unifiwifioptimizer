@@ -6,7 +6,7 @@
   <img src="docs/img/UniFiWiFiOptimizer.png" alt="UniFi WiFi Optimizer – RF tuning tool for UniFi access points" width="600">
 </p>
 
-`UniFiWiFiOptimizer` is a Bash tool for post-placement UniFi WLAN review and RF tuning.
+`UniFi WiFi Optimizer` is a Bash tool for post-placement UniFi WLAN review and RF tuning.
 It reads radio configuration and WLAN settings from the UniFi Network API, compares them against shipped WLAN profiles, collects AP-to-AP neighbor scan data via SSH, and generates recommendations for:
 
 - profile-based WLAN best practices for Standard, IoT, Hotspot, Throughput, and Latency profiles
@@ -16,16 +16,69 @@ The shipped profiles map either to current UniFi defaults (`Standard`, `IoT`) or
 
 AP recommendations are derived from AP-to-AP neighbor scan RSSI and target the long-established practical design goal of about 20% cell overlap at -67 dBm, adjusted for the configured RF environment such as open space, office, or obstructed layouts.
 
-It does not write changes back to the controller — all recommendations must be applied manually. The SSH neighbor scan uses dedicated scan interfaces, so normal client WiFi service remains unaffected on supported UniFi APs and firmware.
+All recommendations are applied manually in UniFi Network. The SSH neighbor scan detects scan-capable interfaces automatically: on MediaTek-based APs (U6 family) it uses the dedicated managed interfaces (`apcli0`/`apclii0`); on Qualcomm-based APs (U7 family) it uses AP interfaces that advertise the `SET_SCAN_DWELL` PHY capability. Both approaches perform off-channel scanning while maintaining client service.
 
 For the full RF derivation, see [docs/ALGORITHM.md](docs/ALGORITHM.md).
 
 ## Requirements
 
 - UniFi Network Application `10.0.162` or later
-- UniFi AP firmware `6.7.x` or later for the SSH neighbor scan
+- UniFi AP firmware `6.7.x` or later (U6 series) / `8.0.x` or later (U7 series) for the SSH neighbor scan
 - UniFi access points managed by that application, with `Device SSH Authentication` enabled
 - Runtime dependencies: `bash`, `curl`, `python3`, `ruby`, `ssh`, and optional `sshpass` for password-based SSH login
+
+## Tested Hardware
+
+| Model | API | SSH Neighbor Scan | Notes |
+|---|---|---|---|
+| U6 Lite | ✅ | ✅ | Dedicated scan interfaces (`apcli0`/`apclii0`), no service interruption |
+| U7 Lite | ✅ | ✅ | AP interfaces (`wifi0ap0`/`wifi1ap1`) via `SET_SCAN_DWELL` (Qualcomm), no service interruption |
+
+Models in the same UniFi firmware family share the same kernel and driver architecture and are expected to be compatible:
+
+- **U6 family** (firmware 6.x, MediaTek): U6 Lite, U6-LR, U6+, UAP-nanoHD, IW-HD, FlexHD, BeaconHD
+- **U7 family** (firmware 8.x, Qualcomm): U7 Lite, U7 Outdoor, U7 In-Wall, U7 Pro, U7 Pro Wall, U7 Pro Max, U7 Pro Outdoor, U7 Pro XG, U7 Pro XG-Wall, U7 Pro XGS, E7, E7-Campus, E7-Audience
+
+U7 Pro, E7, and variants with a 6 GHz radio are analyzed on 2.4 GHz and 5 GHz. 6 GHz support is planned once test hardware is available.
+
+## Install
+
+Install to `~/.local/share/unifiwifioptimizer` with a launcher in `~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jtauschl/unifiwifioptimizer/main/scripts/install.sh | sh
+```
+
+The installer can optionally:
+
+- ask for the controller URL and API key
+- query `--sites` right away
+- generate a site block for a selected site
+- walk through AP neighbors interactively if you want to set them during install
+
+If `~/.local/bin` is not in your `PATH` yet:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The installed launcher keeps the project command name:
+
+```bash
+unifiwifioptimizer --sites
+```
+
+Uninstall either with the installed helper:
+
+```bash
+unifiwifioptimizer-uninstall
+```
+
+or directly from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jtauschl/unifiwifioptimizer/main/scripts/uninstall.sh | sh
+```
 
 ## Workflow
 
@@ -41,22 +94,22 @@ cp config.minimal.yaml config.yaml
 3. Discover the available site IDs:
 
 ```bash
-./UniFiWiFiOptimizer --sites
+./unifiwifioptimizer --sites
 ```
 
 4. Verify that you selected the correct site:
 
 ```bash
-./UniFiWiFiOptimizer --site <siteid>
+./unifiwifioptimizer --site <siteid>
 ```
 
 5. Generate a site skeleton:
 
 ```bash
-./UniFiWiFiOptimizer --config <siteid> >> config.yaml
+./unifiwifioptimizer --config <siteid> >> config.yaml
 ```
 
-6. Complete `environment`, `wlans`, and `neighbors`, then run `./UniFiWiFiOptimizer`.
+6. Complete `environment`, `wlans`, and `neighbors`, then run `./unifiwifioptimizer`.
 7. If you want a controller baseline first, let UniFi handle channel planning (for example Channel AI).
 8. Fix per-WLAN profile deviations first.
 9. Apply the per-AP RF recommendations that make sense for your site.
@@ -148,7 +201,7 @@ Profile presets:
 
 For profile details, see [docs/PROFILES.md](docs/PROFILES.md).
 
-`Band Steering` is not part of these profiles and should be set manually in UniFi Network.
+Configure `Band Steering` manually in UniFi Network.
 
 `config.yaml` contains the API key and optionally the SSH password — protect it accordingly:
 

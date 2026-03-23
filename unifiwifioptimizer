@@ -11,10 +11,10 @@
 # Config:    See config.yaml and profiles.yaml
 #
 # Usage:
-#   ./UniFiWiFiOptimizer
-#   ./UniFiWiFiOptimizer --sites
-#   ./UniFiWiFiOptimizer --site <siteid>
-#   ./UniFiWiFiOptimizer --config <siteid>
+#   ./unifiwifioptimizer
+#   ./unifiwifioptimizer --sites
+#   ./unifiwifioptimizer --site <siteid>
+#   ./unifiwifioptimizer --config <siteid>
 #
 
 set -euo pipefail
@@ -91,10 +91,10 @@ CONTROLLER_SITES_FILE="${tmpdir}/controller-sites.txt"
 print_usage() {
   cat <<'EOF'
 Usage:
-  ./UniFiWiFiOptimizer
-  ./UniFiWiFiOptimizer --sites
-  ./UniFiWiFiOptimizer --site <siteid>
-  ./UniFiWiFiOptimizer --config <siteid>
+  ./unifiwifioptimizer
+  ./unifiwifioptimizer --sites
+  ./unifiwifioptimizer --site <siteid>
+  ./unifiwifioptimizer --config <siteid>
 EOF
 }
 
@@ -781,12 +781,149 @@ ssh_scan_ap() {
   local ssh_password="${2:-}"
   local scan_script
   read -r -d '' scan_script <<'SCAN' || true
-ifconfig apcli0 up 2>/dev/null; sleep 1
-iw dev apcli0 scan 2>/dev/null | grep -E 'BSS|signal|SSID' > /tmp/scan2g.txt
-ifconfig apcli0 down 2>/dev/null
-ifconfig apclii0 up 2>/dev/null; sleep 1
-iw dev apclii0 scan 2>/dev/null | grep -E 'BSS|signal|SSID' > /tmp/scan5g.txt
-ifconfig apclii0 down 2>/dev/null
+# Return 0 if the interface is safe to use for scanning.
+# - managed: always safe (dedicated scan interfaces like apcli0/apclii0)
+# - AP: safe only if the underlying PHY advertises SET_SCAN_DWELL (Qualcomm),
+#        which means AP interfaces support off-channel scanning without blocking
+# - monitor and others: skip (don't touch vendor-internal interfaces like pd99)
+iface_can_scan() {
+  iface="$1"
+  type=$(iw dev "$iface" info 2>/dev/null | awk '/type/{print $2}')
+  case "$type" in
+    managed) return 0 ;;
+    AP)
+      wiphy=$(iw dev "$iface" info 2>/dev/null | awk '/wiphy/{print $2}')
+      iw phy "phy${wiphy}" info 2>/dev/null | grep -q "SET_SCAN_DWELL"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Return space-separated scan interface candidates for the given band.
+# Tries known static names first (U6: apcli0/apclii0), then discovers
+# additional candidates by matching channel frequency via iw dev.
+# Only includes interfaces that pass iface_can_scan.
+find_scan_candidates() {
+  band="$1"
+  case "$band" in
+    2g) freq_min=2400; freq_max=2500; static="apcli0 apcli2" ;;
+    5g) freq_min=5000; freq_max=6000; static="apclii0 apcli1 apcli3" ;;
+    *) return 1 ;;
+  esac
+
+  discovered=""
+  for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do
+    freq=$(iw dev "$iface" info 2>/dev/null \
+      | awk '/channel/ { gsub(/[()]/,"",$3); f=$3+0; if (f>0) print f; exit }')
+    if [ -n "$freq" ] && [ "$freq" -ge "$freq_min" ] && [ "$freq" -lt "$freq_max" ]; then
+      case " $static " in
+        *" $iface "*) ;;
+        *) iface_can_scan "$iface" && discovered="$discovered $iface" ;;
+      esac
+    fi
+  done
+
+  echo "$static$discovered"
+}
+
+run_scan() {
+  candidates="$1"
+  outfile="$2"
+  iface=""
+  scan_output=""
+
+  : > "$outfile"
+
+  for iface in $candidates; do
+    if ! iw dev "$iface" info >/dev/null 2>&1; then
+      continue
+    fi
+    if ! iface_can_scan "$iface"; then
+      continue
+    fi
+
+    was_up=0
+    if ifconfig "$iface" 2>/dev/null | grep -q "UP"; then
+      was_up=1
+    else
+      ifconfig "$iface" up 2>/dev/null
+      sleep 1
+    fi
+
+    scan_output=$(iw dev "$iface" scan 2>/dev/null | grep -E 'BSS|signal|SSID' || true)
+
+    if [ "$was_up" = "0" ]; then
+      ifconfig "$iface" down 2>/dev/null
+    fi
+
+    if [ -n "$scan_output" ]; then
+      printf '%s\n' "$scan_output" > "$outfile"
+      return 0
+    fi
+  done
+}
+
+# Return 0 if the band has at least one UP AP interface actively serving clients.
+# Only scans bands where the AP is actually running a WLAN — inactive bands are
+# irrelevant for roaming and should be skipped entirely.
+band_is_active() {
+  band="$1"
+  case "$band" in
+    2g) freq_min=2400; freq_max=2500 ;;
+    5g) freq_min=5000; freq_max=5900 ;;
+    *) return 1 ;;
+  esac
+  has_any=0
+  for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do
+    has_any=1
+    type=$(iw dev "$iface" info 2>/dev/null | awk '/type/{print $2}')
+    [ "$type" = "AP" ] || continue
+    ifconfig "$iface" 2>/dev/null | grep -q "UP" || continue
+    freq=$(iw dev "$iface" info 2>/dev/null \
+      | awk '/channel/ { gsub(/[()]/,"",$3); f=$3+0; if (f>0) print f; exit }')
+    if [ -n "$freq" ]; then
+      # Frequency available (newer firmware / Qualcomm) — check directly
+      if [ "$freq" -ge "$freq_min" ] && [ "$freq" -lt "$freq_max" ]; then
+        return 0
+      fi
+    else
+      # No frequency in iw dev info (older MediaTek firmware does not report
+      # the current channel via nl80211). Fall back to PHY capabilities:
+      # a PHY that lists 5 GHz frequencies is the 5G radio; one that doesn't
+      # is the 2.4G radio.
+      wiphy=$(iw dev "$iface" info 2>/dev/null | awk '/wiphy/{print $2}')
+      [ -n "$wiphy" ] || continue
+      phy_has_5g=$(iw phy "phy${wiphy}" info 2>/dev/null \
+        | awk '/\* [0-9]+ MHz/{f=$2+0; if(f>=5000&&f<5900){found=1}} END{print found+0}')
+      case "$band" in
+        2g) [ "$phy_has_5g" = "0" ] && return 0 ;;
+        5g) [ "$phy_has_5g" = "1" ] && return 0 ;;
+      esac
+    fi
+  done
+  # No cfg80211 interfaces found at all — legacy AP or iw not available.
+  # Cannot determine band state; proceed with scan attempt.
+  [ "$has_any" = "0" ] && return 0
+  return 1
+}
+
+: > /tmp/scan2g.txt
+: > /tmp/scan5g.txt
+
+if band_is_active 2g; then
+  scan2g_candidates=$(find_scan_candidates 2g)
+  run_scan "$scan2g_candidates" /tmp/scan2g.txt
+else
+  echo "===NO_RADIO===" > /tmp/scan2g.txt
+fi
+
+if band_is_active 5g; then
+  scan5g_candidates=$(find_scan_candidates 5g)
+  run_scan "$scan5g_candidates" /tmp/scan5g.txt
+else
+  echo "===NO_RADIO===" > /tmp/scan5g.txt
+fi
+
 cat /tmp/scan2g.txt
 echo "===5GHZ==="
 cat /tmp/scan5g.txt
@@ -855,7 +992,7 @@ get_radio_info() {
   local site=$1 ap=$2
   # Placeholder with the exact number of pipe-separated fields expected by the
   # read below. Used when radio parsing fails so the caller can apply defaults.
-  local empty_result='|||||||||||||||||||'
+  local empty_result='|||||||||||||||||||||'
 
   # Extract 2.4/5 GHz radio values via python3, accepting both
   # older ra0/rai0 and newer wifi0/wifi1 naming.
@@ -903,7 +1040,9 @@ try:
     txmode5       = r5.get('tx_power_mode', '')
     roam_en   = r5.get('assisted_roaming_enabled', '')
     roam_rssi = r5.get('assisted_roaming_rssi', '')
-    print(f'{ch24}|{ht24}|{tx24}|{min_tx24}|{max_tx24}|{txmode24}|{rssi24}|{min_rssi_en24}|{ch5}|{ht5}|{tx5}|{min_tx5}|{max_tx5}|{txmode5}|{rssi5}|{min_rssi_en5}|{roam_en}|{roam_rssi}|{ib24}|{ib5}')
+    dfs24     = 'true' if r24.get('has_dfs') else ''
+    dfs5      = 'true' if r5.get('has_dfs') else ''
+    print(f'{ch24}|{ht24}|{tx24}|{min_tx24}|{max_tx24}|{txmode24}|{rssi24}|{min_rssi_en24}|{ch5}|{ht5}|{tx5}|{min_tx5}|{max_tx5}|{txmode5}|{rssi5}|{min_rssi_en5}|{roam_en}|{roam_rssi}|{ib24}|{ib5}|{dfs24}|{dfs5}')
 except Exception as e:
     import sys as _sys
     print(f'WARNING: get_radio_info failed for AP "{ap_name}": {e}', file=_sys.stderr)
@@ -1433,9 +1572,6 @@ print_general_checks() {
 
     print_general_group_header "  Radio Setup:"
     print_general_check_bands "WiFi Band" "$expected_wifi_bands" "$actual_wifi_bands"
-    if wifi_band_includes "$expected_wifi_bands" "6g"; then
-      print_general_check_bool "MLO" "$expected_mlo" "$mlo"
-    fi
 
     echo
     print_general_group_header "  Roaming Assistance:"
@@ -1469,6 +1605,7 @@ print_general_checks() {
 
     echo
     print_general_group_header "  Behaviour Controls:"
+    print_general_check_bool "MLO" "$expected_mlo" "$mlo"
     print_general_check_bool "BSS Transition" "$expected_bss_transition" "$bss_transition"
     print_general_check_bool "UAPSD" "$expected_uapsd" "$uapsd"
     print_general_check_dtim_mode "$dtim_mode" "$expected_dtim_mode"
@@ -1722,12 +1859,12 @@ while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
     scan_prefix=$(ap_scan_prefix "$site" "$ap")
 
     # Get current radio info from cached UniFi device data
-    # Format: ch24|ht24|tx24|min_tx24|max_tx24|txmode24|min_rssi24|min_rssi_en24|ch5|ht5|tx5|min_tx5|max_tx5|txmode5|min_rssi5|min_rssi_en5|roam_enabled|roam_rssi|ib24|ib5
+    # Format: ch24|ht24|tx24|min_tx24|max_tx24|txmode24|min_rssi24|min_rssi_en24|ch5|ht5|tx5|min_tx5|max_tx5|txmode5|min_rssi5|min_rssi_en5|roam_enabled|roam_rssi|ib24|ib5|dfs24|dfs5
     radio_info=$(get_radio_info "$site" "$ap")
     IFS='|' read -r \
       ch24 cht24 tx24 min_tx24 max_tx24 txmode24 min_rssi24 min_rssi_en24 \
       ch5 cht5 tx5 min_tx5 max_tx5 txmode5 min_rssi5 min_rssi_en5 \
-      roam_enabled roam_rssi ib24 ib5 <<< "$radio_info"
+      roam_enabled roam_rssi ib24 ib5 dfs24 dfs5 <<< "$radio_info"
 
     # Warn if critical radio data is missing from the API
     if [[ -z "$tx24" || -z "$tx5" ]]; then
@@ -1755,197 +1892,211 @@ while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
     done
 
     # ══════════ 2.4 GHz ══════════
-    print_channel_info "2.4" "$cht24" "$ch24" "$tx24"
-
-    # Collect 2.4 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
-    _nbr_peer=(); _nbr_rssi=()
-    _sum_rssi24=0; _count_nbr24=0
-    _i=0
-    for peer in $peers; do
-      peer_prefix="${_peer_prefixes[$_i]}"
-      _i=$(( _i + 1 ))
-      rssi_to=$(get_rssi "$mac2g" "${peer_prefix}.2g")
-      if [[ -n "$rssi_to" ]]; then
-        _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
-        _sum_rssi24=$(( _sum_rssi24 + rssi_to ))
-        _count_nbr24=$(( _count_nbr24 + 1 ))
-      fi
-    done
-
-    # Compute recommendations
-    tx24_uncapped=$tx24
-    if [[ $_count_nbr24 -gt 0 ]]; then
-      avg_24=$(( _sum_rssi24 / _count_nbr24 ))
-      calculate_tx_shift "$avg_24"; shift=$_result
-      quantize "$shift"; quantized_shift=$_result
-      tx24_uncapped=$(( tx24 + quantized_shift ))
-      if (( quantized_shift == 0 )); then
-        rec_tx24=$tx24
-      else
-        cap_tx_power "$tx24_uncapped" "$min_tx24" "$max_tx24"; rec_tx24=$_result
-      fi
-      # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
-      # Prevents constant small oscillations between runs.
-      _delta24=$(( rec_tx24 - tx24 ))
-      (( _delta24 < 0 )) && _delta24=$(( -_delta24 ))
-      if (( _delta24 <= 1 && rec_tx24 != max_tx24 && rec_tx24 != min_tx24 )); then
-        rec_tx24=$tx24
-      fi
-      calculate_min_rssi_recommendation; rec_rssi24=$_result
-    fi
-
-    # Warn only when TX is already at the hardware limit and neighbors are still
-    # outside the corridor — TX power alone cannot fix the problem at that point.
-    _nbr_warn=()
-    if [[ $_count_nbr24 -gt 0 ]]; then
-      _shift_applied=$(( rec_tx24 - tx24 ))
-      if (( tx24_uncapped > max_tx24 )); then
-        for _j in "${!_nbr_peer[@]}"; do
-          _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-          (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
-        done
-      elif (( tx24_uncapped < min_tx24 )); then
-        for _j in "${!_nbr_peer[@]}"; do
-          _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-          (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
-        done
-      fi
-    fi
-
-    # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
-    print_neighbor_header
-    for _j in "${!_nbr_peer[@]}"; do
-      _starred=""
-      [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
-      print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
-    done
-
-    # Per-neighbor warnings below the table
-    _warn_lo=""; _warn_hi=""
-    for _j in "${!_nbr_peer[@]}"; do
-      case "${_nbr_warn[$_j]:-}" in
-        lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
-        hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
-      esac
-    done
-    if [[ -n "$_warn_lo" ]]; then
-      printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
-      printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
-    fi
-    if [[ -n "$_warn_hi" ]]; then
-      printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
-      printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
-    fi
-
-    if [[ $_count_nbr24 -gt 0 ]]; then
-      print_recommendations_header
-      print_rec_tx      "$rec_tx24"   "$txmode24"     "$tx24"
-      print_rec_min_rssi "$rec_rssi24" "$min_rssi_en24" "$min_rssi24"
-      if is_true "$min_rssi_en24"; then
-        print_rec_interference_blocker "$ib24"
-      fi
+    if grep -qF '===NO_RADIO===' "${scan_prefix}.2g" 2>/dev/null; then
+      echo "  2.4 GHz: band not active"
     else
-      echo
-      echo "  No neighbor data for 2.4 GHz"
+      print_channel_info "2.4" "$cht24" "$ch24" "$tx24"
+
+      # Collect 2.4 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
+      _nbr_peer=(); _nbr_rssi=()
+      _sum_rssi24=0; _count_nbr24=0
+      _i=0
+      for peer in $peers; do
+        peer_prefix="${_peer_prefixes[$_i]}"
+        _i=$(( _i + 1 ))
+        rssi_to=$(get_rssi "$mac2g" "${peer_prefix}.2g")
+        if [[ -n "$rssi_to" ]]; then
+          _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
+          _sum_rssi24=$(( _sum_rssi24 + rssi_to ))
+          _count_nbr24=$(( _count_nbr24 + 1 ))
+        fi
+      done
+
+      # Compute recommendations
+      tx24_uncapped=$tx24
+      if [[ $_count_nbr24 -gt 0 ]]; then
+        avg_24=$(( _sum_rssi24 / _count_nbr24 ))
+        calculate_tx_shift "$avg_24"; shift=$_result
+        quantize "$shift"; quantized_shift=$_result
+        tx24_uncapped=$(( tx24 + quantized_shift ))
+        if (( quantized_shift == 0 )); then
+          rec_tx24=$tx24
+        else
+          cap_tx_power "$tx24_uncapped" "$min_tx24" "$max_tx24"; rec_tx24=$_result
+        fi
+        # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
+        # Prevents constant small oscillations between runs.
+        _delta24=$(( rec_tx24 - tx24 ))
+        (( _delta24 < 0 )) && _delta24=$(( -_delta24 ))
+        if (( _delta24 <= 1 && rec_tx24 != max_tx24 && rec_tx24 != min_tx24 )); then
+          rec_tx24=$tx24
+        fi
+        calculate_min_rssi_recommendation; rec_rssi24=$_result
+      fi
+
+      # Warn only when TX is already at the hardware limit and neighbors are still
+      # outside the corridor — TX power alone cannot fix the problem at that point.
+      _nbr_warn=()
+      if [[ $_count_nbr24 -gt 0 ]]; then
+        _shift_applied=$(( rec_tx24 - tx24 ))
+        if (( tx24_uncapped > max_tx24 )); then
+          for _j in "${!_nbr_peer[@]}"; do
+            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+            (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
+          done
+        elif (( tx24_uncapped < min_tx24 )); then
+          for _j in "${!_nbr_peer[@]}"; do
+            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+            (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
+          done
+        fi
+      fi
+
+      # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
+      print_neighbor_header
+      for _j in "${!_nbr_peer[@]}"; do
+        _starred=""
+        [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
+        print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
+      done
+
+      # Per-neighbor warnings below the table
+      _warn_lo=""; _warn_hi=""
+      for _j in "${!_nbr_peer[@]}"; do
+        case "${_nbr_warn[$_j]:-}" in
+          lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
+          hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
+        esac
+      done
+      if [[ -n "$_warn_lo" ]]; then
+        printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
+        printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
+      fi
+      if [[ -n "$_warn_hi" ]]; then
+        printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
+        printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
+      fi
+
+      if [[ $_count_nbr24 -gt 0 ]]; then
+        print_recommendations_header
+        print_rec_tx      "$rec_tx24"   "$txmode24"     "$tx24"
+        print_rec_min_rssi "$rec_rssi24" "$min_rssi_en24" "$min_rssi24"
+        if is_true "$min_rssi_en24"; then
+          print_rec_interference_blocker "$ib24"
+        fi
+      else
+        echo
+        echo "  No neighbor data for 2.4 GHz"
+        if [[ "$dfs24" == "true" ]]; then
+          printf "  ${YELLOW}Note: Channel %s is a DFS channel — AP may still be in CAC. Re-run after ~60s.${RESET}\n" "$ch24"
+        fi
+      fi
     fi
 
     echo
 
     # ══════════ 5 GHz ══════════
-    print_channel_info "5" "$cht5" "$ch5" "$tx5"
-
-    # Collect 5 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
-    _nbr_peer=(); _nbr_rssi=()
-    _sum_rssi5=0; _count_nbr5=0
-    _i=0
-    for peer in $peers; do
-      peer_prefix="${_peer_prefixes[$_i]}"
-      _i=$(( _i + 1 ))
-      rssi_to=$(get_rssi "$mac5g" "${peer_prefix}.5g")
-      if [[ -n "$rssi_to" ]]; then
-        _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
-        _sum_rssi5=$(( _sum_rssi5 + rssi_to ))
-        _count_nbr5=$(( _count_nbr5 + 1 ))
-      fi
-    done
-
-    # Compute recommendations
-    tx5_uncapped=$tx5
-    if [[ $_count_nbr5 -gt 0 ]]; then
-      avg_5=$(( _sum_rssi5 / _count_nbr5 ))
-      calculate_tx_shift "$avg_5"; shift=$_result
-      quantize "$shift"; quantized_shift=$_result
-      tx5_uncapped=$(( tx5 + quantized_shift ))
-      if (( quantized_shift == 0 )); then
-        rec_tx5=$tx5
-      else
-        cap_tx_power "$tx5_uncapped" "$min_tx5" "$max_tx5"; rec_tx5=$_result
-      fi
-      # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
-      # Prevents constant small oscillations between runs.
-      _delta5=$(( rec_tx5 - tx5 ))
-      (( _delta5 < 0 )) && _delta5=$(( -_delta5 ))
-      if (( _delta5 <= 1 && rec_tx5 != max_tx5 && rec_tx5 != min_tx5 )); then
-        rec_tx5=$tx5
-      fi
-      calculate_min_rssi_recommendation; rec_rssi5=$_result
-      roam_recommended=$ROAM_TARGET
-    fi
-
-    # Warn only when TX is already at the hardware limit and neighbors are still
-    # outside the corridor — TX power alone cannot fix the problem at that point.
-    _nbr_warn=()
-    if [[ $_count_nbr5 -gt 0 ]]; then
-      _shift_applied=$(( rec_tx5 - tx5 ))
-      if (( tx5_uncapped > max_tx5 )); then
-        for _j in "${!_nbr_peer[@]}"; do
-          _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-          (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
-        done
-      elif (( tx5_uncapped < min_tx5 )); then
-        for _j in "${!_nbr_peer[@]}"; do
-          _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-          (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
-        done
-      fi
-    fi
-
-    # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
-    print_neighbor_header
-    for _j in "${!_nbr_peer[@]}"; do
-      _starred=""
-      [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
-      print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
-    done
-
-    # Per-neighbor warnings below the table
-    _warn_lo=""; _warn_hi=""
-    for _j in "${!_nbr_peer[@]}"; do
-      case "${_nbr_warn[$_j]:-}" in
-        lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
-        hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
-      esac
-    done
-    if [[ -n "$_warn_lo" ]]; then
-      printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
-      printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
-    fi
-    if [[ -n "$_warn_hi" ]]; then
-      printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
-      printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
-    fi
-
-    if [[ $_count_nbr5 -gt 0 ]]; then
-      print_recommendations_header
-      print_rec_tx      "$rec_tx5"   "$txmode5"     "$tx5"
-      print_rec_roaming "$roam_recommended" "$roam_enabled" "$roam_rssi"
-      print_rec_min_rssi "$rec_rssi5" "$min_rssi_en5" "$min_rssi5"
-      if is_true "$min_rssi_en5"; then
-        print_rec_interference_blocker "$ib5"
-      fi
+    if grep -qF '===NO_RADIO===' "${scan_prefix}.5g" 2>/dev/null; then
+      echo "  5 GHz: band not active"
     else
-      echo
-      echo "  No neighbor data for 5 GHz"
+      print_channel_info "5" "$cht5" "$ch5" "$tx5"
+
+      # Collect 5 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
+      _nbr_peer=(); _nbr_rssi=()
+      _sum_rssi5=0; _count_nbr5=0
+      _i=0
+      for peer in $peers; do
+        peer_prefix="${_peer_prefixes[$_i]}"
+        _i=$(( _i + 1 ))
+        rssi_to=$(get_rssi "$mac5g" "${peer_prefix}.5g")
+        if [[ -n "$rssi_to" ]]; then
+          _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
+          _sum_rssi5=$(( _sum_rssi5 + rssi_to ))
+          _count_nbr5=$(( _count_nbr5 + 1 ))
+        fi
+      done
+
+      # Compute recommendations
+      tx5_uncapped=$tx5
+      if [[ $_count_nbr5 -gt 0 ]]; then
+        avg_5=$(( _sum_rssi5 / _count_nbr5 ))
+        calculate_tx_shift "$avg_5"; shift=$_result
+        quantize "$shift"; quantized_shift=$_result
+        tx5_uncapped=$(( tx5 + quantized_shift ))
+        if (( quantized_shift == 0 )); then
+          rec_tx5=$tx5
+        else
+          cap_tx_power "$tx5_uncapped" "$min_tx5" "$max_tx5"; rec_tx5=$_result
+        fi
+        # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
+        # Prevents constant small oscillations between runs.
+        _delta5=$(( rec_tx5 - tx5 ))
+        (( _delta5 < 0 )) && _delta5=$(( -_delta5 ))
+        if (( _delta5 <= 1 && rec_tx5 != max_tx5 && rec_tx5 != min_tx5 )); then
+          rec_tx5=$tx5
+        fi
+        calculate_min_rssi_recommendation; rec_rssi5=$_result
+        roam_recommended=$ROAM_TARGET
+      fi
+
+      # Warn only when TX is already at the hardware limit and neighbors are still
+      # outside the corridor — TX power alone cannot fix the problem at that point.
+      _nbr_warn=()
+      if [[ $_count_nbr5 -gt 0 ]]; then
+        _shift_applied=$(( rec_tx5 - tx5 ))
+        if (( tx5_uncapped > max_tx5 )); then
+          for _j in "${!_nbr_peer[@]}"; do
+            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+            (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
+          done
+        elif (( tx5_uncapped < min_tx5 )); then
+          for _j in "${!_nbr_peer[@]}"; do
+            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+            (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
+          done
+        fi
+      fi
+
+      # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
+      print_neighbor_header
+      for _j in "${!_nbr_peer[@]}"; do
+        _starred=""
+        [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
+        print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
+      done
+
+      # Per-neighbor warnings below the table
+      _warn_lo=""; _warn_hi=""
+      for _j in "${!_nbr_peer[@]}"; do
+        case "${_nbr_warn[$_j]:-}" in
+          lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
+          hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
+        esac
+      done
+      if [[ -n "$_warn_lo" ]]; then
+        printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
+        printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
+      fi
+      if [[ -n "$_warn_hi" ]]; then
+        printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
+        printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
+      fi
+
+      if [[ $_count_nbr5 -gt 0 ]]; then
+        print_recommendations_header
+        print_rec_tx      "$rec_tx5"   "$txmode5"     "$tx5"
+        print_rec_roaming "$roam_recommended" "$roam_enabled" "$roam_rssi"
+        print_rec_min_rssi "$rec_rssi5" "$min_rssi_en5" "$min_rssi5"
+        if is_true "$min_rssi_en5"; then
+          print_rec_interference_blocker "$ib5"
+        fi
+      else
+        echo
+        echo "  No neighbor data for 5 GHz"
+        if [[ "$dfs5" == "true" ]]; then
+          printf "  ${YELLOW}Note: Channel %s is a DFS channel — AP may still be in CAC. Re-run after ~60s.${RESET}\n" "$ch5"
+        fi
+      fi
     fi
 
     echo

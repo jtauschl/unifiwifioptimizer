@@ -6,7 +6,7 @@ profiles:
   # Profile field guide:
   # - wifi_bands: expected WLAN bands (2g, 5g)
   # - security_protocols: allowed security modes for a matching WLAN
-  # - fast_roaming, bss_transition, uapsd, proxy_arp, multicast_*,
+  # - fast_roaming, mlo, bss_transition, uapsd, proxy_arp, multicast_*,
   #   pmf, hide_wifi_name, client_device_isolation, ap_name_in_beacon:
   #   controller settings compared directly against the WLAN
   # - minrate_mode: auto or manual
@@ -33,6 +33,7 @@ profiles:
     client_device_isolation: false
     sae_anti_clogging: 5
     sae_sync_time: 5
+    mlo: false
     bss_transition: true
     uapsd: false
     dtim_mode: default
@@ -55,6 +56,7 @@ profiles:
     client_device_isolation: false
     sae_anti_clogging: 5
     sae_sync_time: 5
+    mlo: false
     bss_transition: false
     uapsd: false
     dtim_mode: default
@@ -78,6 +80,7 @@ profiles:
     client_device_isolation: true
     sae_anti_clogging: 5
     sae_sync_time: 5
+    mlo: false
     bss_transition: true
     uapsd: false
     dtim_mode: default
@@ -104,6 +107,7 @@ profiles:
     client_device_isolation: false
     sae_anti_clogging: 10
     sae_sync_time: 5
+    mlo: false
     bss_transition: true
     uapsd: false
     dtim_mode: custom
@@ -132,6 +136,7 @@ profiles:
     client_device_isolation: false
     sae_anti_clogging: 10
     sae_sync_time: 5
+    mlo: false
     bss_transition: true
     uapsd: true
     dtim_mode: custom

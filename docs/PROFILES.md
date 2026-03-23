@@ -1,6 +1,6 @@
 # Profiles
 
-`profiles.yaml` defines the shipped WLAN baselines used by `UniFiWiFiOptimizer`.
+`profiles.yaml` defines the shipped WLAN baselines used by `UniFi WiFi Optimizer`.
 
 Profiles ship ready to use and can be adjusted if your environment or policy requires different WLAN settings.
 
@@ -37,6 +37,7 @@ profiles:
     client_device_isolation: false
     sae_anti_clogging: 10
     sae_sync_time: 5
+    mlo: false
     bss_transition: true
     uapsd: false
     dtim_mode: custom
@@ -49,7 +50,7 @@ profiles:
 ## Field Guide
 
 - `wifi_bands`: expected band availability
-- `fast_roaming`, `bss_transition`, `uapsd`: roaming and client behavior controls
+- `fast_roaming`, `mlo`, `bss_transition`, `uapsd`: roaming and client behavior controls
 - `minrate_mode`, `minrate_*`: minimum data rate mode and per-band values
 - `dtim_mode`, `dtim_*`: DTIM mode and per-band DTIM values
 - `group_rekey`: group rekey interval, always checked
@@ -63,7 +64,8 @@ profiles:
 - `dtim_*` is only required when `dtim_mode: custom`
 - `minrate_*` and `dtim_*` only apply to bands listed in `wifi_bands`
 - `group_rekey: 0` renders as `Disabled`
-- `Band Steering` is not evaluated through the API and is therefore not part of these profiles; set it manually in UniFi Network to match your deployment policy.
+- `mlo: false` is the shipped default for all current profiles
+- Configure `Band Steering` manually in UniFi Network to match your deployment policy.
 
 ## References
 

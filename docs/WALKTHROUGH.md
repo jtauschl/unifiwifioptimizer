@@ -1,6 +1,6 @@
 # Walkthrough
 
-This walkthrough uses a five-AP example for `UniFiWiFiOptimizer`.
+This walkthrough uses a five-AP example for `UniFi WiFi Optimizer`.
 It starts with a minimal controller-only config, then shows how to discover the site, generate a site config block, and complete the `neighbors` model.
 
 <p align="center">
@@ -32,7 +32,7 @@ In the UniFi Network Application (web UI):
 - enable `Device SSH Authentication`
 - set a device SSH password there, or keep passwordless SSH
 - if you want passwordless SSH, add your public key under `Settings` -> `System` -> `Advanced` -> `Device Authentication` -> `SSH Keys`
-- create a UniFi Network API key under `Integrations` or `Control Plane` -> `Integrations`, depending on the version; do not use the Site Manager API
+- create a UniFi Network API key under `Integrations` or `Control Plane` -> `Integrations`, depending on the version
 
 Create `config.yaml` from the minimal starter:
 
@@ -47,7 +47,7 @@ Then enter your controller URL and API key in `config.yaml`.
 List the available site IDs:
 
 ```bash
-./UniFiWiFiOptimizer --sites
+./unifiwifioptimizer --sites
 ```
 
 Example output:
@@ -60,7 +60,7 @@ Example output:
 Inspect one site:
 
 ```bash
-./UniFiWiFiOptimizer --site default
+./unifiwifioptimizer --site default
 ```
 
 Example output:
@@ -86,7 +86,7 @@ Example output:
 Generate a site-specific config skeleton:
 
 ```bash
-./UniFiWiFiOptimizer --config default >> config.yaml
+./unifiwifioptimizer --config default >> config.yaml
 ```
 
 This appends a site block to `config.yaml`. At this point, no backup is needed because `config.yaml` still only contains the controller settings from `config.minimal.yaml`.
@@ -156,7 +156,7 @@ sites:
 Run the script with the completed configuration:
 
 ```bash
-./UniFiWiFiOptimizer
+./unifiwifioptimizer
 ```
 
 The script first shows the site-level RF parameters, then checks each WLAN against its profile, and finally produces per-AP recommendations.
@@ -199,6 +199,7 @@ Profile    Throughput
   ✓ SAE Anti-clogging                10
   ✓ SAE Sync Time                    5
   Behaviour Controls:
+  ✓ MLO                              Disabled
   ✓ BSS Transition                   Enabled
   ✓ UAPSD                            Disabled
   ✓ DTIM Mode                        Custom
@@ -272,7 +273,7 @@ Recommendations:
   ✓ Minimum RSSI             Disabled
 ```
 
-The coverage warning only appears because TX power is already at the hardware maximum and cannot be increased further. `AP5` is projected below `TX_LO` (−73 dBm) even at full power.
+The coverage warning appears because TX power is at the hardware maximum. `AP5` is projected below `TX_LO` (−73 dBm) even at full power.
 
 ## Notes
 
