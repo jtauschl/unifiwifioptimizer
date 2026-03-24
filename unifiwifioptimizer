@@ -112,6 +112,28 @@ require_profiles_file() {
   fi
 }
 
+print_api_unavailable_note() {
+  printf 'NOTE: API (%s) is not available.\n' "$UNIFI_URL" >&2
+}
+
+fetch_api_json() {
+  local endpoint=$1 output_path=$2 timeout=${3:-15}
+
+  if ! curl -k -s -f --max-time "$timeout" \
+    -H "X-API-KEY: ${UNIFI_API_KEY}" \
+    -H "Accept: application/json" \
+    "${UNIFI_URL}${endpoint}" \
+    2>/dev/null > "$output_path"; then
+    print_api_unavailable_note
+    return 1
+  fi
+
+  if [[ ! -s "$output_path" ]]; then
+    print_api_unavailable_note
+    return 1
+  fi
+}
+
 load_controller_config() {
   ruby - "$CONFIG_FILE" "$tmpdir" <<'RUBY'
 require "yaml"
@@ -341,14 +363,18 @@ load_site_ssh_credentials() {
 }
 
 fetch_controller_sites() {
-  curl -k -s --max-time 10 \
-    -H "X-API-KEY: ${UNIFI_API_KEY}" \
-    -H "Accept: application/json" \
-    "${UNIFI_URL}/proxy/network/api/self/sites" \
-    2>/dev/null | python3 -c "
+  local raw_file="${tmpdir}/controller-sites.json"
+
+  fetch_api_json "/proxy/network/api/self/sites" "$raw_file" 10
+
+  if ! python3 - "$raw_file" <<'PY' > "$CONTROLLER_SITES_FILE" 2>/dev/null
 import sys, json
+
+sites_path = sys.argv[1]
+
 try:
-    d = json.load(sys.stdin)
+    with open(sites_path, 'r', encoding='utf-8') as handle:
+        d = json.load(handle)
     for site in d.get('data', []):
         fields = [
             site.get('name', ''),
@@ -358,8 +384,12 @@ try:
         ]
         print('\t'.join(str(field).replace('\t', ' ') for field in fields))
 except Exception:
-    pass
-" 2>/dev/null > "$CONTROLLER_SITES_FILE"
+    sys.exit(1)
+PY
+  then
+    print_api_unavailable_note
+    return 1
+  fi
 }
 
 validate_config_sites() {
@@ -389,24 +419,25 @@ resolve_site_id() {
 
 fetch_site_devices() {
   local site=$1
-  curl -k -s --max-time 15 \
-    -H "X-API-KEY: ${UNIFI_API_KEY}" \
-    -H "Accept: application/json" \
-    "${UNIFI_URL}/proxy/network/api/s/${site}/stat/device" \
-    2>/dev/null > "$(site_devices_json_path "$site")"
+  fetch_api_json "/proxy/network/api/s/${site}/stat/device" "$(site_devices_json_path "$site")"
 }
 
 fetch_site_wlan_info() {
   local site=$1
-  curl -k -s --max-time 15 \
-    -H "X-API-KEY: ${UNIFI_API_KEY}" \
-    -H "Accept: application/json" \
-    "${UNIFI_URL}/proxy/network/api/s/${site}/list/wlanconf" \
-    2>/dev/null | python3 -c "
+  local raw_file
+
+  raw_file="${tmpdir}/$(sanitize_token "$site").wlans.json"
+
+  fetch_api_json "/proxy/network/api/s/${site}/list/wlanconf" "$raw_file"
+
+  if ! python3 - "$raw_file" <<'PY' > "$(site_wlans_tsv_path "$site")" 2>/dev/null
 import sys, json
 
+wlans_path = sys.argv[1]
+
 try:
-    d = json.load(sys.stdin)
+    with open(wlans_path, 'r', encoding='utf-8') as handle:
+        d = json.load(handle)
     sep = '\x1f'
     for wlan in d.get('data', []):
         fields = [
@@ -444,17 +475,17 @@ try:
         ]
         print(sep.join(str(field).replace(sep, ' ') for field in fields))
 except Exception:
-    pass
-" 2>/dev/null > "$(site_wlans_tsv_path "$site")"
+    sys.exit(1)
+PY
+  then
+    print_api_unavailable_note
+    return 1
+  fi
 }
 
 fetch_site_mgmt_settings() {
   local site=$1
-  curl -k -s --max-time 15 \
-    -H "X-API-KEY: ${UNIFI_API_KEY}" \
-    -H "Accept: application/json" \
-    "${UNIFI_URL}/proxy/network/api/s/${site}/rest/setting/mgmt" \
-    2>/dev/null > "$(site_mgmt_json_path "$site")"
+  fetch_api_json "/proxy/network/api/s/${site}/rest/setting/mgmt" "$(site_mgmt_json_path "$site")"
 }
 
 count_site_access_points() {
