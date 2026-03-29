@@ -24,6 +24,8 @@ The script implements this by comparing measured neighbor RSSI against a derived
 
 The script detects scan-capable interfaces automatically via `iface_can_scan()`: on MediaTek-based APs (U6 family) it uses the dedicated managed interfaces (`apcli0`/`apclii0`); on Qualcomm-based APs (U7 family) it uses AP interfaces that advertise the `SET_SCAN_DWELL` PHY capability. Only active bands are scanned. Target BSSIDs are derived from the AP base MAC via offsets `+1` and `+2`.
 
+Each AP is scanned serially. Per band, the script can repeat `iw scan` multiple times (`SCAN_ATTEMPTS`, default `2`) and merges the results by keeping the strongest RSSI per BSSID.
+
 ## 3. Neighbor Evaluation
 
 For each neighbor relationship, the script collects:
@@ -39,21 +41,27 @@ This is the only direction affected by the current AP's TX power. From all value
 ```text
 corridor_center = TX_LO + CORRIDOR_WIDTH / 2
 shift           = corridor_center - avg_neighbor_rssi
-quantized_shift = quantize_bias_high(shift)
-recommended_tx  = clamp(current_tx + quantized_shift, radio_min_tx, radio_max_tx)
+recommended_tx  = clamp(current_tx + shift, radio_min_tx, radio_max_tx)
 ```
 
-The quantization bias favors stronger TX: positive shifts round up (ceiling), negative shifts round towards zero.
+The derived TX shift uses **ceiling rounding** before the clamp is applied. Half steps therefore prefer the next higher whole-dBm recommendation instead of rounding down.
 
 ### TX Power Hysteresis
 
-±1 dBm changes to the suggested TX power are suppressed unless the result hits a hardware boundary:
+The hysteresis is asymmetric:
+
+- increases are applied from `+1 dBm`
+- reductions are suppressed until at least `-2 dBm`
+- hardware limits still win immediately
+
+In simplified form:
 
 ```text
-if |recommended_tx - current_tx| <= 1
-   AND recommended_tx != radio_max_tx
-   AND recommended_tx != radio_min_tx:
-     recommended_tx = current_tx
+if delta_tx > 0 and delta_tx < 1 and recommended_tx != radio_max_tx:
+    recommended_tx = current_tx
+
+if delta_tx < 0 and |delta_tx| < 2 and recommended_tx != radio_min_tx:
+    recommended_tx = current_tx
 ```
 
 Roaming Assistant and Minimum RSSI are fixed values — no hysteresis.
@@ -132,7 +140,32 @@ The asymmetric 60%/40% overlap design reduces ping-pong risk:
 | Roaming Assistant | −67 dBm | Yes |
 | Minimum RSSI | `TX_LO` | Use selectively |
 
-## 8. Model Limits
+## 8. Channel Width Planning
+
+The optimizer does not currently compute a target channel width.
+
+Instead, it uses the configured adjacency graph only for two hard checks:
+
+- **2.4 GHz overcrowding**: more than three adjacent APs share only the clean channels `1 / 6 / 11`
+- **local width budget exceeded**: the currently configured widths of an AP and its direct neighbors no longer fit into the clean spectrum budget
+
+Current local spectrum budgets:
+
+- **2.4 GHz**: `60 MHz` (`3 x 20 MHz`)
+- **5 GHz**: `320 MHz` (`2 x 160 MHz`, equivalently `4 x 80 MHz`)
+
+These checks are informational guardrails. The script warns when the current layout is structurally too wide, but it does not derive a hard replacement width from that alone.
+
+## 9. Channel Overlap Check
+
+The optimizer also checks whether adjacent APs overlap spectrally even when the configured channel width itself is acceptable.
+
+- **5 GHz** uses channel center frequency plus configured width to detect overlapping occupied spectrum
+- **2.4 GHz** uses the same approach, with a small guard band so that the normal clean reuse pattern `1 / 6 / 11` stays non-overlapping while closer channels are flagged
+
+This is evaluated against the explicitly configured adjacency list, using the controller-reported channel and width of the peer APs. As a result, channel overlap warnings are independent of whether a live neighbor scan happened to return data in that run.
+
+## 10. Model Limits
 
 - uses AP-to-AP RSSI as a proxy for cell overlap
 - evaluates explicitly configured neighbor relationships

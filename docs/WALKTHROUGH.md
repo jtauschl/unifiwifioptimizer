@@ -250,7 +250,7 @@ Recommendations:
   ✓ Minimum RSSI             Disabled
 ```
 
-Here the integer-averaged neighbor RSSI (−66 dBm) is above the corridor center (−70 dBm), so the script recommends reducing TX power by 4 dBm (shift −4, quantized to −4 with `QUANTIZATION=1`).
+Here the integer-averaged neighbor RSSI (−66 dBm) is above the corridor center (−70 dBm), so the script recommends reducing TX power by 4 dBm (shift −4, applied directly in 1 dBm steps).
 
 An outer AP hitting the hardware maximum:
 

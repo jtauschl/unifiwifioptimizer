@@ -13,3 +13,4 @@ config.yaml
 AGENTS.md
 CLAUDE.md
 CODEX.md
+.local/

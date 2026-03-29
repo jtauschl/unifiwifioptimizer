@@ -56,10 +56,13 @@ CORRIDOR_WIDTH=6  # corridor width in dB
 #   <number>      x     —      —       Custom value (e.g. 3.5 → TX_LO ≈ −75)
 #
 # Conservative fallback limits if the controller does not expose per-radio
-# TX min/max values. QUANTIZATION controls recommendation step size in dBm.
+# TX min/max values. Small TX changes are suppressed by asymmetric hysteresis:
+# prefer slight extra TX over creating a coverage gap.
 TX_MIN=6
 TX_MAX=23
-QUANTIZATION=1
+HYSTERESIS_UP_DB=1
+HYSTERESIS_DOWN_DB=2
+SCAN_ATTEMPTS=2
 
 # Output colors and label widths used by the terminal report
 RED=$'\e[31m'
@@ -334,7 +337,7 @@ RUBY
 }
 
 sanitize_token() {
-  printf '%s\n' "$1" | tr -c '[:alnum:]_.-' '_'
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
 }
 
 site_devices_json_path() {
@@ -352,14 +355,19 @@ site_mgmt_json_path() {
   printf "%s/%s.mgmt.json\n" "$tmpdir" "$(sanitize_token "$site")"
 }
 
-load_site_ssh_credentials() {
+site_radio_tsv_path() {
+  local site=$1
+  printf "%s/%s.radios.tsv\n" "$tmpdir" "$(sanitize_token "$site")"
+}
+
+site_ssh_credentials() {
   local site=$1 creds
   creds=$(awk -F '\t' -v site="$site" '$1 == site { print $4 "\t" $5; exit }' "$SITES_FILE")
   if [[ -z "$creds" ]]; then
     printf 'ERROR: Could not load SSH credentials for site "%s"\n' "$site" >&2
-    exit 1
+    return 1
   fi
-  IFS=$'\t' read -r SITE_SSH_USER SITE_SSH_PASSWORD <<< "$creds"
+  printf '%s\n' "$creds"
 }
 
 fetch_controller_sites() {
@@ -521,14 +529,26 @@ build_site_inventory() {
     fetch_site_devices "$site"
     fetch_site_wlan_info "$site"
 
-    python3 - "$site" "$NEIGHBORS_FILE" "$WLANS_FILE" "$(site_devices_json_path "$site")" "$(site_wlans_tsv_path "$site")" >> "$APS_FILE" <<'PY'
+    python3 - "$site" "$NEIGHBORS_FILE" "$WLANS_FILE" "$(site_devices_json_path "$site")" "$(site_wlans_tsv_path "$site")" "$(site_radio_tsv_path "$site")" >> "$APS_FILE" <<'PY'
 import json
 import sys
 
-site_name, neighbors_path, wlans_path, devices_path, site_wlans_path = sys.argv[1:]
+site_name, neighbors_path, wlans_path, devices_path, site_wlans_path, radio_path = sys.argv[1:]
 required = set()
 required_order = []
 required_wlans = set()
+
+def pick_radio(items, names, radios):
+    for entry in items:
+        if entry.get("name") in names:
+            return entry
+    for entry in items:
+        if entry.get("radio") in radios:
+            return entry
+    return {}
+
+def sanitize_field(value):
+    return str(value).replace("\t", " ").replace("\n", " ")
 
 with open(neighbors_path, "r", encoding="utf-8") as handle:
     for line in handle:
@@ -604,13 +624,45 @@ if missing_wlans:
     sys.exit(1)
 
 not_ready = []
+radio_rows = []
 for ap_name in required_order:
     ap = aps[ap_name]
+    model = ap.get("model", "") or ap.get("shortname", "")
+    radios = ap.get("radio_table") or []
+    r24 = pick_radio(radios, ("ra0", "wifi0"), ("ng", "2g", "2.4", "2.4g"))
+    r5 = pick_radio(radios, ("rai0", "wifi1"), ("na", "6e", "5g", "5", "5.8"))
+    radio_fields = [
+        r24.get("channel", ""),
+        r24.get("ht", ""),
+        r24.get("tx_power", ""),
+        r24.get("min_txpower", ""),
+        r24.get("max_txpower", ""),
+        r24.get("tx_power_mode", ""),
+        r24.get("min_rssi", ""),
+        r24.get("min_rssi_enabled", ""),
+        r5.get("channel", ""),
+        r5.get("ht", ""),
+        r5.get("tx_power", ""),
+        r5.get("min_txpower", ""),
+        r5.get("max_txpower", ""),
+        r5.get("tx_power_mode", ""),
+        r5.get("min_rssi", ""),
+        r5.get("min_rssi_enabled", ""),
+        r5.get("assisted_roaming_enabled", ""),
+        r5.get("assisted_roaming_rssi", ""),
+        r24.get("sens_level_enabled", "") or r24.get("hard_noise_floor_enabled", ""),
+        r5.get("sens_level_enabled", "") or r5.get("hard_noise_floor_enabled", ""),
+        "true" if r5.get("has_dfs") else "",
+    ]
+    radio_rows.append(
+        f"{sanitize_field(ap_name)}\t{'|'.join(sanitize_field(field) for field in radio_fields)}"
+    )
+
     ip = ap.get("ip") or ap.get("inform_ip") or ""
     if not ip:
         not_ready.append(f"{ap_name} (missing IP)")
         continue
-    print("\t".join([site_name, ap_name, ap.get("mac", ""), ip]))
+    print("\t".join([site_name, ap_name, ap.get("mac", ""), ip, sanitize_field(model)]))
 
 if not_ready:
     sys.stderr.write(
@@ -620,6 +672,10 @@ if not_ready:
         "Wait until they are online in UniFi Network, then run the script again.\n"
     )
     sys.exit(1)
+
+with open(radio_path, "w", encoding="utf-8") as handle:
+    for row in radio_rows:
+        handle.write(row + "\n")
 PY
   done < "$SITES_FILE"
 }
@@ -810,8 +866,95 @@ PY
 ssh_scan_ap() {
   local host="$1"
   local ssh_password="${2:-}"
+  local scan_attempts="${SCAN_ATTEMPTS:-1}"
   local scan_script
   read -r -d '' scan_script <<'SCAN' || true
+cache_dir="/tmp/unifiwifioptimizer_scan.$$"
+mkdir -p "$cache_dir" 2>/dev/null || cache_dir="/tmp"
+
+cleanup_scan_cache() {
+  rm -rf "$cache_dir" 2>/dev/null
+}
+
+trap cleanup_scan_cache EXIT
+
+sanitize_iface_token() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+iw_dev_dump_path() {
+  printf '%s/iw_dev.txt\n' "$cache_dir"
+}
+
+ensure_iw_dev_dump() {
+  _path=$(iw_dev_dump_path)
+  if [ ! -f "$_path" ]; then
+    iw dev > "$_path" 2>/dev/null || : > "$_path"
+  fi
+  printf '%s\n' "$_path"
+}
+
+iface_info_path() {
+  printf '%s/iface_%s.info\n' "$cache_dir" "$(sanitize_iface_token "$1")"
+}
+
+ensure_iface_info() {
+  _path=$(iface_info_path "$1")
+  if [ ! -f "$_path" ]; then
+    iw dev "$1" info > "$_path" 2>/dev/null || : > "$_path"
+  fi
+  printf '%s\n' "$_path"
+}
+
+phy_info_path() {
+  printf '%s/phy_%s.info\n' "$cache_dir" "$1"
+}
+
+ensure_phy_info() {
+  _path=$(phy_info_path "$1")
+  if [ ! -f "$_path" ]; then
+    iw phy "phy$1" info > "$_path" 2>/dev/null || : > "$_path"
+  fi
+  printf '%s\n' "$_path"
+}
+
+list_ifaces() {
+  _path=$(ensure_iw_dev_dump)
+  awk '/Interface/{print $2}' "$_path"
+}
+
+iface_type() {
+  _path=$(ensure_iface_info "$1")
+  awk '/type/{print $2; exit}' "$_path"
+}
+
+iface_wiphy() {
+  _path=$(ensure_iface_info "$1")
+  awk '/wiphy/{print $2; exit}' "$_path"
+}
+
+iface_freq() {
+  _path=$(ensure_iface_info "$1")
+  awk '/channel/ { gsub(/[()]/,"",$3); f=$3+0; if (f>0) print f; exit }' "$_path"
+}
+
+iface_exists() {
+  _path=$(ensure_iface_info "$1")
+  [ -s "$_path" ]
+}
+
+phy_has_set_scan_dwell() {
+  wiphy=$(iface_wiphy "$1")
+  [ -n "$wiphy" ] || return 1
+  _path=$(ensure_phy_info "$wiphy")
+  grep -q "SET_SCAN_DWELL" "$_path"
+}
+
+phy_supports_5g() {
+  _path=$(ensure_phy_info "$1")
+  awk '/\* [0-9]+ MHz/{f=$2+0; if(f>=5000&&f<5900){found=1}} END{print found+0}' "$_path"
+}
+
 # Return 0 if the interface is safe to use for scanning.
 # - managed: always safe (dedicated scan interfaces like apcli0/apclii0)
 # - AP: safe only if the underlying PHY advertises SET_SCAN_DWELL (Qualcomm),
@@ -819,13 +962,10 @@ ssh_scan_ap() {
 # - monitor and others: skip (don't touch vendor-internal interfaces like pd99)
 iface_can_scan() {
   iface="$1"
-  type=$(iw dev "$iface" info 2>/dev/null | awk '/type/{print $2}')
+  type=$(iface_type "$iface")
   case "$type" in
     managed) return 0 ;;
-    AP)
-      wiphy=$(iw dev "$iface" info 2>/dev/null | awk '/wiphy/{print $2}')
-      iw phy "phy${wiphy}" info 2>/dev/null | grep -q "SET_SCAN_DWELL"
-      ;;
+    AP) phy_has_set_scan_dwell "$iface" ;;
     *) return 1 ;;
   esac
 }
@@ -843,9 +983,8 @@ find_scan_candidates() {
   esac
 
   discovered=""
-  for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do
-    freq=$(iw dev "$iface" info 2>/dev/null \
-      | awk '/channel/ { gsub(/[()]/,"",$3); f=$3+0; if (f>0) print f; exit }')
+  for iface in $(list_ifaces); do
+    freq=$(iface_freq "$iface")
     if [ -n "$freq" ] && [ "$freq" -ge "$freq_min" ] && [ "$freq" -lt "$freq_max" ]; then
       case " $static " in
         *" $iface "*) ;;
@@ -861,12 +1000,16 @@ run_scan() {
   candidates="$1"
   outfile="$2"
   iface=""
-  scan_output=""
+  attempts="${SCAN_ATTEMPTS:-1}"
+
+  case "$attempts" in
+    ''|*[!0-9]*|0) attempts=1 ;;
+  esac
 
   : > "$outfile"
 
   for iface in $candidates; do
-    if ! iw dev "$iface" info >/dev/null 2>&1; then
+    if ! iface_exists "$iface"; then
       continue
     fi
     if ! iface_can_scan "$iface"; then
@@ -881,17 +1024,65 @@ run_scan() {
       sleep 1
     fi
 
-    scan_output=$(iw dev "$iface" scan 2>/dev/null | grep -E 'BSS|signal|SSID' || true)
+    combined_output=""
+    attempt=1
+    while [ "$attempt" -le "$attempts" ]; do
+      scan_output=$(iw dev "$iface" scan 2>/dev/null | grep -E 'BSS|signal|SSID' || true)
+      if [ -n "$scan_output" ]; then
+        combined_output="${combined_output}${combined_output:+
+}${scan_output}"
+      fi
+      [ "$attempt" -lt "$attempts" ] && sleep 1
+      attempt=$((attempt + 1))
+    done
 
     if [ "$was_up" = "0" ]; then
       ifconfig "$iface" down 2>/dev/null
     fi
 
-    if [ -n "$scan_output" ]; then
-      printf '%s\n' "$scan_output" > "$outfile"
+    if [ -n "$combined_output" ]; then
+      printf '%s\n' "$combined_output" > "$outfile"
       return 0
     fi
   done
+}
+
+# U6 devices expose reliable 5 GHz DFS/CAC progress via MediaTek kernel log
+# messages. Newer platforms do not log the state as consistently, so report
+# "unknown" unless the classic U6 5 GHz interface layout is present on the AP.
+u6_dfs_cac_state_5g() {
+  if ! iface_exists rai0 && ! iface_exists apclii0; then
+    echo "unknown"
+    return 0
+  fi
+
+  last_event=$(
+    (logread 2>/dev/null || dmesg 2>/dev/null) \
+      | grep -E '\[DfsCacEndUpdate\]\[RDM\] CAC end\. Enable MAC TX\.|\[DfsCacNormalStart\]\[RDM\] CAC [0-9]+ seconds start \. Disable MAC TX|\[DfsCacNormalStart\]\[RDM\] Normal start\. Enable MAC TX' \
+      | tail -n 1
+  )
+
+  if [ -z "$last_event" ]; then
+    echo "unknown"
+  elif printf '%s\n' "$last_event" | grep -q 'Disable MAC TX'; then
+    echo "active"
+  else
+    echo "ready"
+  fi
+}
+
+get_device_model_name() {
+  model=$(
+    awk -F '=' '/^board\.name=/{print substr($0, index($0, "=") + 1); exit}' /etc/board.info 2>/dev/null
+  )
+
+  if [ -z "$model" ]; then
+    model=$(
+      awk -F '=' '/^name=/{print substr($0, index($0, "=") + 1); exit}' /proc/ubnthal/system.info 2>/dev/null
+    )
+  fi
+
+  printf '%s\n' "$model" | tr '\t\r\n' '   ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//'
 }
 
 # Return 0 if the band has at least one UP AP interface actively serving clients.
@@ -905,27 +1096,25 @@ band_is_active() {
     *) return 1 ;;
   esac
   has_any=0
-  for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do
+  for iface in $(list_ifaces); do
     has_any=1
-    type=$(iw dev "$iface" info 2>/dev/null | awk '/type/{print $2}')
+    type=$(iface_type "$iface")
     [ "$type" = "AP" ] || continue
-    ifconfig "$iface" 2>/dev/null | grep -q "UP" || continue
-    freq=$(iw dev "$iface" info 2>/dev/null \
-      | awk '/channel/ { gsub(/[()]/,"",$3); f=$3+0; if (f>0) print f; exit }')
+    freq=$(iface_freq "$iface")
     if [ -n "$freq" ]; then
       # Frequency available (newer firmware / Qualcomm) — check directly
       if [ "$freq" -ge "$freq_min" ] && [ "$freq" -lt "$freq_max" ]; then
         return 0
       fi
     else
+      ifconfig "$iface" 2>/dev/null | grep -q "UP" || continue
       # No frequency in iw dev info (older MediaTek firmware does not report
       # the current channel via nl80211). Fall back to PHY capabilities:
       # a PHY that lists 5 GHz frequencies is the 5G radio; one that doesn't
       # is the 2.4G radio.
-      wiphy=$(iw dev "$iface" info 2>/dev/null | awk '/wiphy/{print $2}')
+      wiphy=$(iface_wiphy "$iface")
       [ -n "$wiphy" ] || continue
-      phy_has_5g=$(iw phy "phy${wiphy}" info 2>/dev/null \
-        | awk '/\* [0-9]+ MHz/{f=$2+0; if(f>=5000&&f<5900){found=1}} END{print found+0}')
+      phy_has_5g=$(phy_supports_5g "$wiphy")
       case "$band" in
         2g) [ "$phy_has_5g" = "0" ] && return 0 ;;
         5g) [ "$phy_has_5g" = "1" ] && return 0 ;;
@@ -938,27 +1127,33 @@ band_is_active() {
   return 1
 }
 
-: > /tmp/scan2g.txt
-: > /tmp/scan5g.txt
+collect_band_scan() {
+  band="$1"
+  outfile="$2"
 
-if band_is_active 2g; then
-  scan2g_candidates=$(find_scan_candidates 2g)
-  run_scan "$scan2g_candidates" /tmp/scan2g.txt
-else
-  echo "===NO_RADIO===" > /tmp/scan2g.txt
-fi
+  if ! band_is_active "$band"; then
+    echo "===NO_RADIO===" > "$outfile"
+    return 0
+  fi
 
-if band_is_active 5g; then
-  scan5g_candidates=$(find_scan_candidates 5g)
-  run_scan "$scan5g_candidates" /tmp/scan5g.txt
-else
-  echo "===NO_RADIO===" > /tmp/scan5g.txt
-fi
+  scan_candidates=$(find_scan_candidates "$band")
+  run_scan "$scan_candidates" "$outfile"
+}
 
-cat /tmp/scan2g.txt
+scan2g_file="$cache_dir/scan2g.txt"
+scan5g_file="$cache_dir/scan5g.txt"
+: > "$scan2g_file"
+: > "$scan5g_file"
+
+collect_band_scan 2g "$scan2g_file"
+collect_band_scan 5g "$scan5g_file"
+
+cat "$scan2g_file"
 echo "===5GHZ==="
-cat /tmp/scan5g.txt
-rm /tmp/scan2g.txt /tmp/scan5g.txt 2>/dev/null
+cat "$scan5g_file"
+echo "===META==="
+printf 'MODEL_NAME=%s\n' "$(get_device_model_name)"
+printf 'DFS_CAC_5G=%s\n' "$(u6_dfs_cac_state_5g)"
 SCAN
 
   local ssh_opts=(
@@ -970,15 +1165,15 @@ SCAN
   )
 
   if [[ -n "$ssh_password" ]]; then
-    SSHPASS="$ssh_password" sshpass -e ssh \
+    printf 'SCAN_ATTEMPTS=%s\n%s\n' "$scan_attempts" "$scan_script" | SSHPASS="$ssh_password" sshpass -e ssh \
       -o PreferredAuthentications=password,keyboard-interactive \
       -o PubkeyAuthentication=no \
       -o KbdInteractiveAuthentication=yes \
-      "${ssh_opts[@]}" "$host" 'sh -s' <<< "$scan_script"
+      "${ssh_opts[@]}" "$host" 'sh -s'
     return
   fi
 
-  ssh "${ssh_opts[@]}" "$host" 'sh -s' <<< "$scan_script"
+  printf 'SCAN_ATTEMPTS=%s\n%s\n' "$scan_attempts" "$scan_script" | ssh "${ssh_opts[@]}" "$host" 'sh -s'
 }
 
 mac_with_offset() {
@@ -994,7 +1189,7 @@ mac_with_offset() {
 
 get_rssi() {
   local mac=$1 file=$2
-  awk -v mac="$mac" '$1 == "BSS" && index($2, mac) == 1 { getline; r = $2 + 0; if (r < 0 && r > -100) print r; exit }' "$file" 2>/dev/null
+  awk -F '\t' -v mac="$mac" '$1 == mac { print $2; exit }' "$file" 2>/dev/null
 }
 
 get_peers() {
@@ -1002,86 +1197,224 @@ get_peers() {
   awk -F '\t' -v site="$site" -v ap="$ap" '$1 == site && $2 == ap { print $3; exit }' "$NEIGHBORS_FILE" | tr ',' ' '
 }
 
+get_ap_mac() {
+  local site=$1 ap=$2
+  awk -F '\t' -v site="$site" -v ap="$ap" '$1 == site && $2 == ap { print $3; exit }' "$APS_FILE"
+}
+
+aps_are_peers() {
+  local site=$1 ap_a=$2 ap_b=$3 peer
+  for peer in $(get_peers "$site" "$ap_a"); do
+    [[ "$peer" == "$ap_b" ]] && return 0
+  done
+  for peer in $(get_peers "$site" "$ap_b"); do
+    [[ "$peer" == "$ap_a" ]] && return 0
+  done
+  return 1
+}
+
+list_site_groups() {
+  local site=$1
+  python3 - "$site" "$NEIGHBORS_FILE" <<'PY'
+import sys
+
+site_name, neighbors_path = sys.argv[1:]
+groups = []
+seen = set()
+
+with open(neighbors_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        current_site, ap_name, peers = line.split("\t", 2)
+        if current_site != site_name:
+            continue
+        members = tuple(sorted({ap_name, *[peer for peer in peers.split(",") if peer]}))
+        if members not in seen:
+            seen.add(members)
+            groups.append(members)
+
+maximal = []
+for group in groups:
+    group_set = set(group)
+    if any(group_set < set(other) for other in groups):
+        continue
+    maximal.append(group)
+
+for group in maximal:
+    print(f"{' / '.join(group)}\t{','.join(group)}")
+PY
+}
+
+get_scan_meta() {
+  local key=$1 file=$2
+  awk -F '=' -v key="$key" '$1 == key { print $2; exit }' "$file" 2>/dev/null
+}
+
+scan_rssi_cache_path() {
+  local file=$1
+  printf '%s.rssi\n' "$file"
+}
+
+build_rssi_cache_file() {
+  local source_file=$1 cache_file=$2
+  python3 - "$source_file" "$cache_file" <<'PY'
+import re
+import sys
+
+source_file, cache_file = sys.argv[1:]
+with open(source_file, "r", encoding="utf-8", errors="ignore") as handle:
+    text = handle.read().split("===META===", 1)[0]
+
+mac_re = re.compile(r"^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$")
+
+def write_rows(rows):
+    with open(cache_file, "w", encoding="utf-8") as handle:
+        for mac, rssi in sorted(rows.items()):
+            handle.write(f"{mac}\t{rssi}\n")
+
+best = {}
+current_mac = ""
+for line in text.splitlines():
+    fields = line.split()
+    if len(fields) >= 2 and fields[0] == "BSS":
+        current_mac = fields[1].split("(", 1)[0].lower()
+        continue
+    if len(fields) >= 2 and fields[0] == "signal:" and current_mac:
+        try:
+            rssi = int(float(fields[1]))
+        except ValueError:
+            current_mac = ""
+            continue
+        if mac_re.match(current_mac) and -100 < rssi < 0:
+            if current_mac not in best or rssi > best[current_mac]:
+                best[current_mac] = rssi
+        current_mac = ""
+
+write_rows(best)
+PY
+}
+
 # Output-variable convention: arithmetic helpers write their result to _result
 # instead of using echo + $(...) to avoid subshell forks. Callers must read
 # _result immediately after the call, e.g.: quantize "$val"; result=$_result
-
-# Round to nearest QUANTIZATION step, biased towards higher TX power:
-#   positive shift: ceiling (round up → more TX increase)
-#   negative shift: floor-towards-zero (round towards 0 → less TX reduction)
-quantize() {
-  local val=$1
-  local q=${QUANTIZATION:-3}
-  if (( val >= 0 )); then
-    _result=$(( (val + q - 1) / q * q ))
-  else
-    _result=$(( -((-val) / q * q) ))
-  fi
-}
 
 get_radio_info() {
   local site=$1 ap=$2
   # Placeholder with the exact number of pipe-separated fields expected by the
   # read below. Used when radio parsing fails so the caller can apply defaults.
-  local empty_result='|||||||||||||||||||||'
+  local empty_result='||||||||||||||||||||'
+  awk -F '\t' -v ap="$ap" -v empty_result="$empty_result" '
+    $1 == ap { print $2; found = 1; exit }
+    END { if (!found) print empty_result }
+  ' "$(site_radio_tsv_path "$site")" 2>/dev/null
+}
 
-  # Extract 2.4/5 GHz radio values via python3, accepting both
-  # older ra0/rai0 and newer wifi0/wifi1 naming.
-  local result
-  result=$(python3 - "$ap" "$(site_devices_json_path "$site")" "$empty_result" <<'PY'
-import sys, json
+channel_center_freq_mhz() {
+  local band_key=$1 channel=$2
 
-def pick_radio(items, names, radios):
-    for entry in items:
-        if entry.get('name') in names:
-            return entry
-    for entry in items:
-        if entry.get('radio') in radios:
-            return entry
-    return {}
+  [[ "$channel" =~ ^[0-9]+$ ]] || return 1
 
-ap_name, devices_path, empty_result = sys.argv[1:]
+  case "$band_key" in
+    2g) _result=$(( 2407 + channel * 5 )) ;;
+    5g) _result=$(( 5000 + channel * 5 )) ;;
+    *) return 1 ;;
+  esac
+}
 
-try:
-    with open(devices_path, 'r', encoding='utf-8') as handle:
-        data = json.load(handle).get('data', [])
-    device = next((item for item in data if item.get('type') == 'uap' and item.get('name') == ap_name), None)
-    if device is None:
-        raise RuntimeError(f'AP not found: {ap_name}')
-    radios = device['radio_table']
-    r24 = pick_radio(radios, ('ra0', 'wifi0'), ('ng', '2g', '2.4', '2.4g'))
-    r5  = pick_radio(radios, ('rai0', 'wifi1'), ('na', '6e', '5g', '5', '5.8'))
-    ch24      = r24.get('channel', '')
-    ht24      = r24.get('ht', '')
-    tx24      = r24.get('tx_power', '')
-    min_tx24  = r24.get('min_txpower', '')
-    max_tx24  = r24.get('max_txpower', '')
-    rssi24    = r24.get('min_rssi', '')
-    min_rssi_en24 = r24.get('min_rssi_enabled', '')
-    ib24          = r24.get('sens_level_enabled', '') or r24.get('hard_noise_floor_enabled', '')
-    txmode24      = r24.get('tx_power_mode', '')
-    ch5           = r5.get('channel', '')
-    ht5           = r5.get('ht', '')
-    tx5           = r5.get('tx_power', '')
-    min_tx5       = r5.get('min_txpower', '')
-    max_tx5       = r5.get('max_txpower', '')
-    rssi5         = r5.get('min_rssi', '')
-    min_rssi_en5  = r5.get('min_rssi_enabled', '')
-    ib5           = r5.get('sens_level_enabled', '') or r5.get('hard_noise_floor_enabled', '')
-    txmode5       = r5.get('tx_power_mode', '')
-    roam_en   = r5.get('assisted_roaming_enabled', '')
-    roam_rssi = r5.get('assisted_roaming_rssi', '')
-    dfs24     = 'true' if r24.get('has_dfs') else ''
-    dfs5      = 'true' if r5.get('has_dfs') else ''
-    print(f'{ch24}|{ht24}|{tx24}|{min_tx24}|{max_tx24}|{txmode24}|{rssi24}|{min_rssi_en24}|{ch5}|{ht5}|{tx5}|{min_tx5}|{max_tx5}|{txmode5}|{rssi5}|{min_rssi_en5}|{roam_en}|{roam_rssi}|{ib24}|{ib5}|{dfs24}|{dfs5}')
-except Exception as e:
-    import sys as _sys
-    print(f'WARNING: get_radio_info failed for AP "{ap_name}": {e}', file=_sys.stderr)
-    print(empty_result)
-PY
-)
+channel_span_5g() {
+  local channel=$1 width=$2
 
-  echo "$result"
+  [[ "$channel" =~ ^[0-9]+$ ]] || return 1
+  [[ "$width" =~ ^[0-9]+$ ]] || width=20
+
+  case "$width" in
+    20)
+      _low=$channel
+      _high=$channel
+      ;;
+    40)
+      case "$channel" in
+        36|40) _low=36; _high=40 ;;
+        44|48) _low=44; _high=48 ;;
+        52|56) _low=52; _high=56 ;;
+        60|64) _low=60; _high=64 ;;
+        100|104) _low=100; _high=104 ;;
+        108|112) _low=108; _high=112 ;;
+        116|120) _low=116; _high=120 ;;
+        124|128) _low=124; _high=128 ;;
+        132|136) _low=132; _high=136 ;;
+        140|144) _low=140; _high=144 ;;
+        149|153) _low=149; _high=153 ;;
+        157|161) _low=157; _high=161 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    80)
+      case "$channel" in
+        36|40|44|48) _low=36; _high=48 ;;
+        52|56|60|64) _low=52; _high=64 ;;
+        100|104|108|112) _low=100; _high=112 ;;
+        116|120|124|128) _low=116; _high=128 ;;
+        132|136|140|144) _low=132; _high=144 ;;
+        149|153|157|161) _low=149; _high=161 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    160)
+      case "$channel" in
+        36|40|44|48|52|56|60|64) _low=36; _high=64 ;;
+        100|104|108|112|116|120|124|128) _low=100; _high=128 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+channels_overlap() {
+  local band_key=$1 channel_a=$2 width_a=$3 channel_b=$4 width_b=$5
+  local freq_a freq_b half_a half_b low_a high_a low_b high_b
+
+  [[ "$width_a" =~ ^[0-9]+$ ]] || width_a=20
+  [[ "$width_b" =~ ^[0-9]+$ ]] || width_b=20
+
+  if [[ "$band_key" == "5g" ]]; then
+    channel_span_5g "$channel_a" "$width_a" || return 1
+    low_a=$_low
+    high_a=$_high
+    channel_span_5g "$channel_b" "$width_b" || return 1
+    low_b=$_low
+    high_b=$_high
+    (( high_a >= low_b && high_b >= low_a ))
+    return
+  fi
+
+  channel_center_freq_mhz "$band_key" "$channel_a" || return 1
+  freq_a=$_result
+  channel_center_freq_mhz "$band_key" "$channel_b" || return 1
+  freq_b=$_result
+
+  case "$band_key" in
+    2g)
+      half_a=$(( width_a / 2 + 2 ))
+      half_b=$(( width_b / 2 + 2 ))
+      ;;
+    *)
+      half_a=$(( width_a / 2 ))
+      half_b=$(( width_b / 2 ))
+      ;;
+  esac
+
+  low_a=$(( freq_a - half_a ))
+  high_a=$(( freq_a + half_a ))
+  low_b=$(( freq_b - half_b ))
+  high_b=$(( freq_b + half_b ))
+
+  (( high_a > low_b && high_b > low_a ))
 }
 
 cap_tx_power() {
@@ -1099,12 +1432,20 @@ cap_tx_power() {
 #   negative = decrease TX power needed
 #
 # Target: bring the average RSSI @ Neighbor to the center of the TX corridor.
-# The caller applies quantize() and cap_tx_power() afterwards.
+# The derived TX shift uses ceiling rounding, so half steps prefer the next
+# higher whole-dBm recommendation instead of rounding down.
+# The caller applies cap_tx_power() afterwards.
 
 calculate_tx_shift() {
-  local avg=$1
+  local sum_rssi=$1 count_rssi=$2
+  local numerator
   local corridor_center=$(( TX_LO + CORRIDOR_WIDTH / 2 ))
-  _result=$(( corridor_center - avg ))
+  numerator=$(( corridor_center * count_rssi - sum_rssi ))
+  if (( numerator >= 0 )); then
+    _result=$(( (numerator + count_rssi - 1) / count_rssi ))
+  else
+    _result=$(( numerator / count_rssi ))
+  fi
 }
 
 # ============================================================================
@@ -1367,9 +1708,11 @@ print_header() {
 }
 
 print_ap_header() {
-  local ap=$1 mac=$2
+  local ap=$1 mac=$2 model=${3:-}
+  local ap_display=$ap
+  [[ -n "$model" ]] && ap_display+=" (${model})"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  printf "  ${CYAN}AP${RESET}         %s\n" "$ap"
+  printf "  ${CYAN}AP${RESET}         %s\n" "$ap_display"
   printf "  ${CYAN}MAC${RESET}        %s\n" "$mac"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
@@ -1390,6 +1733,13 @@ print_environment_header() {
   echo
 }
 
+print_group_summary_header() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '  %sAdjacency Groups%s\n' "$CYAN" "$RESET"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+}
+
 print_wlan_header() {
   local wlan_name=$1 profile_name=$2
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1405,9 +1755,11 @@ print_general_group_header() {
 }
 
 print_channel_info() {
-  local band=$1 ht=$2 channel=$3 tx=$4
+  local band=$1 ht=$2 channel=$3 tx=$4 dfs_enabled=${5:-}
+  local channel_label=$channel
+  [[ "$dfs_enabled" == "true" ]] && channel_label+=" (DFS)"
   printf "  ${CYAN}%s GHz${RESET}  (Channel Width: %s MHz, Channel: %s, TX Power: %s dBm)\n" \
-    "$band" "$ht" "$channel" "$tx"
+    "$band" "$ht" "$channel_label" "$tx"
   echo
 }
 
@@ -1739,15 +2091,381 @@ print_rec_roaming() {
   fi
 }
 
+print_rec_channel_layout() {
+  local overlapping_peers=$1
+  local label="Channel Layout"
+
+  if [[ -n "$overlapping_peers" ]]; then
+    flag_change
+    printf "  ${RED}  ✗ %-${REC_LABEL_WIDTH}s Separate from %s${RESET}\n" "$label" "$overlapping_peers"
+  else
+    printf "  ${GREEN}  ✓ %-${REC_LABEL_WIDTH}s Non-overlapping${RESET}\n" "$label"
+  fi
+}
+
 print_footer() {
   local has_changes=$1
+  local has_active_dfs_cac=${2:-false}
   if [[ "$has_changes" == "true" ]]; then
     echo
     printf "  %sAfter applying changes, please run this script again.\n" "$YELLOW"
-    printf "  Note: For DFS channels, wait until all access points have\n"
-    printf "  activated the channel before re-running.%s\n" "$RESET"
+  fi
+  if [[ "$has_active_dfs_cac" == "true" ]]; then
+    [[ "$has_changes" != "true" ]] && echo
+    printf "  %sNote: At least one 5 GHz AP is currently in DFS CAC.\n" "$YELLOW"
+    printf "  Wait until all affected access points have activated the channel\n"
+    printf "  before re-running.%s\n" "$RESET"
   fi
   echo
+}
+
+print_no_neighbor_note() {
+  local channel=$1 dfs_enabled=$2 cac_state=$3
+
+  [[ "$dfs_enabled" != "true" ]] && return 0
+
+  case "$cac_state" in
+    active)
+      printf "  ${YELLOW}Note: Channel %s is currently in DFS CAC on this AP — MAC TX is still disabled. Re-run after ~60s.${RESET}\n" "$channel"
+      ;;
+    ready)
+      printf '%s\n' "  ${YELLOW}Note: DFS CAC appears complete on this AP — missing neighbor data is more likely caused by very low TX power or limited overlap.${RESET}"
+      ;;
+    *)
+      printf "  ${YELLOW}Note: Channel %s is a DFS channel, but CAC state could not be verified on this AP.${RESET}\n" "$channel"
+      ;;
+  esac
+}
+
+print_group_issues() {
+  local site=$1
+  local section_printed=false
+  local group_label members_csv
+  local issues infos width24_total width5_total width24_headroom width5_headroom
+  local members member i j ap_a ap_b
+  local radio_info ch24 ht24 _tx24 _min_tx24 _max_tx24 _txmode24 _min_rssi24 _min_rssi_en24
+  local ch5 ht5 _tx5 _min_tx5 _max_tx5 _txmode5 _min_rssi5 _min_rssi_en5 _roam_enabled _roam_rssi _ib24 _ib5 _dfs5
+  local overlap_items missing_items peer_cache_a peer_cache_b
+  local mac_a mac_b mac_a_band mac_b_band sight_a_to_b sight_b_to_a
+  local pair_label
+
+  while IFS=$'\t' read -r group_label members_csv; do
+    [[ -z "$group_label" ]] && continue
+    issues=()
+    infos=()
+    width24_total=0
+    width5_total=0
+    width24_headroom=0
+    width5_headroom=0
+    overlap_items=()
+    missing_items=()
+    IFS=',' read -r -a members <<< "$members_csv"
+
+    for member in "${members[@]}"; do
+      radio_info=$(get_radio_info "$site" "$member")
+      IFS='|' read -r \
+        ch24 ht24 _tx24 _min_tx24 _max_tx24 _txmode24 _min_rssi24 _min_rssi_en24 \
+        ch5 ht5 _tx5 _min_tx5 _max_tx5 _txmode5 _min_rssi5 _min_rssi_en5 \
+        _roam_enabled _roam_rssi _ib24 _ib5 _dfs5 <<< "$radio_info"
+      [[ "$ht24" =~ ^[0-9]+$ ]] || ht24=20
+      [[ "$ht5" =~ ^[0-9]+$ ]] || ht5=20
+      width24_total=$(( width24_total + ht24 ))
+      width5_total=$(( width5_total + ht5 ))
+    done
+
+    (( width24_total > 60 )) && issues+=("2.4 GHz width mix ${width24_total} MHz exceeds the 60 MHz clean-spectrum budget")
+    (( width5_total > 320 )) && issues+=("5 GHz width mix ${width5_total} MHz exceeds the 320 MHz local-spectrum budget")
+
+    for ((i=0; i<${#members[@]}; i++)); do
+      for ((j=i+1; j<${#members[@]}; j++)); do
+        ap_a=${members[i]}
+        ap_b=${members[j]}
+        aps_are_peers "$site" "$ap_a" "$ap_b" || continue
+
+        radio_info=$(get_radio_info "$site" "$ap_a")
+        IFS='|' read -r \
+          ch24 ht24 _tx24 _min_tx24 _max_tx24 _txmode24 _min_rssi24 _min_rssi_en24 \
+          ch5 ht5 _tx5 _min_tx5 _max_tx5 _txmode5 _min_rssi5 _min_rssi_en5 \
+          _roam_enabled _roam_rssi _ib24 _ib5 _dfs5 <<< "$radio_info"
+        radio_info=$(get_radio_info "$site" "$ap_b")
+        IFS='|' read -r \
+          peer_ch24 peer_ht24 _peer_tx24 _peer_min_tx24 _peer_max_tx24 _peer_txmode24 _peer_min_rssi24 _peer_min_rssi_en24 \
+          peer_ch5 peer_ht5 _peer_tx5 _peer_min_tx5 _peer_max_tx5 _peer_txmode5 _peer_min_rssi5 _peer_min_rssi_en5 \
+          _peer_roam_enabled _peer_roam_rssi _peer_ib24 _peer_ib5 _peer_dfs5 <<< "$radio_info"
+
+        if channels_overlap "2g" "$ch24" "${ht24:-20}" "$peer_ch24" "${peer_ht24:-20}"; then
+          overlap_items+=("2.4 GHz ${ap_a}/${ap_b}")
+        fi
+        if channels_overlap "5g" "$ch5" "${ht5:-20}" "$peer_ch5" "${peer_ht5:-20}"; then
+          overlap_items+=("5 GHz ${ap_a}/${ap_b}")
+        fi
+
+        mac_a=$(get_ap_mac "$site" "$ap_a")
+        mac_b=$(get_ap_mac "$site" "$ap_b")
+        [[ -z "$mac_a" || -z "$mac_b" ]] && continue
+
+        mac_a_band=$(mac_with_offset "$mac_a" 1)
+        mac_b_band=$(mac_with_offset "$mac_b" 1)
+        peer_cache_a=$(scan_rssi_cache_path "$(ap_scan_prefix "$site" "$ap_a").2g")
+        peer_cache_b=$(scan_rssi_cache_path "$(ap_scan_prefix "$site" "$ap_b").2g")
+        sight_a_to_b=$(get_rssi "$mac_b_band" "$peer_cache_a")
+        sight_b_to_a=$(get_rssi "$mac_a_band" "$peer_cache_b")
+        pair_label="2.4 GHz ${ap_a}/${ap_b}"
+        if [[ -z "$sight_a_to_b" || -z "$sight_b_to_a" ]]; then
+          if [[ -z "$sight_a_to_b" && -z "$sight_b_to_a" ]]; then
+            missing_items+=("${pair_label} missing both directions")
+          elif [[ -z "$sight_a_to_b" ]]; then
+            missing_items+=("${pair_label} missing ${ap_a}->${ap_b}")
+          else
+            missing_items+=("${pair_label} missing ${ap_b}->${ap_a}")
+          fi
+        fi
+
+        mac_a_band=$(mac_with_offset "$mac_a" 2)
+        mac_b_band=$(mac_with_offset "$mac_b" 2)
+        peer_cache_a=$(scan_rssi_cache_path "$(ap_scan_prefix "$site" "$ap_a").5g")
+        peer_cache_b=$(scan_rssi_cache_path "$(ap_scan_prefix "$site" "$ap_b").5g")
+        sight_a_to_b=$(get_rssi "$mac_b_band" "$peer_cache_a")
+        sight_b_to_a=$(get_rssi "$mac_a_band" "$peer_cache_b")
+        pair_label="5 GHz ${ap_a}/${ap_b}"
+        if [[ -z "$sight_a_to_b" || -z "$sight_b_to_a" ]]; then
+          if [[ -z "$sight_a_to_b" && -z "$sight_b_to_a" ]]; then
+            missing_items+=("${pair_label} missing both directions")
+          elif [[ -z "$sight_a_to_b" ]]; then
+            missing_items+=("${pair_label} missing ${ap_a}->${ap_b}")
+          else
+            missing_items+=("${pair_label} missing ${ap_b}->${ap_a}")
+          fi
+        fi
+      done
+    done
+
+    if (( ${#overlap_items[@]} > 0 )); then
+      issues+=("overlapping adjacent channels: ${overlap_items[*]}")
+    fi
+    if (( ${#missing_items[@]} > 0 )); then
+      issues+=("missing peer sightings: ${missing_items[*]}")
+    fi
+
+    if (( ${#issues[@]} == 0 )); then
+      width24_headroom=$(( 60 - width24_total ))
+      width5_headroom=$(( 320 - width5_total ))
+      (( width24_headroom > 0 )) && infos+=("available 2.4 GHz headroom: ${width24_headroom} MHz")
+      (( width5_headroom > 0 )) && infos+=("available 5 GHz headroom: ${width5_headroom} MHz")
+    fi
+
+    if (( ${#issues[@]} == 0 && ${#infos[@]} == 0 )); then
+      continue
+    fi
+
+    if [[ "$section_printed" != "true" ]]; then
+      print_group_summary_header
+      section_printed=true
+    fi
+
+    printf '  %s%s%s\n' "$CYAN" "$group_label" "$RESET"
+    for member in "${issues[@]}"; do
+      printf '  %s! %s%s\n' "$YELLOW" "$member" "$RESET"
+    done
+    for member in "${infos[@]}"; do
+      printf '  %s· %s%s\n' "$GREEN" "$member" "$RESET"
+    done
+    echo
+  done < <(list_site_groups "$site")
+}
+
+analyze_band() {
+  local band_label=$1 band_key=$2 scan_prefix=$3 mac=$4 ht=$5 channel=$6 tx=$7 min_tx=$8 max_tx=$9
+  local txmode=${10} min_rssi=${11} min_rssi_enabled=${12} ib_enabled=${13} dfs_enabled=${14} cac_state=${15} include_roaming=${16}
+  local band_has_radio_hint=${17:-false}
+  local scan_file="${scan_prefix}.${band_key}"
+  local tx_uncapped=$tx rec_tx=$tx rec_rssi=$TX_LO roam_recommended=$ROAM_TARGET
+  local current_width peer_count=0
+  local width_budget=0 width_over_budget=false width_oversubscribed=false
+  local peer_channel peer_width overlap_warn=""
+  local _sum_rssi=0 _count_nbr=0 _i=0 _delta _shift_applied _proj
+  local shift peer peer_prefix peer_cache rssi_to _j peer_radio_info
+  local _warn_lo="" _warn_hi="" _missing_warn=""
+  local _nbr_peer=() _nbr_rssi=() _nbr_warn=()
+  local _missing_peer=()
+  local _overlap_peer=()
+
+  current_width=${ht:-20}
+
+  if grep -qF '===NO_RADIO===' "$scan_file" 2>/dev/null; then
+    if [[ "$band_has_radio_hint" != "true" ]]; then
+      echo "  ${band_label} GHz: band not active"
+      return
+    fi
+  fi
+
+  print_channel_info "$band_label" "$ht" "$channel" "$tx" "$dfs_enabled"
+
+  for peer in $peers; do
+    peer_count=$(( peer_count + 1 ))
+  done
+
+  width_budget=320
+  [[ "$band_key" == "2g" ]] && width_budget=60
+  if [[ "$band_key" == "2g" && $peer_count -gt 3 ]]; then
+    width_oversubscribed=true
+  fi
+
+  for peer in $peers; do
+    peer_radio_info=$(get_radio_info "$site" "$peer")
+    IFS='|' read -r \
+      peer_ch24 peer_ht24 _peer_tx24 _peer_min_tx24 _peer_max_tx24 _peer_txmode24 _peer_min_rssi24 _peer_min_rssi_en24 \
+      peer_ch5 peer_ht5 _peer_tx5 _peer_min_tx5 _peer_max_tx5 _peer_txmode5 _peer_min_rssi5 _peer_min_rssi_en5 \
+      _peer_roam_enabled _peer_roam_rssi _peer_ib24 _peer_ib5 _peer_dfs5 <<< "$peer_radio_info"
+    if [[ "$band_key" == "2g" ]]; then
+      peer_channel=${peer_ch24:-}
+      peer_width=${peer_ht24:-20}
+    else
+      peer_channel=${peer_ch5:-}
+      peer_width=${peer_ht5:-20}
+    fi
+    [[ "$peer_width" =~ ^[0-9]+$ ]] || peer_width=20
+    if (( current_width + peer_width > 0 )); then
+      width_budget=$(( width_budget - peer_width ))
+    fi
+    if channels_overlap "$band_key" "$channel" "$current_width" "$peer_channel" "$peer_width"; then
+      _overlap_peer+=("$peer")
+    fi
+
+    peer_prefix="${_peer_prefixes[$_i]}"
+    _i=$(( _i + 1 ))
+    peer_cache=$(scan_rssi_cache_path "${peer_prefix}.${band_key}")
+    rssi_to=$(get_rssi "$mac" "$peer_cache")
+    if [[ -n "$rssi_to" ]]; then
+      _nbr_peer+=("$peer")
+      _nbr_rssi+=("$rssi_to")
+      _sum_rssi=$(( _sum_rssi + rssi_to ))
+      _count_nbr=$(( _count_nbr + 1 ))
+    else
+      _missing_peer+=("$peer")
+    fi
+  done
+
+  if [[ $_count_nbr -gt 0 ]]; then
+    calculate_tx_shift "$_sum_rssi" "$_count_nbr"; shift=$_result
+    tx_uncapped=$(( tx + shift ))
+    if (( shift == 0 )); then
+      rec_tx=$tx
+    else
+      cap_tx_power "$tx_uncapped" "$min_tx" "$max_tx"; rec_tx=$_result
+    fi
+
+    _delta=$(( rec_tx - tx ))
+    if (( _delta > 0 )); then
+      if (( _delta < HYSTERESIS_UP_DB && rec_tx != max_tx )); then
+        rec_tx=$tx
+      fi
+    elif (( _delta < 0 )); then
+      if (( -_delta < HYSTERESIS_DOWN_DB && rec_tx != min_tx )); then
+        rec_tx=$tx
+      fi
+    fi
+
+    calculate_min_rssi_recommendation; rec_rssi=$_result
+  fi
+
+  if (( ${#_missing_peer[@]} > 0 )); then
+    if (( rec_tx <= tx )); then
+      cap_tx_power $(( tx + 1 )) "$min_tx" "$max_tx"; rec_tx=$_result
+      tx_uncapped=$rec_tx
+    fi
+  fi
+
+  if [[ $_count_nbr -gt 0 ]]; then
+    _shift_applied=$(( rec_tx - tx ))
+    if (( tx_uncapped > max_tx )); then
+      for _j in "${!_nbr_peer[@]}"; do
+        _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+        (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
+      done
+    elif (( tx_uncapped < min_tx )); then
+      for _j in "${!_nbr_peer[@]}"; do
+        _proj=$(( _nbr_rssi[_j] + _shift_applied ))
+        (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
+      done
+    fi
+  fi
+
+  print_neighbor_header
+  for _j in "${!_nbr_peer[@]}"; do
+    _starred=""
+    [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
+    print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
+  done
+
+  for _j in "${!_nbr_peer[@]}"; do
+    case "${_nbr_warn[$_j]:-}" in
+      lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
+      hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
+    esac
+  done
+
+  if [[ -n "$_warn_lo" ]]; then
+    printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
+    printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
+  fi
+  if [[ -n "$_warn_hi" ]]; then
+    printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
+    printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
+  fi
+  if (( ${#_missing_peer[@]} > 0 )); then
+    _missing_warn="${_missing_peer[*]}"
+    printf "\n  ${YELLOW}* Adjacent APs without sighting: %s${RESET}\n" "$_missing_warn"
+    printf '  %s  Reduction is blocked until all configured neighbors can see this AP.%s\n' "$YELLOW" "$RESET"
+  fi
+  if (( current_width > width_budget )); then
+    width_over_budget=true
+  fi
+  if [[ "$width_over_budget" == "true" ]]; then
+    if [[ "$band_key" == "5g" ]]; then
+      printf "\n  ${YELLOW}* Current 5 GHz width exceeds the local adjacency budget: %d MHz within %d MHz of usable spectrum.${RESET}\n" "$current_width" $(( current_width + (320 - width_budget) ))
+      printf '  %s  This adjacency group needs a narrower mix of channel widths to fit into 320 MHz.%s\n' "$YELLOW" "$RESET"
+    else
+      printf "\n  ${YELLOW}* Current 2.4 GHz width exceeds the local adjacency budget: %d MHz within %d MHz of clean spectrum.${RESET}\n" "$current_width" $(( current_width + (60 - width_budget) ))
+      printf '  %s  This adjacency group is wider than the clean 2.4 GHz spectrum allows.%s\n' "$YELLOW" "$RESET"
+    fi
+  elif [[ "$width_oversubscribed" == "true" ]]; then
+    printf "\n  ${YELLOW}* 2.4 GHz is oversubscribed: %d adjacent APs share only the clean channels 1/6/11.${RESET}\n" "$peer_count"
+    printf '  %s  Channel width cannot be reduced below 20 MHz; use TX control, AP placement or 5 GHz steering instead.%s\n' "$YELLOW" "$RESET"
+  fi
+  if (( ${#_overlap_peer[@]} > 0 )); then
+    overlap_warn="${_overlap_peer[*]}"
+    if [[ "$band_key" == "5g" ]]; then
+      printf "\n  ${YELLOW}* Channel overlap with adjacent APs: %s${RESET}\n" "$overlap_warn"
+      printf '  %s  Even with the current width, these 5 GHz channels share spectrum and should be separated if possible.%s\n' "$YELLOW" "$RESET"
+    else
+      printf "\n  ${YELLOW}* Channel overlap with adjacent APs: %s${RESET}\n" "$overlap_warn"
+      printf '  %s  In 2.4 GHz, keep adjacent APs on the clean channels 1/6/11 whenever possible.%s\n' "$YELLOW" "$RESET"
+    fi
+  fi
+
+  if [[ $_count_nbr -gt 0 ]]; then
+    print_recommendations_header
+    print_rec_channel_layout "$overlap_warn"
+    print_rec_tx "$rec_tx" "$txmode" "$tx"
+    if [[ "$include_roaming" == "true" ]]; then
+      print_rec_roaming "$roam_recommended" "$roam_enabled" "$roam_rssi"
+    fi
+    print_rec_min_rssi "$rec_rssi" "$min_rssi_enabled" "$min_rssi"
+    if is_true "$min_rssi_enabled"; then
+      print_rec_interference_blocker "$ib_enabled"
+    fi
+  else
+    echo
+    echo "  No neighbor data for ${band_label} GHz"
+    if (( ${#_overlap_peer[@]} > 0 )); then
+      print_recommendations_header
+      print_rec_channel_layout "$overlap_warn"
+    fi
+    if [[ "$band_key" == "5g" ]]; then
+      print_no_neighbor_note "$channel" "$dfs_enabled" "$cac_state"
+    fi
+  fi
 }
 
 ap_scan_prefix() {
@@ -1825,32 +2543,32 @@ SITE_COUNT=$(wc -l < "$SITES_FILE" | tr -d '[:space:]')
 echo "  Scanning access points..."
 
 current_scan_site=""
-SITE_SSH_USER=""
-SITE_SSH_PASSWORD=""
-while IFS=$'\t' read -r site ap mac ip; do
+current_site_ssh_user=""
+current_site_ssh_password=""
+while IFS=$'\t' read -r site ap mac ip _model; do
   [[ -z "$site" ]] && continue
   scan_prefix=$(ap_scan_prefix "$site" "$ap")
   scan_err_file="${scan_prefix}.err"
 
   if [[ "$site" != "$current_scan_site" ]]; then
-    load_site_ssh_credentials "$site"
+    IFS=$'\t' read -r current_site_ssh_user current_site_ssh_password <<< "$(site_ssh_credentials "$site")"
     current_scan_site="$site"
   fi
 
   echo "    Scanning ${site}/${ap}..."
-
-  if ! ssh_scan_ap "${SITE_SSH_USER}@${ip}" "$SITE_SSH_PASSWORD" > "${scan_prefix}.raw" 2> "$scan_err_file"; then
+  if ! ssh_scan_ap "${current_site_ssh_user}@${ip}" "$current_site_ssh_password" > "${scan_prefix}.raw" 2> "$scan_err_file"; then
     : > "${scan_prefix}.raw"
     if [[ -s "$scan_err_file" ]]; then
       printf "    SSH failed: %s\n" "$(tr '\n' ' ' < "$scan_err_file" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
     else
       echo "    SSH failed: no details returned"
     fi
-    continue
   fi
 
   awk '/^===5GHZ===/ { exit } { print }' "${scan_prefix}.raw" > "${scan_prefix}.2g"
   awk 'found { print } /^===5GHZ===/ { found=1 }' "${scan_prefix}.raw" > "${scan_prefix}.5g"
+  build_rssi_cache_file "${scan_prefix}.2g" "$(scan_rssi_cache_path "${scan_prefix}.2g")"
+  build_rssi_cache_file "${scan_prefix}.5g" "$(scan_rssi_cache_path "${scan_prefix}.5g")"
 done < "$APS_FILE"
 
 echo
@@ -1861,6 +2579,7 @@ echo
 # Main: Analysis & Output
 # ============================================================================
 has_changes=false
+has_active_dfs_cac=false
 
 while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
   [[ -z "$site" ]] && continue
@@ -1882,20 +2601,26 @@ while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
 
   print_general_checks "$site"
 
-  while IFS=$'\t' read -r current_site ap mac ip; do
+  while IFS=$'\t' read -r current_site ap mac ip model; do
     [[ "$current_site" != "$site" ]] && continue
     mac2g=$(mac_with_offset "$mac" 1)
     mac5g=$(mac_with_offset "$mac" 2)
     peers="$(get_peers "$site" "$ap")"
     scan_prefix=$(ap_scan_prefix "$site" "$ap")
+    hw_model=$(get_scan_meta "MODEL_NAME" "${scan_prefix}.raw")
+    cac5_state=$(get_scan_meta "DFS_CAC_5G" "${scan_prefix}.raw")
+    [[ -n "$hw_model" ]] && model=$hw_model
+    [[ "$cac5_state" == "active" ]] && has_active_dfs_cac=true
 
     # Get current radio info from cached UniFi device data
-    # Format: ch24|ht24|tx24|min_tx24|max_tx24|txmode24|min_rssi24|min_rssi_en24|ch5|ht5|tx5|min_tx5|max_tx5|txmode5|min_rssi5|min_rssi_en5|roam_enabled|roam_rssi|ib24|ib5|dfs24|dfs5
+    # Format: ch24|ht24|tx24|min_tx24|max_tx24|txmode24|min_rssi24|min_rssi_en24|ch5|ht5|tx5|min_tx5|max_tx5|txmode5|min_rssi5|min_rssi_en5|roam_enabled|roam_rssi|ib24|ib5|dfs5
     radio_info=$(get_radio_info "$site" "$ap")
     IFS='|' read -r \
       ch24 cht24 tx24 min_tx24 max_tx24 txmode24 min_rssi24 min_rssi_en24 \
       ch5 cht5 tx5 min_tx5 max_tx5 txmode5 min_rssi5 min_rssi_en5 \
-      roam_enabled roam_rssi ib24 ib5 dfs24 dfs5 <<< "$radio_info"
+      roam_enabled roam_rssi ib24 ib5 dfs5 <<< "$radio_info"
+    has_radio24_api=false; [[ -n "${ch24}${cht24}${tx24}" ]] && has_radio24_api=true
+    has_radio5_api=false; [[ -n "${ch5}${cht5}${tx5}" ]] && has_radio5_api=true
 
     # Warn if critical radio data is missing from the API
     if [[ -z "$tx24" || -z "$tx5" ]]; then
@@ -1914,7 +2639,7 @@ while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
     roam_enabled=${roam_enabled:-false}; roam_rssi=${roam_rssi:-}
     ib24=${ib24:-false}; ib5=${ib5:-false}
 
-    print_ap_header "$ap" "$mac"
+    print_ap_header "$ap" "$mac" "$model"
 
     # Pre-compute peer scan prefixes once (reused for both band loops)
     _peer_prefixes=()
@@ -1922,218 +2647,22 @@ while IFS=$'\t' read -r site n env_label _ssh_user _ssh_password; do
       _peer_prefixes+=("$(ap_scan_prefix "$site" "$peer")")
     done
 
-    # ══════════ 2.4 GHz ══════════
-    if grep -qF '===NO_RADIO===' "${scan_prefix}.2g" 2>/dev/null; then
-      echo "  2.4 GHz: band not active"
-    else
-      print_channel_info "2.4" "$cht24" "$ch24" "$tx24"
-
-      # Collect 2.4 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
-      _nbr_peer=(); _nbr_rssi=()
-      _sum_rssi24=0; _count_nbr24=0
-      _i=0
-      for peer in $peers; do
-        peer_prefix="${_peer_prefixes[$_i]}"
-        _i=$(( _i + 1 ))
-        rssi_to=$(get_rssi "$mac2g" "${peer_prefix}.2g")
-        if [[ -n "$rssi_to" ]]; then
-          _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
-          _sum_rssi24=$(( _sum_rssi24 + rssi_to ))
-          _count_nbr24=$(( _count_nbr24 + 1 ))
-        fi
-      done
-
-      # Compute recommendations
-      tx24_uncapped=$tx24
-      if [[ $_count_nbr24 -gt 0 ]]; then
-        avg_24=$(( _sum_rssi24 / _count_nbr24 ))
-        calculate_tx_shift "$avg_24"; shift=$_result
-        quantize "$shift"; quantized_shift=$_result
-        tx24_uncapped=$(( tx24 + quantized_shift ))
-        if (( quantized_shift == 0 )); then
-          rec_tx24=$tx24
-        else
-          cap_tx_power "$tx24_uncapped" "$min_tx24" "$max_tx24"; rec_tx24=$_result
-        fi
-        # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
-        # Prevents constant small oscillations between runs.
-        _delta24=$(( rec_tx24 - tx24 ))
-        (( _delta24 < 0 )) && _delta24=$(( -_delta24 ))
-        if (( _delta24 <= 1 && rec_tx24 != max_tx24 && rec_tx24 != min_tx24 )); then
-          rec_tx24=$tx24
-        fi
-        calculate_min_rssi_recommendation; rec_rssi24=$_result
-      fi
-
-      # Warn only when TX is already at the hardware limit and neighbors are still
-      # outside the corridor — TX power alone cannot fix the problem at that point.
-      _nbr_warn=()
-      if [[ $_count_nbr24 -gt 0 ]]; then
-        _shift_applied=$(( rec_tx24 - tx24 ))
-        if (( tx24_uncapped > max_tx24 )); then
-          for _j in "${!_nbr_peer[@]}"; do
-            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-            (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
-          done
-        elif (( tx24_uncapped < min_tx24 )); then
-          for _j in "${!_nbr_peer[@]}"; do
-            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-            (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
-          done
-        fi
-      fi
-
-      # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
-      print_neighbor_header
-      for _j in "${!_nbr_peer[@]}"; do
-        _starred=""
-        [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
-        print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
-      done
-
-      # Per-neighbor warnings below the table
-      _warn_lo=""; _warn_hi=""
-      for _j in "${!_nbr_peer[@]}"; do
-        case "${_nbr_warn[$_j]:-}" in
-          lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
-          hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
-        esac
-      done
-      if [[ -n "$_warn_lo" ]]; then
-        printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
-        printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
-      fi
-      if [[ -n "$_warn_hi" ]]; then
-        printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
-        printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
-      fi
-
-      if [[ $_count_nbr24 -gt 0 ]]; then
-        print_recommendations_header
-        print_rec_tx      "$rec_tx24"   "$txmode24"     "$tx24"
-        print_rec_min_rssi "$rec_rssi24" "$min_rssi_en24" "$min_rssi24"
-        if is_true "$min_rssi_en24"; then
-          print_rec_interference_blocker "$ib24"
-        fi
-      else
-        echo
-        echo "  No neighbor data for 2.4 GHz"
-        if [[ "$dfs24" == "true" ]]; then
-          printf "  ${YELLOW}Note: Channel %s is a DFS channel — AP may still be in CAC. Re-run after ~60s.${RESET}\n" "$ch24"
-        fi
-      fi
-    fi
+    analyze_band "2.4" "2g" "$scan_prefix" "$mac2g" "$cht24" "$ch24" "$tx24" \
+      "$min_tx24" "$max_tx24" "$txmode24" "$min_rssi24" "$min_rssi_en24" "$ib24" \
+      "" "" "false" "$has_radio24_api"
 
     echo
 
-    # ══════════ 5 GHz ══════════
-    if grep -qF '===NO_RADIO===' "${scan_prefix}.5g" 2>/dev/null; then
-      echo "  5 GHz: band not active"
-    else
-      print_channel_info "5" "$cht5" "$ch5" "$tx5"
-
-      # Collect 5 GHz neighbor data (rssi_to = signal from this AP received at neighbor)
-      _nbr_peer=(); _nbr_rssi=()
-      _sum_rssi5=0; _count_nbr5=0
-      _i=0
-      for peer in $peers; do
-        peer_prefix="${_peer_prefixes[$_i]}"
-        _i=$(( _i + 1 ))
-        rssi_to=$(get_rssi "$mac5g" "${peer_prefix}.5g")
-        if [[ -n "$rssi_to" ]]; then
-          _nbr_peer+=("$peer"); _nbr_rssi+=("$rssi_to")
-          _sum_rssi5=$(( _sum_rssi5 + rssi_to ))
-          _count_nbr5=$(( _count_nbr5 + 1 ))
-        fi
-      done
-
-      # Compute recommendations
-      tx5_uncapped=$tx5
-      if [[ $_count_nbr5 -gt 0 ]]; then
-        avg_5=$(( _sum_rssi5 / _count_nbr5 ))
-        calculate_tx_shift "$avg_5"; shift=$_result
-        quantize "$shift"; quantized_shift=$_result
-        tx5_uncapped=$(( tx5 + quantized_shift ))
-        if (( quantized_shift == 0 )); then
-          rec_tx5=$tx5
-        else
-          cap_tx_power "$tx5_uncapped" "$min_tx5" "$max_tx5"; rec_tx5=$_result
-        fi
-        # Hysteresis: suppress ±1 dBm changes unless the result hits a hardware limit.
-        # Prevents constant small oscillations between runs.
-        _delta5=$(( rec_tx5 - tx5 ))
-        (( _delta5 < 0 )) && _delta5=$(( -_delta5 ))
-        if (( _delta5 <= 1 && rec_tx5 != max_tx5 && rec_tx5 != min_tx5 )); then
-          rec_tx5=$tx5
-        fi
-        calculate_min_rssi_recommendation; rec_rssi5=$_result
-        roam_recommended=$ROAM_TARGET
-      fi
-
-      # Warn only when TX is already at the hardware limit and neighbors are still
-      # outside the corridor — TX power alone cannot fix the problem at that point.
-      _nbr_warn=()
-      if [[ $_count_nbr5 -gt 0 ]]; then
-        _shift_applied=$(( rec_tx5 - tx5 ))
-        if (( tx5_uncapped > max_tx5 )); then
-          for _j in "${!_nbr_peer[@]}"; do
-            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-            (( _proj < TX_LO )) && _nbr_warn[_j]="lo"
-          done
-        elif (( tx5_uncapped < min_tx5 )); then
-          for _j in "${!_nbr_peer[@]}"; do
-            _proj=$(( _nbr_rssi[_j] + _shift_applied ))
-            (( _proj > TX_HI )) && _nbr_warn[_j]="hi"
-          done
-        fi
-      fi
-
-      # Print neighbor table; star marks neighbors still outside the corridor after rec_tx
-      print_neighbor_header
-      for _j in "${!_nbr_peer[@]}"; do
-        _starred=""
-        [[ "${_nbr_warn[$_j]:-}" != "" ]] && _starred="*"
-        print_neighbor_row "${_nbr_peer[$_j]}" "${_nbr_rssi[$_j]}" "$_starred"
-      done
-
-      # Per-neighbor warnings below the table
-      _warn_lo=""; _warn_hi=""
-      for _j in "${!_nbr_peer[@]}"; do
-        case "${_nbr_warn[$_j]:-}" in
-          lo) _warn_lo+="${_nbr_peer[$_j]} " ;;
-          hi) _warn_hi+="${_nbr_peer[$_j]} " ;;
-        esac
-      done
-      if [[ -n "$_warn_lo" ]]; then
-        printf "\n  ${YELLOW}* Coverage gap – signal too weak at: %s${RESET}\n" "${_warn_lo% }"
-        printf '  %s  Consider repositioning this AP or adding a neighbor AP.%s\n' "$YELLOW" "$RESET"
-      fi
-      if [[ -n "$_warn_hi" ]]; then
-        printf "\n  ${YELLOW}* Excess overlap – signal too strong at: %s${RESET}\n" "${_warn_hi% }"
-        printf '  %s  Consider repositioning or removing this AP.%s\n' "$YELLOW" "$RESET"
-      fi
-
-      if [[ $_count_nbr5 -gt 0 ]]; then
-        print_recommendations_header
-        print_rec_tx      "$rec_tx5"   "$txmode5"     "$tx5"
-        print_rec_roaming "$roam_recommended" "$roam_enabled" "$roam_rssi"
-        print_rec_min_rssi "$rec_rssi5" "$min_rssi_en5" "$min_rssi5"
-        if is_true "$min_rssi_en5"; then
-          print_rec_interference_blocker "$ib5"
-        fi
-      else
-        echo
-        echo "  No neighbor data for 5 GHz"
-        if [[ "$dfs5" == "true" ]]; then
-          printf "  ${YELLOW}Note: Channel %s is a DFS channel — AP may still be in CAC. Re-run after ~60s.${RESET}\n" "$ch5"
-        fi
-      fi
-    fi
+    analyze_band "5" "5g" "$scan_prefix" "$mac5g" "$cht5" "$ch5" "$tx5" \
+      "$min_tx5" "$max_tx5" "$txmode5" "$min_rssi5" "$min_rssi_en5" "$ib5" \
+      "$dfs5" "$cac5_state" "true" "$has_radio5_api"
 
     echo
   done < "$APS_FILE"
+
+  print_group_issues "$site"
 done < "$SITES_FILE"
 
-print_footer "$has_changes"
+print_footer "$has_changes" "$has_active_dfs_cac"
 
 exit 0
