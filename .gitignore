@@ -11,6 +11,4 @@ config.yaml
 .vscode/
 .mcp.json
 AGENTS.md
-CLAUDE.md
-CODEX.md
 .local/
