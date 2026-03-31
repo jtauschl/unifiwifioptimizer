@@ -122,6 +122,7 @@ Each site report provides the values you use as the basis for your UniFi WLAN an
 - **Environment**: the site-wide RF target corridor derived from the configured environment
 - **WLAN**: per-SSID profile checks that show which settings already match and which should be corrected
 - **Access Points**: neighbor RSSI, overlap or coverage issues, and per-radio recommendations for transmit power, roaming, and minimum RSSI
+- **Adjacency Groups**: group-level channel diagnostics — channel width budget (2.4 GHz: 60 MHz / 5 GHz: 320 MHz), spectral overlap between adjacent APs, and missing peer sightings
 
 Apply the relevant changes in UniFi Network, run the tool again, and use the updated output to iteratively converge on a better result.
 
