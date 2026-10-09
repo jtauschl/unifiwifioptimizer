@@ -51,7 +51,7 @@ JSON_ALLOWED = frozenset({"adapters/unifi/client.py"})
 SSL_ALLOWED = frozenset({"adapters/unifi/tls.py"})
 TLS_BYPASS_ALLOWED = ("adapters/unifi/tls.py", "PinnedHTTPSConnection", "__init__")
 
-DYNAMIC_IMPORTS = frozenset({"__import__", "importlib.import_module", "importlib.__import__"})
+DYNAMIC_IMPORTS = frozenset({"__import__", "builtins.__import__", "importlib.import_module", "importlib.__import__"})
 SHELL_CALLS = frozenset(
     {
         "eval",
@@ -69,8 +69,19 @@ SHELL_CALLS = frozenset(
 SHELL_CALL_PREFIXES = ("os.exec", "os.spawn", "os.posix_spawn")
 # Event-loop spawn methods; the loop's type is not statically resolvable, so the attribute name alone counts.
 LOOP_SPAWN_ATTRIBUTES = frozenset({"subprocess_exec", "subprocess_shell"})
-PROCESS_SPAWN_PREFIXES = ("subprocess.", "asyncio.create_subprocess", "asyncio.subprocess.")
+PROCESS_SPAWN_PREFIXES = (
+    "subprocess.",
+    "asyncio.create_subprocess",
+    "asyncio.subprocess.",
+    "multiprocessing.",
+    "concurrent.futures.process.",
+)
 PROCESS_SPAWN_ROOTS = frozenset({"subprocess", "asyncio"})
+# Process creation that bypasses subprocess entirely; none of it has a place in this tool.
+PROCESS_CREATION_NAMES = frozenset(
+    {"os.fork", "os.forkpty", "pty.fork", "concurrent.futures.ProcessPoolExecutor", "os.posix_spawn", "os.posix_spawnp"}
+)
+PROCESS_MODULES = frozenset({"subprocess", "multiprocessing"})
 # `env` counts as an interpreter: a local spawn passes its environment via `env=`, never through env(1).
 SHELL_INTERPRETERS = frozenset(
     {"sh", "ash", "bash", "dash", "zsh", "ksh", "mksh", "csh", "tcsh", "fish", "busybox", "env"}
@@ -133,19 +144,28 @@ def absolute_module(node: ast.ImportFrom, relpath: str) -> str:
     return ".".join([*base, node.module] if node.module else base)
 
 
-def aliases_of(tree: ast.Module, relpath: str) -> dict[str, str]:
-    """Local name → fully qualified origin for every import in the module."""
-    aliases: dict[str, str] = {}
+Aliases = dict[str, frozenset[str]]
+
+
+def aliases_of(tree: ast.Module, relpath: str) -> Aliases:
+    """Local name → every origin it is bound to anywhere in the module.
+
+    Scopes are deliberately ignored: a name bound to two origins (a module-level `import subprocess as sp`
+    and a function-local `import math as sp`) resolves to both, so a checker sees the dangerous one no
+    matter which binding is in effect at the use site.
+    """
+    aliases: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 local = alias.asname or alias.name.split(".")[0]
-                aliases[local] = alias.name if alias.asname else alias.name.split(".")[0]
+                aliases.setdefault(local, set()).add(alias.name if alias.asname else alias.name.split(".")[0])
         elif isinstance(node, ast.ImportFrom):
             module = absolute_module(node, relpath)
             for alias in node.names:
-                aliases[alias.asname or alias.name] = f"{module}.{alias.name}" if module else alias.name
-    return aliases
+                origin = f"{module}.{alias.name}" if module else alias.name
+                aliases.setdefault(alias.asname or alias.name, set()).add(origin)
+    return {name: frozenset(origins) for name, origins in aliases.items()}
 
 
 def imported_modules(tree: ast.Module, relpath: str) -> Iterator[tuple[str, list[str]]]:
@@ -158,8 +178,8 @@ def imported_modules(tree: ast.Module, relpath: str) -> Iterator[tuple[str, list
             yield absolute_module(node, relpath), [alias.name for alias in node.names]
 
 
-def qualified_name(node: ast.expr, aliases: dict[str, str], *, through_calls: bool = True) -> str:
-    """Dotted origin of a name/attribute chain, e.g. `s.CERT_NONE` → `ssl.CERT_NONE`.
+def qualified_names(node: ast.expr, aliases: Aliases, *, through_calls: bool = True) -> frozenset[str]:
+    """Every dotted origin a name/attribute chain may denote, e.g. `s.CERT_NONE` → {`ssl.CERT_NONE`}.
 
     With `through_calls` the chain continues into a call's callee (`ssl.SSLContext().x` → `ssl.SSLContext.x`);
     without it a call ends the chain, so an attribute of a call's result is not attributed to the callee.
@@ -170,21 +190,21 @@ def qualified_name(node: ast.expr, aliases: dict[str, str], *, through_calls: bo
         node = node.value
     if isinstance(node, ast.Call):
         if not through_calls:
-            return ""
+            return frozenset()
         node = node.func
         while isinstance(node, ast.Attribute):
             parts.append(node.attr)
             node = node.value
     if not isinstance(node, ast.Name):
-        return ""
-    parts.append(aliases.get(node.id, node.id))
-    return ".".join(reversed(parts))
+        return frozenset()
+    suffix = list(reversed(parts))
+    return frozenset(".".join([origin, *suffix]) for origin in aliases.get(node.id, frozenset({node.id})))
 
 
-def calls(tree: ast.Module, aliases: dict[str, str]) -> Iterator[tuple[ast.Call, str]]:
+def calls(tree: ast.Module, aliases: Aliases) -> Iterator[tuple[ast.Call, frozenset[str]]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            yield node, qualified_name(node.func, aliases)
+            yield node, qualified_names(node.func, aliases)
 
 
 def enclosing_function(tree: ast.Module, target: ast.AST) -> tuple[str, str]:
@@ -218,13 +238,17 @@ def check_core_imports(tree: ast.Module, relpath: str) -> list[str]:
 
 def check_dynamic_imports(tree: ast.Module, relpath: str) -> list[str]:
     aliases = aliases_of(tree, relpath)
-    return [f"dynamic import via {name}" for _, name in calls(tree, aliases) if name in DYNAMIC_IMPORTS]
+    return [f"dynamic import via {name}" for _, names in calls(tree, aliases) for name in names & DYNAMIC_IMPORTS]
 
 
 def is_spawn_import(module: str, names: list[str]) -> bool:
-    if module.split(".")[0] == "subprocess" or module.startswith("asyncio.subprocess"):
+    if module.split(".")[0] in PROCESS_MODULES or module.startswith("asyncio.subprocess"):
         return True
-    return module == "asyncio" and any(n == "subprocess" or n.startswith("create_subprocess") for n in names)
+    if module == "asyncio" and any(n == "subprocess" or n.startswith("create_subprocess") for n in names):
+        return True
+    if module.startswith("concurrent.futures.process"):
+        return True
+    return module == "concurrent.futures" and any(n in {"ProcessPoolExecutor", "process"} for n in names)
 
 
 def check_process_spawn_location(tree: ast.Module, relpath: str) -> list[str]:
@@ -232,11 +256,13 @@ def check_process_spawn_location(tree: ast.Module, relpath: str) -> list[str]:
         return []
     aliases = aliases_of(tree, relpath)
     found = [f"imports {module}" for module, names in imported_modules(tree, relpath) if is_spawn_import(module, names)]
-    for call, name in calls(tree, aliases):
-        if name.startswith(PROCESS_SPAWN_PREFIXES):
-            found.append(f"calls {name}")
-        elif isinstance(call.func, ast.Attribute) and call.func.attr in LOOP_SPAWN_ATTRIBUTES:
+    for call, names in calls(tree, aliases):
+        found.extend(f"calls {n}" for n in names if n.startswith(PROCESS_SPAWN_PREFIXES) or n in PROCESS_CREATION_NAMES)
+        if isinstance(call.func, ast.Attribute) and call.func.attr in LOOP_SPAWN_ATTRIBUTES:
             found.append(f"calls .{call.func.attr}()")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name | ast.Attribute):
+            found.extend(f"references {n}" for n in qualified_names(node, aliases) & PROCESS_CREATION_NAMES)
     return found
 
 
@@ -271,23 +297,23 @@ def spawns_an_interpreter(call: ast.Call) -> bool:
 def check_shell_execution(tree: ast.Module, relpath: str) -> list[str]:
     aliases = aliases_of(tree, relpath)
     found: list[str] = []
-    for call, name in calls(tree, aliases):
-        if name in SHELL_CALLS or name.startswith(SHELL_CALL_PREFIXES):
-            found.append(f"calls {name}")
+    for call, names in calls(tree, aliases):
+        label = "/".join(sorted(names)) or "<call>"
+        found.extend(f"calls {n}" for n in names if n in SHELL_CALLS or n.startswith(SHELL_CALL_PREFIXES))
         if isinstance(call.func, ast.Attribute) and call.func.attr == "subprocess_shell":
             found.append("calls .subprocess_shell()")
-        is_spawn = name.split(".")[0] in PROCESS_SPAWN_ROOTS or (
+        is_spawn = any(n.split(".")[0] in PROCESS_SPAWN_ROOTS for n in names) or (
             isinstance(call.func, ast.Attribute) and call.func.attr in LOOP_SPAWN_ATTRIBUTES
         )
         if is_spawn and spawns_an_interpreter(call):
-            found.append(f"{name} runs a shell interpreter")
+            found.append(f"{label} runs a shell interpreter")
         for keyword in call.keywords:
             if keyword.arg == "shell" and not (
                 isinstance(keyword.value, ast.Constant) and keyword.value.value is False
             ):
-                found.append(f"passes shell= to {name}")
+                found.append(f"passes shell= to {label}")
             if keyword.arg is None and is_spawn:
-                found.append(f"passes **kwargs to {name}")
+                found.append(f"passes **kwargs to {label}")
     return found
 
 
@@ -307,9 +333,9 @@ def check_json_parse_location(tree: ast.Module, relpath: str) -> list[str]:
         if not isinstance(node, ast.Name | ast.Attribute):
             continue
         # A call ends the chain: `json.dumps(x).encode()` is a str method, not a json reference.
-        name = qualified_name(node, aliases, through_calls=False)
-        if name.split(".")[0] in {"json", "_json"} and name != "json" and name not in JSON_WRITE_ALLOWED:
-            found.append(f"references {name}, which is not a JSON writer")
+        for name in qualified_names(node, aliases, through_calls=False):
+            if name.split(".")[0] in {"json", "_json"} and name != "json" and name not in JSON_WRITE_ALLOWED:
+                found.append(f"references {name}, which is not a JSON writer")
     return found
 
 
@@ -327,14 +353,14 @@ def check_tls_bypass_confinement(tree: ast.Module, relpath: str) -> list[str]:
     found: list[str] = []
     for node in ast.walk(tree):
         reason = ""
-        if isinstance(node, ast.Call) and qualified_name(node.func, aliases) == "ssl.SSLContext":
+        if isinstance(node, ast.Call) and "ssl.SSLContext" in qualified_names(node.func, aliases):
             protocol = (
                 node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == "protocol"), None)
             )
-            if protocol is None or qualified_name(protocol, aliases) != "ssl.PROTOCOL_TLS_CLIENT":
+            if protocol is None or qualified_names(protocol, aliases) != {"ssl.PROTOCOL_TLS_CLIENT"}:
                 found.append("builds ssl.SSLContext without PROTOCOL_TLS_CLIENT")
-        if isinstance(node, ast.Name | ast.Attribute) and qualified_name(node, aliases) in TLS_BYPASS_NAMES:
-            reason = f"uses {qualified_name(node, aliases)}"
+        if isinstance(node, ast.Name | ast.Attribute) and (hits := qualified_names(node, aliases) & TLS_BYPASS_NAMES):
+            reason = f"uses {'/'.join(sorted(hits))}"
         elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             attrs = [t.attr for t in targets if isinstance(t, ast.Attribute) and t.attr in TLS_BYPASS_ATTRIBUTES]
@@ -384,6 +410,8 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("dynamic-imports", "cli/x.py", "import importlib\nimportlib.import_module('subprocess')\n"),
     ("dynamic-imports", "cli/x.py", "__import__('subprocess')\n"),
     ("dynamic-imports", "cli/x.py", "from importlib import import_module as im\nim('os')\n"),
+    ("dynamic-imports", "cli/x.py", "from builtins import __import__ as imp\nimp('subprocess')\n"),
+    ("dynamic-imports", "cli/x.py", "import builtins\nbuiltins.__import__('subprocess')\n"),
     ("process-spawn-location", "cli/x.py", "import subprocess\n"),
     ("process-spawn-location", "cli/x.py", "import subprocess as sp\nsp.run(['ls'])\n"),
     ("process-spawn-location", "cli/x.py", "from subprocess import run\n"),
@@ -396,6 +424,26 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("process-spawn-location", "cli/x.py", "from asyncio import subprocess\n"),
     ("process-spawn-location", "cli/x.py", "import asyncio\nasyncio.get_running_loop().subprocess_shell(P, 'ls')\n"),
     ("process-spawn-location", "cli/x.py", "loop.subprocess_exec(P, 'ls')\n"),
+    ("process-spawn-location", "cli/x.py", "import os\npid = os.fork()\n"),
+    ("process-spawn-location", "cli/x.py", "import multiprocessing\nmultiprocessing.Process(target=f).start()\n"),
+    ("process-spawn-location", "cli/x.py", "from multiprocessing import Pool\n"),
+    ("process-spawn-location", "cli/x.py", "from concurrent.futures import ProcessPoolExecutor\n"),
+    ("process-spawn-location", "cli/x.py", "import concurrent.futures\nconcurrent.futures.ProcessPoolExecutor()\n"),
+    ("process-spawn-location", "cli/x.py", "import pty\npty.fork()\n"),
+    (
+        "process-spawn-location",
+        "cli/x.py",
+        "from concurrent.futures.process import ProcessPoolExecutor\nProcessPoolExecutor()\n",
+    ),
+    ("process-spawn-location", "cli/x.py", "import concurrent.futures.process as cfp\ncfp.ProcessPoolExecutor()\n"),
+    ("process-spawn-location", "cli/x.py", "from concurrent.futures import process\nprocess.ProcessPoolExecutor()\n"),
+    ("process-spawn-location", "cli/x.py", "import concurrent.futures.process\n"),
+    (
+        "process-spawn-location",
+        "cli/x.py",
+        "import subprocess as sp\n\n\ndef a() -> None:\n    sp.run(['ls'])\n\n\n"
+        "def b() -> None:\n    import math as sp\n    sp.sqrt(2)\n",
+    ),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run('ls', shell=True)\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run('ls', shell=flag)\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ls'], **opts)\n"),
@@ -453,6 +501,12 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ash', '-c', cmd])\n"),
     ("shell-execution", "cli/x.py", "eval('1')\n"),
     ("shell-execution", "cli/x.py", "exec('x = 1')\n"),
+    (
+        "shell-execution",
+        "adapters/ssh/openssh.py",
+        "import subprocess as sp\n\n\ndef a() -> None:\n    sp.run(['sh', '-c', cmd])\n\n\n"
+        "def b() -> None:\n    import math as sp\n    sp.sqrt(2)\n",
+    ),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['sh', '-c', cmd])\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.Popen(['/bin/bash', '-c', cmd])\n"),
     ("shell-execution", "cli/x.py", "import asyncio\nasyncio.create_subprocess_exec('ls', **kw)\n"),
@@ -547,6 +601,13 @@ GOOD_SNIPPETS: list[tuple[str, str, str]] = [
         "import json\n\n\ndef dump(v: object) -> str:\n    return json.dumps(v, sort_keys=True)\n",
     ),
     ("process-spawn-location", "cli/x.py", "import asyncio\nasyncio.run(main())\n"),
+    (
+        "process-spawn-location",
+        "cli/x.py",
+        "from concurrent.futures import ThreadPoolExecutor\nThreadPoolExecutor(max_workers=4)\n",
+    ),
+    ("process-spawn-location", "cli/x.py", "import os\nos.getpid()\n"),
+    ("process-spawn-location", "cli/x.py", "from concurrent.futures.thread import ThreadPoolExecutor\n"),
     (
         "json-parse-location",
         "adapters/ssh/hostkeys.py",

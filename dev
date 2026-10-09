@@ -262,7 +262,7 @@ cmd_licenses() {
 cmd_build() {
   step "build — sdist + wheel with hashed build constraints"
   require_uv
-  rm -rf dist
+  rm -rf dist || fail "could not remove dist/"
   uv build --build-constraints build-constraints.txt --require-hashes || fail "uv build failed"
   ok "build — artifacts in dist/"
   cmd_smoke
@@ -478,10 +478,19 @@ cmd_release_check() {
   [ "$ahead" = "0" ] || fail "$branch is $ahead commit(s) ahead of origin/$branch — push first, a release builds from a pushed commit"
 
   step "git — working tree clean?"
-  [ -z "$(git status --porcelain)" ] || fail "uncommitted changes present (git status --porcelain)"
+  local porcelain
+  porcelain="$(git status --porcelain)" || fail "git status failed"
+  [ -z "$porcelain" ] || fail "uncommitted changes present (git status --porcelain)"
 
   step "git — config.yaml never tracked?"
-  git ls-files --error-unmatch config.yaml >/dev/null 2>&1 && fail "config.yaml is tracked — it holds credentials"
+  # ls-files exits 1 for "not tracked" (the wanted state) and with another code for a real git error.
+  local tracked_status=0
+  git ls-files --error-unmatch config.yaml >/dev/null 2>&1 || tracked_status=$?
+  case "$tracked_status" in
+  0) fail "config.yaml is tracked — it holds credentials" ;;
+  1) ;;
+  *) fail "git ls-files failed (exit $tracked_status)" ;;
+  esac
 
   ok "release-check — mechanical preconditions passed (see the release checklist for the rest)"
 }

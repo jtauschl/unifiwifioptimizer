@@ -40,8 +40,9 @@ Security = "https://github.com/jtauschl/unifiwifioptimizer/blob/main/SECURITY.md
 unifiwifioptimizer = "unifiwifioptimizer.cli.main:main"
 
 # Kept in sync with [dependency-groups].dev below for pip/venv contributors (`pip install -e .[dev]`).
-# Dev-only license review: hypothesis is MPL-2.0 (file-level copyleft; never shipped, not linked into
-# the runtime graph that `./dev licenses` gates). Everything else in this group is MIT, Apache-2.0 or BSD.
+# Dev-only license review (never shipped; `./dev licenses` gates the runtime graph only): hypothesis and
+# the transitive certifi are MPL-2.0 (file-level copyleft); the other direct dev tools are MIT,
+# Apache-2.0 or BSD.
 [project.optional-dependencies]
 dev = [
   "bandit==1.9.4",
