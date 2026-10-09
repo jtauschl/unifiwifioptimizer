@@ -45,6 +45,8 @@ require_shfmt() {
   require shfmt "go install mvdan.cc/sh/v3/cmd/shfmt@v$SHFMT_VERSION"
   local actual_shfmt_version
   actual_shfmt_version=$(shfmt --version)
+  # A go-installed binary reports its module version with a leading "v"; Homebrew's does not.
+  actual_shfmt_version=${actual_shfmt_version#v}
   if [[ "$actual_shfmt_version" != "$SHFMT_VERSION" ]]; then
     echo "shfmt $SHFMT_VERSION required; found $actual_shfmt_version" >&2
     exit 1
