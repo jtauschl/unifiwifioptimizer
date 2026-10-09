@@ -1,18 +1,12 @@
-# Dependabot configuration for jtauschl/unifiwifioptimizer.
+# Dependabot reads this file only from the repository's default branch (main). Changes made on an
+# open release/* branch become active once that branch is fast-forward-promoted to main.
 #
-# Note: Dependabot reads this file only from the repository's default branch
-# (main). This file was added on release/0.5.0; it becomes active only
-# after release/0.5.0 is fast-forward-promoted to main.
-#
-# Dependabot PRs that later land on an open release/* branch are merged
-# with a normal squash-merge, not through the fast-forward-only promotion
-# rule.
+# Not covered here: build-constraints.txt (refreshed as a release-checklist step), tool versions
+# inlined in workflow run steps (semgrep, shfmt, actionlint, gitleaks), and the uv pin, which is
+# declared in `dev` (UV_VERSION) and repeated in the workflows' `env.UV_VERSION`.
 
 version: 2
 updates:
-  # GitHub Actions used by workflows in .github/workflows/.
-  # All actions are SHA-pinned; Dependabot proposes upgrades to keep
-  # those pins current.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -24,10 +18,24 @@ updates:
     labels:
       - "ci/cd"
 
-  # No pip ecosystem block: this repo has no requirements*.txt,
-  # pyproject.toml, setup.py, Pipfile, or setup.cfg for Dependabot's pip
-  # updater to parse. The one pinned Python dependency (semgrep, in
-  # .github/workflows/ci.yml as `pip install semgrep==<version>`) is
-  # inline in a shell run: step, which Dependabot cannot see. Bumping
-  # semgrep is currently a manual step; if a Python manifest is ever
-  # added, a `- package-ecosystem: "pip"` block can be added here.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"

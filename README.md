@@ -234,8 +234,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow (`./dev ci` gate, 
 
 ### What runs where
 
-- **Locally, before every push:** `./dev ci` is the full gate (syntax check, shellcheck, shfmt, actionlint, smoke test, test suite). The maintainer runs it through a machine-wide git `pre-push` hook (`git config --global core.hooksPath`); a fresh clone without that hook runs nothing automatically, and `git push --no-verify` bypasses it.
-- **In CI, on every push and pull request:** the Semgrep SAST job plus a Linux job that re-runs `./dev ci` for contributors whose clone has no hook. The two sets overlap; neither is a superset of the other.
+- **Locally, before every push:** `./dev ci` is the full gate: shellcheck/shfmt/`bash -n` over every shell script, actionlint, gitleaks, the legacy Bash tool's smoke test and shell tests, ruff, mypy, bandit, unit tests under the coverage floor, integration tests against the Docker harness, the lower-bound dependency probe, lockfile and build-constraint checks, the runtime license gate, and a build plus wheel smoke test. The maintainer runs it through a machine-wide git `pre-push` hook (`git config --global core.hooksPath`); a fresh clone without that hook runs nothing automatically, and `git push --no-verify` bypasses it.
+- **In CI, on every push and pull request:** Semgrep SAST and an SBOM job (CycloneDX of the shipped dependency graph, stamped with the project version). On a pull request only, a Linux job additionally re-runs `./dev ci` for contributors whose clone has no hook. Weekly, `security.yml` runs gitleaks over the full history and `pip-audit` over the locked graph and the build backend. The local and hosted sets overlap; neither is a superset of the other.
 
 ## Security
 

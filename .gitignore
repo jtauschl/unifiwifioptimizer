@@ -3,14 +3,47 @@
 Thumbs.db
 Desktop.ini
 
-# Credentials - never commit
-config.yaml
+# AI-agent / editor-session tool config lives only at the umbrella level, never inside this repo
+.vscode/
+.codex/
+.claude/
+.mcp.json
+.mcp.json.example
+CLAUDE.md
+AGENTS.md
 
-# Design source files (keep locally, not useful in repo)
-*.psd
-
-# Local scratch (umbrella level, never in this repo)
+# Local-only scratch, umbrella level only
 HANDOFF.md
 PLANTREE.md
 
+# Local secrets
+.env
+config.yaml
+
+# Design source files
+*.psd
+
+# Local tool state
 .local/
+
+# Python / uv
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+.venv-*/
+venv/
+build/
+dist/
+sbom.cdx.json
+
+# Test / lint / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

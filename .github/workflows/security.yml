@@ -1,4 +1,6 @@
-name: gitleaks
+# Weekly security scans that need a live advisory database or the full git history: neither belongs in
+# the per-push floor, and `./dev gitleaks` / `./dev audit` run the same checks on demand locally.
+name: security
 
 on:
   schedule:
@@ -12,8 +14,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_VERSION: "0.12.24"
+
 jobs:
-  scan:
+  gitleaks:
+    name: gitleaks (full history)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,3 +35,17 @@ jobs:
           sudo mv gitleaks /usr/local/bin/gitleaks
       - name: Run gitleaks
         run: gitleaks git --log-opts="--all" -v --redact .
+
+  pip-audit:
+    name: pip-audit (locked runtime + dev graph, build backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: ./dev audit

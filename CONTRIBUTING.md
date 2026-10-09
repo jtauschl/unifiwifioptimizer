@@ -7,8 +7,10 @@ Bug reports and feature requests are welcome via [GitHub Issues](https://github.
 ```bash
 git clone https://github.com/jtauschl/unifiwifioptimizer.git
 cd unifiwifioptimizer
-./dev bootstrap
+./dev bootstrap   # checks the toolchain (uv, OpenSSH >= 8.4, shellcheck, shfmt, actionlint, gitleaks, docker) and syncs the locked environment
 ```
+
+`./dev help` lists every check as its own subcommand. Without `uv`, `python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'` gives an equivalent environment for the Python checks; the pinned versions are the same in `[project.optional-dependencies]` and `[dependency-groups]`.
 
 ## Pull requests
 
@@ -21,13 +23,16 @@ cd unifiwifioptimizer
 
 ## Code style
 
-- POSIX-compatible Bash where possible, shellcheck- and shfmt-clean (`./dev lint`, `./dev format`).
-- `UPPER_CASE` for constants, `lower_case` for local variables.
-- Embedded Ruby/Python is for YAML parsing and JSON extraction only — no logic there.
-- No external package dependencies — only standard system tools (`bash`, `curl`, `python3`, `ruby`, `ssh`, `awk`).
+The project is moving from a single Bash script to a typed Python package under `src/unifiwifioptimizer/`; both live in the repo until the cut-over, and `./dev ci` gates both.
+
+- Python: `ruff` (lint + format, 120 columns), `mypy --strict`, `bandit`; configuration lives in `pyproject.toml` only. Comments explain why, never what.
+- Architecture: `domain/`, `rf/`, `compliance/`, `analysis/` and `ports/` are pure — no I/O modules and nothing from `adapters/`, `app/`, `cli/`, `report/` or `config/`. `subprocess` only in `adapters/ssh/`, never with `shell=True`; controller JSON is parsed in `adapters/unifi/client.py` only; certificate verification is disabled only inside the pinned connection. `tests/unit/test_architecture.py` checks these rules on the AST with import aliases resolved and keeps a table of known-bad snippets; ruff's `S` rules cover the rest.
+- Tests: `tests/unit/` needs no network and writes nothing (the structural tests read the repo's own files); `tests/integration/` is marked `integration` and runs against the Docker harness in `docker/`. Soft coverage targets: `rf/`, `compliance/`, `analysis/` 95 %; `config/`, parsers 90 %; `report/` 85 %; `cli/` and I/O adapters 70 %. The hard floor for the whole package is 85 %.
+- Dependencies: `pyyaml` is the only runtime dependency, and that stays so. Dev tools are pinned exactly; `uv.lock` and the hashed `build-constraints.txt` are committed and checked by `./dev lock-check`.
+- Shell (legacy tool and `dev`): bash, shellcheck- and shfmt-clean (`./dev shellcheck`, `./dev format`).
 - The tool never writes to the UniFi controller — read-only stays read-only.
 
 ## What won't be merged
 
 - Anything that adds write access to the UniFi controller.
-- New external dependencies beyond the standard system tools listed above.
+- A new runtime dependency, or a TLS/host-key verification bypass.

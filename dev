@@ -1,149 +1,566 @@
 #!/usr/bin/env bash
-# dev — repo-local convenience wrapper (bash).
-#
-# Commands:
-#   ./dev bootstrap  No-op: no per-repo setup steps currently exist. Kept as
-#                    the standard entry point for future setup needs.
-#   ./dev test       Run the test suite alone (tests/*_test.sh).
-#   ./dev build      No-op: this is a single Bash script with no compile
-#                    step.
-#   ./dev ci         Run every gate CI runs: bash -n, shellcheck, shfmt -d,
-#                    actionlint (if any workflows), smoke test, tests.
-#   ./dev fmt        Apply shfmt formatting in place.
-#   ./dev lint       Run shellcheck alone.
-#
-# Handbook conformance checking no longer lives here: handbook-check.sh
-# moved to this project's private docs companion repo's own scripts/
-# folder and runs against this repo as an explicitly-named sibling.
-# Run it from there: <companion-repo>/scripts/handbook-check.sh unifiwifioptimizer
-#
-# Missing tools hard-fail with install hints.
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Single entry point for setup, lint, test and the local-first gate. `./dev ci` is what the machine-wide
+# pre-push hook runs; the hosted workflow runs only the small floor plus, for pull requests from clones
+# without the hook, this same gate (see .github/workflows/ci.yml).
+#
+# Tool-availability policy: a missing required tool fails the run. Never downgrade a check to a silent
+# skip; an unchecked gate nobody notices is worse than a loud one.
+#
+# Two gates coexist until the Bash tool is removed: the Python package gate and the legacy shell gate
+# (`legacy-bash`), both bundled into `ci`.
+
+COMMAND=${1:-help}
+
+UV_VERSION=0.12.24
 SHFMT_VERSION=3.14.1
+# SSH_ASKPASS_REQUIRE needs OpenSSH 8.4.
+OPENSSH_MIN_MAJOR=8
+OPENSSH_MIN_MINOR=4
+# Floor of the only runtime dependency, asserted by `lower-bound`; keep in sync with pyproject.toml.
+PYYAML_FLOOR=6.0
+# Runtime-graph license allowlist (pip-licenses spelling). Dev-group licenses are reviewed by hand and
+# documented in pyproject.toml, never gated here.
+LICENSE_ALLOWLIST="MIT License;MIT;Apache Software License;Apache-2.0;BSD License;BSD-3-Clause;BSD-2-Clause"
 
-shell_scripts=(
-  unifiwifioptimizer
-  dev
-  scripts/install.sh
-  scripts/uninstall.sh
-)
-for f in tests/*.sh; do
-  [[ -f "$f" ]] && shell_scripts+=("$f")
-done
+# One EXIT trap owns every temp path this script creates; per-call-site cleanup leaks the first file
+# when a second mktemp fails under set -e.
+TEMP_PATHS=()
+cleanup_temp_paths() {
+  [ "${#TEMP_PATHS[@]}" -eq 0 ] || rm -rf "${TEMP_PATHS[@]}"
+}
+trap cleanup_temp_paths EXIT
+# Writes into the caller's named variable instead of printing: `$(...)` would fork a subshell and the
+# array append would never reach the shell the EXIT trap runs in.
+new_temp_file() {
+  local f
+  f="$(mktemp)" || fail "mktemp failed"
+  TEMP_PATHS+=("$f")
+  printf -v "$1" '%s' "$f"
+}
+new_temp_dir() {
+  local d
+  d="$(mktemp -d)" || fail "mktemp -d failed"
+  TEMP_PATHS+=("$d")
+  printf -v "$1" '%s' "$d"
+}
 
-require() {
-  local tool=$1 hint=$2
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "$tool not found — install: $hint" >&2
-    exit 1
-  fi
+# ── Colors ───────────────────────────────────────────────────────────────────
+BOLD=$'\e[1m'
+CYAN=$'\e[1;36m'
+GREEN=$'\e[1;32m'
+RED=$'\e[1;31m'
+RESET=$'\e[0m'
+
+step() { printf '\n%s▶ %s%s\n' "$CYAN" "$*" "$RESET"; }
+ok() { printf '%s✓ %s%s\n' "$GREEN" "$*" "$RESET"; }
+fail() {
+  printf '%s✗ %s%s\n' "$RED" "$*" "$RESET" >&2
+  exit 1
+}
+
+# ── Toolchain checks ─────────────────────────────────────────────────────────
+
+require_uv() {
+  command -v uv &>/dev/null || fail "uv not installed (brew install uv, or https://docs.astral.sh/uv/)"
+  local actual
+  actual="$(uv --version | awk '{print $2}')"
+  [ "$actual" = "$UV_VERSION" ] || fail "uv $UV_VERSION required (same pin as CI); found $actual"
 }
 
 require_shfmt() {
-  require shfmt "go install mvdan.cc/sh/v3/cmd/shfmt@v$SHFMT_VERSION"
-  local actual_shfmt_version
-  actual_shfmt_version=$(shfmt --version)
+  command -v shfmt &>/dev/null || fail "shfmt not installed (go install mvdan.cc/sh/v3/cmd/shfmt@v$SHFMT_VERSION)"
+  local actual
+  actual="$(shfmt --version)"
   # A go-installed binary reports its module version with a leading "v"; Homebrew's does not.
-  actual_shfmt_version=${actual_shfmt_version#v}
-  if [[ "$actual_shfmt_version" != "$SHFMT_VERSION" ]]; then
-    echo "shfmt $SHFMT_VERSION required; found $actual_shfmt_version" >&2
-    exit 1
+  actual=${actual#v}
+  [ "$actual" = "$SHFMT_VERSION" ] || fail "shfmt $SHFMT_VERSION required; found $actual"
+}
+
+require_openssh() {
+  command -v ssh &>/dev/null || fail "ssh not installed"
+  command -v ssh-keyscan &>/dev/null || fail "ssh-keyscan not installed"
+  local banner major minor
+  banner="$(ssh -V 2>&1)"
+  # "OpenSSH_10.3p1, LibreSSL 3.3.6" -> 10 and 3
+  major="$(printf '%s' "$banner" | sed -n 's/^OpenSSH_\([0-9]*\)\.\([0-9]*\).*/\1/p')"
+  minor="$(printf '%s' "$banner" | sed -n 's/^OpenSSH_\([0-9]*\)\.\([0-9]*\).*/\2/p')"
+  [ -n "$major" ] && [ -n "$minor" ] || fail "could not parse OpenSSH version from: $banner"
+  if [ "$major" -lt "$OPENSSH_MIN_MAJOR" ] || { [ "$major" -eq "$OPENSSH_MIN_MAJOR" ] && [ "$minor" -lt "$OPENSSH_MIN_MINOR" ]; }; then
+    fail "OpenSSH >= $OPENSSH_MIN_MAJOR.$OPENSSH_MIN_MINOR required; found $banner"
   fi
 }
 
-run_bash_syntax() {
-  for f in "${shell_scripts[@]}"; do
-    [[ -f "$f" ]] || continue
-    bash -n "$f"
-  done
+require_docker_daemon() {
+  command -v docker &>/dev/null || fail "docker not installed (the integration harness needs it)"
+  docker info --format '{{.ServerVersion}}' >/dev/null 2>&1 || fail "docker daemon not reachable — start Docker before running the integration tests"
 }
 
-run_shellcheck() {
-  require shellcheck "brew install shellcheck (macOS) / apt-get install shellcheck (Debian)"
-  local present=()
-  for f in "${shell_scripts[@]}"; do
-    [[ -f "$f" ]] && present+=("$f")
-  done
-  shellcheck -x "${present[@]}"
-}
+# ── Setup ────────────────────────────────────────────────────────────────────
 
-run_shfmt_diff() {
+cmd_bootstrap() {
+  step "bootstrap — verifying toolchain"
+  require_uv
+  require_openssh
+  command -v shellcheck &>/dev/null || fail "shellcheck not installed (brew install shellcheck)"
   require_shfmt
-  local present=()
-  for f in "${shell_scripts[@]}"; do
-    [[ -f "$f" ]] && present+=("$f")
-  done
-  shfmt -d "${present[@]}"
+  command -v actionlint &>/dev/null || fail "actionlint not installed (brew install actionlint)"
+  command -v gitleaks &>/dev/null || fail "gitleaks not installed (brew install gitleaks)"
+  command -v docker &>/dev/null || fail "docker not installed (the integration harness needs it)"
+  step "bootstrap — uv sync (locked, all groups)"
+  uv sync --locked --all-groups || fail "uv sync failed"
+  ok "bootstrap — toolchain present, environment synced"
 }
 
-run_shfmt_write() {
+# ── Python gate ──────────────────────────────────────────────────────────────
+
+cmd_ruff_check() {
+  step "ruff check"
+  require_uv
+  uv run --locked --no-sync ruff check . || fail "ruff check: violations found"
+  ok "ruff check — no violations"
+}
+
+cmd_format_check() {
+  step "ruff format --check"
+  require_uv
+  uv run --locked --no-sync ruff format --check . || fail "ruff format: unformatted file(s) (run ./dev format)"
+  ok "ruff format — correctly formatted"
+}
+
+cmd_format() {
+  step "format — ruff format + ruff check --fix + shfmt -w"
+  require_uv
+  uv run --locked --no-sync ruff format . || fail "ruff format failed"
+  uv run --locked --no-sync ruff check --fix . || fail "ruff check --fix left violations"
+  local scripts=()
+  collect_shell_scripts scripts
   require_shfmt
-  local present=()
-  for f in "${shell_scripts[@]}"; do
-    [[ -f "$f" ]] && present+=("$f")
-  done
-  shfmt -w "${present[@]}"
+  shfmt -w "${scripts[@]}" || fail "shfmt -w failed"
+  ok "format — done"
 }
 
-run_actionlint() {
-  if ! compgen -G ".github/workflows/*.yml" >/dev/null; then
-    return 0
-  fi
-  require actionlint "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
-  actionlint
+cmd_typecheck() {
+  step "mypy --strict"
+  require_uv
+  uv run --locked --no-sync mypy || fail "mypy: type errors found"
+  ok "mypy — no type errors"
 }
 
-run_smoke() {
-  ./unifiwifioptimizer --help >/dev/null
+cmd_bandit() {
+  step "bandit"
+  require_uv
+  uv run --locked --no-sync bandit -q -c pyproject.toml -r src scripts || fail "bandit: findings detected"
+  ok "bandit — no findings"
 }
 
-run_tests() {
+# Every fast static check for the Python side, bundled; `./dev lint` means the same thing everywhere.
+cmd_lint() {
+  cmd_ruff_check
+  cmd_format_check
+  cmd_typecheck
+  cmd_bandit
+}
+
+cmd_test() {
+  step "pytest — unit tests"
+  require_uv
+  uv run --locked --no-sync pytest || fail "pytest: unit tests failed"
+  ok "pytest — unit tests passed"
+}
+
+cmd_test_integration() {
+  step "pytest — integration tests (Docker harness)"
+  require_uv
+  require_docker_daemon
+  uv run --locked --no-sync pytest -m integration tests/integration || fail "pytest: integration tests failed"
+  ok "pytest — integration tests passed"
+}
+
+# Unit tests under coverage; the hard floor lives in pyproject.toml ([tool.coverage.report] fail_under).
+cmd_coverage() {
+  step "pytest — unit tests with coverage gate"
+  require_uv
+  uv run --locked --no-sync pytest --cov --cov-report=term-missing || fail "pytest: tests failed or coverage below the floor"
+  ok "coverage — floor met"
+}
+
+# Resolves the direct runtime dependency at its declared floor on a throwaway copy, so the committed
+# uv.lock stays untouched: the resolution mode is written into the lock. UV_RESOLUTION is exported for
+# every uv call in the copy, since a later call without it re-locks to the newest versions.
+cmd_lower_bound() {
+  step "lower-bound — resolve direct dependencies at their declared floor"
+  require_uv
+  local probe
+  new_temp_dir probe
+  cp -R src tests pyproject.toml .python-version README.md LICENSE "$probe/" || fail "could not copy the project into the probe directory"
+  (
+    cd "$probe" || exit 1
+    export UV_RESOLUTION=lowest-direct
+    # No .git in the copy, so hatch-vcs cannot derive a version.
+    export SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+    uv lock || exit 1
+    uv sync --locked --all-groups || exit 1
+    actual="$(uv run --locked --no-sync python -c 'import yaml; print(yaml.__version__)')" || exit 1
+    if [ "$actual" != "$PYYAML_FLOOR" ]; then
+      echo "lower-bound: pyyaml resolved to $actual, expected the declared floor $PYYAML_FLOOR" >&2
+      exit 1
+    fi
+    uv run --locked --no-sync pytest -q || exit 1
+  ) || fail "lower-bound: resolution at the floor failed or the floor is not what pyproject.toml declares"
+  ok "lower-bound — unit tests pass with pyyaml==$PYYAML_FLOOR"
+}
+
+cmd_lock_check() {
+  step "lock-check — uv.lock up to date"
+  require_uv
+  uv lock --check || fail "uv.lock is stale (run uv lock)"
+  step "lock-check — build-constraints.txt matches build-constraints.in and pyproject.toml"
+  uv run --locked --no-sync python scripts/check_build_constraints.py pyproject.toml build-constraints.in ||
+    fail "build-constraints.in does not match [build-system].requires"
+  local recompiled
+  new_temp_file recompiled
+  uv pip compile build-constraints.in --generate-hashes --universal --python-version 3.11 --no-header --quiet -o "$recompiled" ||
+    fail "could not recompile build-constraints.in"
+  diff -u build-constraints.txt "$recompiled" || fail "build-constraints.txt is stale (recompile with ./dev lock-refresh)"
+  ok "lock-check — lockfile and build constraints are current"
+}
+
+cmd_lock_refresh() {
+  step "lock-refresh — recompile the hashed build constraints"
+  require_uv
+  uv pip compile build-constraints.in --generate-hashes --universal --python-version 3.11 --no-header -o build-constraints.txt ||
+    fail "could not recompile build-constraints.in"
+  ok "lock-refresh — build-constraints.txt rewritten"
+}
+
+# Only the shipped graph is gated: `uv export --no-dev` lists exactly what an installation resolves.
+cmd_licenses() {
+  step "licenses — runtime dependency graph against the allowlist"
+  require_uv
+  local exported
+  new_temp_file exported
+  uv export --locked --no-dev --no-hashes --no-emit-project --no-header --format requirements.txt --quiet -o "$exported" ||
+    fail "uv export failed"
+  local packages=()
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+    "" | "#"* | " "*) ;;
+    *) packages+=("${line%%==*}") ;;
+    esac
+  done <"$exported"
+  [ "${#packages[@]}" -gt 0 ] || fail "licenses: the runtime graph is empty, which cannot be right"
+  uv run --locked --no-sync pip-licenses --packages "${packages[@]}" --allow-only "$LICENSE_ALLOWLIST" --format=markdown ||
+    fail "licenses: a runtime dependency is outside the allowlist"
+  ok "licenses — ${#packages[@]} runtime package(s) within the allowlist"
+}
+
+# The build runs with the hashed build-backend closure, the same way the release workflow builds.
+cmd_build() {
+  step "build — sdist + wheel with hashed build constraints"
+  require_uv
+  rm -rf dist
+  uv build --build-constraints build-constraints.txt --require-hashes || fail "uv build failed"
+  ok "build — artifacts in dist/"
+  cmd_smoke
+}
+
+cmd_smoke() {
+  step "smoke — install the wheel into a throwaway environment and run it"
+  require_uv
+  local venv wheel
+  new_temp_dir venv
+  wheel="$(ls dist/*.whl)" || fail "no wheel in dist/ (run ./dev build)"
+  uv venv --quiet "$venv/venv" || fail "could not create the smoke venv"
+  uv pip install --quiet --python "$venv/venv/bin/python" "$wheel" || fail "could not install the wheel"
+  "$venv/venv/bin/unifiwifioptimizer" --version || fail "installed entry point failed"
+  "$venv/venv/bin/python" -m unifiwifioptimizer --help >/dev/null || fail "python -m unifiwifioptimizer failed"
+  ok "smoke — wheel installs and runs"
+}
+
+# ── Shell gate ───────────────────────────────────────────────────────────────
+
+# `dev` is always included so the wrapper's own shell code is checked. Everything else is discovered,
+# not hand-listed; a fixed list silently excludes whatever a later change adds. The legacy Bash tool and
+# its tests are part of the set until they are removed.
+collect_shell_scripts() {
+  local -a found=(dev)
   local f
-  for f in tests/*_test.sh; do
-    [[ -f "$f" ]] || continue
-    bash "$f"
+  [ -f unifiwifioptimizer ] && found+=(unifiwifioptimizer)
+  # find's exit status does not survive a `while … < <(find …)` process substitution, so discovery goes
+  # through a temp file whose write can be checked.
+  local listing listing_error
+  new_temp_file listing
+  new_temp_file listing_error
+  if ! find scripts tests -maxdepth 1 -name '*.sh' 2>"$listing_error" | sort >"$listing"; then
+    fail "find scripts/*.sh tests/*.sh discovery failed: $(cat "$listing_error")"
+  fi
+  while IFS= read -r f; do
+    found+=("$f")
+  done <"$listing"
+  eval "$1=(\"\${found[@]}\")"
+}
+
+cmd_shellcheck() {
+  local shell_scripts=()
+  collect_shell_scripts shell_scripts
+
+  step "shellcheck — ${#shell_scripts[@]} shell script(s)"
+  command -v shellcheck &>/dev/null || fail "shellcheck not installed (brew install shellcheck)"
+  shellcheck -x "${shell_scripts[@]}" || fail "shellcheck: violations found"
+  ok "shellcheck — no violations"
+
+  step "shfmt — formatting"
+  require_shfmt
+  # shfmt -l exits 1 both for "unformatted files" (stdout lists them) and for a tool error (stdout
+  # empty, stderr set); only the combination tells them apart.
+  local shfmt_stderr
+  new_temp_file shfmt_stderr
+  set +e
+  local unformatted
+  unformatted=$(shfmt -l "${shell_scripts[@]}" 2>"$shfmt_stderr")
+  local shfmt_status=$?
+  set -e
+  if ! { [ "$shfmt_status" -eq 0 ] || { [ "$shfmt_status" -eq 1 ] && [ -n "$unformatted" ]; }; }; then
+    fail "shfmt: tool error (exit $shfmt_status): $(cat "$shfmt_stderr")"
+  fi
+  [ -z "$unformatted" ] || fail "shfmt: unformatted file(s) (run ./dev format): $unformatted"
+  ok "shfmt — correctly formatted"
+
+  step "bash -n — syntax check"
+  local f
+  for f in "${shell_scripts[@]}"; do
+    bash -n "$f" || fail "bash -n: syntax error in $f"
   done
+  ok "bash -n — no syntax errors"
+
+  step "smoke test — ./dev help"
+  ./dev help >/dev/null || fail "./dev help failed"
+  ok "smoke test — passed"
 }
 
-run_bootstrap() {
-  echo "nothing to bootstrap -- no per-repo setup steps; the shared commit-msg/pre-push hooks are a one-time, machine-wide install, not a per-repo bootstrap step"
+# Legacy gate for the Bash tool; removed together with the tool.
+cmd_legacy_bash() {
+  step "legacy-bash — smoke test and shell test suite"
+  [ -x unifiwifioptimizer ] || fail "legacy Bash tool not found"
+  ./unifiwifioptimizer --help >/dev/null || fail "legacy Bash tool: --help failed"
+  local f ran=0
+  for f in tests/*_test.sh; do
+    [ -f "$f" ] || fail "legacy Bash tests: no tests/*_test.sh found"
+    bash "$f" || fail "legacy Bash tests: $f failed"
+    ran=$((ran + 1))
+  done
+  ok "legacy-bash — $ran test file(s) passed"
 }
 
-run_build() {
-  echo "nothing to build -- single bash script, no compile step"
+cmd_actionlint() {
+  step "actionlint — GitHub Actions workflows"
+  command -v actionlint &>/dev/null || fail "actionlint not installed (brew install actionlint)"
+  actionlint || fail "actionlint: violations found"
+  ok "actionlint — no violations"
 }
 
-cmd="${1:-}"
-shift || true
-case "$cmd" in
-bootstrap)
-  run_bootstrap
-  ;;
-test)
-  run_tests
-  ;;
-build)
-  run_build
-  ;;
-ci)
-  run_bash_syntax
-  run_shellcheck
-  run_shfmt_diff
-  run_actionlint
-  run_smoke
-  run_tests
-  echo "dev ci: OK"
-  ;;
-fmt)
-  run_shfmt_write
-  ;;
-lint)
-  run_shellcheck
-  ;;
+cmd_gitleaks() {
+  step "gitleaks — secret scan (full history)"
+  command -v gitleaks &>/dev/null || fail "gitleaks not installed (brew install gitleaks)"
+  gitleaks git --log-opts="--all" --redact --exit-code 1 || fail "gitleaks: findings detected"
+  ok "gitleaks — no findings"
+}
+
+# ── CI-floor commands (not part of `ci`, mirrored by the hosted workflow) ────
+
+cmd_sast() {
+  step "sast — semgrep"
+  command -v semgrep &>/dev/null || fail "semgrep not installed (brew install semgrep)"
+  semgrep scan --config=p/python --config=p/secrets --config=p/security-audit --error --metrics=off . || fail "semgrep: findings detected"
+  ok "sast — no findings"
+}
+
+# uv leaves the root component's version out for a dynamically versioned project; it is written in
+# afterwards from hatch-vcs so the SBOM says which build it describes.
+cmd_sbom() {
+  step "sbom — CycloneDX from the locked runtime graph"
+  require_uv
+  uv export --locked --no-dev --format cyclonedx1.5 --output-file sbom.cdx.json --quiet || fail "uv export failed"
+  local version
+  # Without --no-sync: the hosted sbom job calls this on a fresh checkout with no environment yet.
+  version="$(uv run --locked python -m hatchling version)" || fail "could not determine the project version"
+  uv run --locked --no-sync python scripts/sbom_set_root_version.py sbom.cdx.json "$version" || fail "could not set the SBOM root version"
+  ok "sbom — sbom.cdx.json (root version $version)"
+}
+
+# Full locked graph (runtime + dev) and the hashed build backend; needs the live advisory database.
+# The graph is audited from a hashed export of uv.lock rather than from the synced environment: the
+# project itself is installed editable with a hatch-vcs dev version that never exists on PyPI, and
+# pip-audit --strict reports that as a collection failure. pip-audit itself comes from the locked dev
+# group, so `uv run --locked` without --no-sync lets the hosted job run this on a fresh checkout.
+cmd_audit() {
+  step "audit — pip-audit over the locked runtime + dev graph"
+  require_uv
+  local locked_graph
+  new_temp_file locked_graph
+  uv export --locked --all-groups --no-emit-project --no-header --format requirements.txt --quiet -o "$locked_graph" ||
+    fail "uv export failed"
+  uv run --locked pip-audit --strict --require-hashes -r "$locked_graph" ||
+    fail "pip-audit: vulnerabilities in the locked graph or incomplete collection"
+  step "audit — pip-audit over the build backend"
+  uv run --locked --no-sync pip-audit --strict --require-hashes -r build-constraints.txt ||
+    fail "pip-audit: vulnerabilities in the build backend"
+  ok "audit — no known vulnerabilities"
+}
+
+# ── CI ───────────────────────────────────────────────────────────────────────
+
+# Runs one check in a subshell so fail()'s exit ends only that subshell, and re-arms the temp-path
+# cleanup inside it: a subshell starts with the EXIT trap reset, so paths registered there would
+# otherwise never be removed. Records the failure in the caller's `failures`/`failed_checks`.
+# errexit is inert inside a `( … ) ||` subshell, so every command in a check needs its own `|| fail`
+# (or `|| exit 1`); a bare failing command would be ignored.
+run_check() {
+  local name=$1 check=$2
+  (
+    TEMP_PATHS=()
+    trap cleanup_temp_paths EXIT
+    "$check"
+  ) || {
+    # Assignment, not `((failures++))`: that form returns 1 when the old value was 0 and trips
+    # set -e on bash 4.1+.
+    failures=$((failures + 1))
+    failed_checks+=("$name")
+  }
+}
+
+# Accumulates every failing check instead of stopping at the first.
+cmd_ci() {
+  local failures=0
+  local failed_checks=()
+
+  run_check "shellcheck" cmd_shellcheck
+  run_check "actionlint" cmd_actionlint
+  run_check "gitleaks" cmd_gitleaks
+  run_check "legacy-bash" cmd_legacy_bash
+  run_check "lint" cmd_lint
+  run_check "coverage" cmd_coverage
+  run_check "test-integration" cmd_test_integration
+  run_check "lower-bound" cmd_lower_bound
+  run_check "lock-check" cmd_lock_check
+  run_check "licenses" cmd_licenses
+  run_check "build" cmd_build
+
+  if [ "$failures" -gt 0 ]; then
+    fail "ci — $failures check(s) failed: ${failed_checks[*]}"
+  fi
+  ok "ci — all checks passed"
+}
+
+# Mechanical release preconditions only; the rest of the release checklist stays a human-run process.
+cmd_release_check() {
+  local branch
+  branch="$(git rev-parse --abbrev-ref HEAD)" || fail "git rev-parse failed"
+  [ "$branch" != "HEAD" ] || fail "in detached HEAD state — check out a real branch before releasing"
+
+  (
+    TEMP_PATHS=()
+    trap cleanup_temp_paths EXIT
+    cmd_ci
+  ) || fail "cmd_ci failed — fix all checks before releasing"
+
+  step "git — fetch + divergence check ($branch vs. its remote)"
+  git fetch --prune origin || fail "git fetch failed"
+  git rev-parse --verify --quiet "origin/$branch" >/dev/null || fail "no origin/$branch — this branch has no upstream to compare against"
+  local behind ahead
+  behind="$(git rev-list --count "HEAD..origin/$branch")" || fail "git rev-list (behind) failed"
+  ahead="$(git rev-list --count "origin/$branch..HEAD")" || fail "git rev-list (ahead) failed"
+  [ "$behind" = "0" ] || fail "$branch is $behind commit(s) behind origin/$branch — pull first"
+  [ "$ahead" = "0" ] || fail "$branch is $ahead commit(s) ahead of origin/$branch — push first, a release builds from a pushed commit"
+
+  step "git — working tree clean?"
+  [ -z "$(git status --porcelain)" ] || fail "uncommitted changes present (git status --porcelain)"
+
+  step "git — config.yaml never tracked?"
+  git ls-files --error-unmatch config.yaml >/dev/null 2>&1 && fail "config.yaml is tracked — it holds credentials"
+
+  ok "release-check — mechanical preconditions passed (see the release checklist for the rest)"
+}
+
+cmd_help() {
+  echo "${BOLD}Usage:${RESET} ./dev <command>"
+  echo ""
+  echo "${BOLD}Setup:${RESET}"
+  printf "  %-20s %s\n" "bootstrap" "verify toolchain (uv $UV_VERSION, OpenSSH >= $OPENSSH_MIN_MAJOR.$OPENSSH_MIN_MINOR, shellcheck, shfmt $SHFMT_VERSION, actionlint, gitleaks, docker) and uv sync"
+  echo ""
+  echo "${BOLD}Python:${RESET}"
+  printf "  %-20s %s\n" "lint" "ruff check + ruff format --check + mypy + bandit, bundled"
+  printf "  %-20s %s\n" "ruff-check" "ruff check"
+  printf "  %-20s %s\n" "format-check" "ruff format --check"
+  printf "  %-20s %s\n" "format" "ruff format + ruff check --fix + shfmt -w (auto-fixing)"
+  printf "  %-20s %s\n" "typecheck" "mypy --strict"
+  printf "  %-20s %s\n" "bandit" "bandit over src/ and scripts/"
+  printf "  %-20s %s\n" "test" "pytest, unit tests"
+  printf "  %-20s %s\n" "test-integration" "pytest -m integration against the Docker harness"
+  printf "  %-20s %s\n" "coverage" "unit tests with the hard coverage floor"
+  printf "  %-20s %s\n" "lower-bound" "resolve direct dependencies at their floor on a throwaway copy"
+  printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt are current"
+  printf "  %-20s %s\n" "lock-refresh" "recompile build-constraints.txt with hashes"
+  printf "  %-20s %s\n" "licenses" "runtime dependency licenses against the allowlist"
+  printf "  %-20s %s\n" "build" "uv build with hashed build constraints, then smoke"
+  printf "  %-20s %s\n" "smoke" "install dist/*.whl into a throwaway venv and run it"
+  echo ""
+  echo "${BOLD}Shell:${RESET}"
+  printf "  %-20s %s\n" "shellcheck" "shellcheck + shfmt + bash -n + smoke test (shell scripts)"
+  printf "  %-20s %s\n" "legacy-bash" "legacy Bash tool smoke test and shell test suite"
+  printf "  %-20s %s\n" "actionlint" "actionlint (GitHub Actions workflows)"
+  printf "  %-20s %s\n" "gitleaks" "secret scan, full history"
+  echo ""
+  echo "${BOLD}CI floor (run by the hosted workflow, not part of ci):${RESET}"
+  printf "  %-20s %s\n" "sast" "semgrep scan --config=p/python --config=p/secrets --config=p/security-audit"
+  printf "  %-20s %s\n" "sbom" "CycloneDX SBOM of the runtime graph with the project version"
+  printf "  %-20s %s\n" "audit" "pip-audit over the locked graph and the build backend"
+  echo ""
+  echo "${BOLD}CI:${RESET}"
+  printf "  %-20s %s\n" "ci" "the full local gate — run before every push"
+  printf "  %-20s %s\n" "release-check" "mechanical release preconditions"
+  echo ""
+  echo "${BOLD}Typical workflow:${RESET}"
+  echo "  ./dev ci    # before every push"
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+
+case "$COMMAND" in
+bootstrap) cmd_bootstrap ;;
+lint) cmd_lint ;;
+ruff-check) cmd_ruff_check ;;
+format-check) cmd_format_check ;;
+format) cmd_format ;;
+typecheck) cmd_typecheck ;;
+bandit) cmd_bandit ;;
+test) cmd_test ;;
+test-integration) cmd_test_integration ;;
+coverage) cmd_coverage ;;
+lower-bound) cmd_lower_bound ;;
+lock-check) cmd_lock_check ;;
+lock-refresh) cmd_lock_refresh ;;
+licenses) cmd_licenses ;;
+build) cmd_build ;;
+smoke) cmd_smoke ;;
+shellcheck) cmd_shellcheck ;;
+legacy-bash) cmd_legacy_bash ;;
+actionlint) cmd_actionlint ;;
+gitleaks) cmd_gitleaks ;;
+sast) cmd_sast ;;
+sbom) cmd_sbom ;;
+audit) cmd_audit ;;
+ci) cmd_ci ;;
+release-check) cmd_release_check ;;
+help | --help | -h) cmd_help ;;
 *)
-  echo "usage: ./dev {bootstrap|test|build|ci|fmt|lint}"
+  echo "${RED}Unknown command: $COMMAND${RESET}"
+  echo
+  cmd_help
   exit 1
   ;;
 esac
