@@ -230,7 +230,12 @@ Does not replace AP placement, channel planning, site surveys, capacity planning
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow (`./dev ci` gate, commit conventions) and PR expectations.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow (`./dev ci` gate, commit conventions) and PR expectations. Questions go to [GitHub Discussions](https://github.com/jtauschl/unifiwifioptimizer/discussions); bugs and feature requests to [GitHub Issues](https://github.com/jtauschl/unifiwifioptimizer/issues).
+
+### What runs where
+
+- **Locally, before every push:** `./dev ci` is the full gate (syntax check, shellcheck, shfmt, actionlint, smoke test, test suite). The maintainer runs it through a machine-wide git `pre-push` hook (`git config --global core.hooksPath`); a fresh clone without that hook runs nothing automatically, and `git push --no-verify` bypasses it.
+- **In CI, on every push and pull request:** the Semgrep SAST job plus a Linux job that re-runs `./dev ci` for contributors whose clone has no hook. The two sets overlap; neither is a superset of the other.
 
 ## Security
 

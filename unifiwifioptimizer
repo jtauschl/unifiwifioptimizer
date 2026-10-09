@@ -465,7 +465,7 @@ fetch_controller_sites() {
 
   fetch_api_json "/proxy/network/api/self/sites" "$raw_file" 10
 
-  if ! python3 - "$raw_file" <<'PY' >"$CONTROLLER_SITES_FILE" 2>/dev/null; then
+  if ! python3 - "$raw_file" <<'PY' >"$CONTROLLER_SITES_FILE" 2>/dev/null
 import sys, json
 
 sites_path = sys.argv[1]
@@ -484,6 +484,7 @@ try:
 except Exception:
     sys.exit(1)
 PY
+  then
     print_api_unavailable_note
     return 1
   fi
@@ -531,7 +532,7 @@ fetch_site_wlan_info() {
 
   fetch_api_json "/proxy/network/api/s/${site}/list/wlanconf" "$raw_file"
 
-  if ! python3 - "$raw_file" <<'PY' >"$(site_wlans_tsv_path "$site")" 2>/dev/null; then
+  if ! python3 - "$raw_file" <<'PY' >"$(site_wlans_tsv_path "$site")" 2>/dev/null
 import sys, json
 
 wlans_path = sys.argv[1]
@@ -583,6 +584,7 @@ try:
 except Exception:
     sys.exit(1)
 PY
+  then
     print_api_unavailable_note
     return 1
   fi
@@ -618,7 +620,7 @@ fetch_site_apgroups() {
     return 0
   fi
 
-  if ! python3 - "$raw_file" <<'PY' >"$(site_apgroups_tsv_path "$site")" 2>/dev/null; then
+  if ! python3 - "$raw_file" <<'PY' >"$(site_apgroups_tsv_path "$site")" 2>/dev/null
 import sys, json
 
 apgroups_path = sys.argv[1]
@@ -636,6 +638,7 @@ try:
 except Exception:
     sys.exit(1)
 PY
+  then
     # Same tolerance as the curl failure above: a malformed/unexpected
     # response (schema drift, non-JSON body, etc.) must not abort the run
     # either -- treated the same as "endpoint not available".
@@ -650,7 +653,7 @@ count_site_access_points() {
   local site=$1
 
   fetch_site_devices "$site"
-  if ! python3 - "$(site_devices_json_path "$site")" <<'PY'; then
+  if ! python3 - "$(site_devices_json_path "$site")" <<'PY'
 import json
 import sys
 
@@ -668,6 +671,7 @@ for device in data:
 
 print(count)
 PY
+  then
     print_api_unavailable_note
     echo "?"
   fi
@@ -891,7 +895,7 @@ show_site_env() {
   echo
 
   echo "  Access Points:"
-  if ! python3 - "$(site_devices_json_path "$site_id")" <<'PY'; then
+  if ! python3 - "$(site_devices_json_path "$site_id")" <<'PY'
 import json
 import sys
 
@@ -922,6 +926,7 @@ else:
     for name, state, ip, mac in sorted(devices, key=lambda row: row[0]):
         print(f"    {name:<13} {state:<7} {ip:<14} {mac}")
 PY
+  then
     print_api_unavailable_note
     return 1
   fi

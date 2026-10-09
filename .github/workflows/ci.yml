@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.14.1
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: ./dev ci

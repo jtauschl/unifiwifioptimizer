@@ -17,6 +17,6 @@
 ## Checklist
 
 - [ ] Tested locally against a real UniFi controller
-- [ ] `shellcheck unifiwifioptimizer` passes without errors
+- [ ] `./dev ci` passes locally
 - [ ] `profiles.yaml` changes are reflected in `docs/PROFILES.md` if applicable
 - [ ] No credentials or personal config committed

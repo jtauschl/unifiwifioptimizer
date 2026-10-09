@@ -1,0 +1,10 @@
+# Takes effect once merged to the default branch. blank_issues_enabled: false requires the bug and
+# feature issue templates in this folder, otherwise the chooser offers no way to file a bug.
+blank_issues_enabled: false
+contact_links:
+  - name: Questions
+    url: https://github.com/jtauschl/unifiwifioptimizer/discussions
+    about: Ask questions in Discussions; use Issues for bugs and feature requests.
+  - name: Report a security vulnerability
+    url: https://github.com/jtauschl/unifiwifioptimizer/security/advisories/new
+    about: Report vulnerabilities privately, not as a public issue.

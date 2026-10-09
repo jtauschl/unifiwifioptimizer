@@ -23,10 +23,9 @@ profiles:
   #   (the underlying 802.11v BSS Transition Management protocol support).
 
   # Baseline matching the current UniFi "Standard/Auto" 2.4/5 GHz WLAN behavior,
-  # including band_steering (true) -- live-verified 2026-08-08 against a real
-  # controller: a freshly created Standard/Auto WLAN already has no2ghz_oui
-  # enabled by default, so this is a UDM snapshot value, not a deliberate
-  # deviation from it.
+  # including band_steering (true): a freshly created Standard/Auto WLAN has
+  # no2ghz_oui enabled by default, so this is a controller-default snapshot
+  # value, not a deliberate deviation from it.
   Standard:
     wifi_bands:
       - 2g
@@ -80,7 +79,7 @@ profiles:
     band_steering: false
 
   # Baseline matching the current UniFi "Hotspot/Auto" 2.4/5 GHz WLAN
-  # behavior, live-verified 2026-08-08 against a real controller.
+  # behavior (controller-default snapshot).
   Hotspot:
     wifi_bands:
       - 2g

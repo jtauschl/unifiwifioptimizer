@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - Unreleased
 
-<!--
-Focus statement: to be copied verbatim from this Version's OpenProject
-description field once set — one to two sentences naming the version's
-goal, not a status recap or an approach detail.
--->
+Give UniFi operators verified, actionable RF and WLAN-profile recommendations on current controller releases — including the WLAN-level Handoff Suggestions check, the extended profile schema, and secure-by-default controller and AP access — by rebuilding the optimizer as a typed, tested Python package.
 
 ### Added
 - Terminology note in `docs/ALGORITHM.md` clarifying that UniFi's "Handoff Suggestions (802.11v)" UI label refers to the same setting this tool calls Roaming Assistant.
@@ -35,18 +31,6 @@ goal, not a status recap or an approach detail.
 - A WLAN matched to the `Standard` profile broadcasting only on 2.4 GHz with Fast Roaming enabled now gets the same IoT-client-breakage advisory as an `IoT`-profile WLAN.
 - `Standard` and `Hotspot` profile baselines corrected to match UniFi's actual default presets, verified against a real controller.
 - Site-level pending TX-power count no longer inflates on APs whose 5 GHz radio is inactive.
-
-## [0.4.1] - Unreleased
-
-<!--
-Verbatim-synced copy of `release/0.4.1`'s own [0.4.1] - Unreleased section.
-Edits to any bullet below must happen on `release/0.4.1` first and be
-copied here in a separate, immediately-following commit on
-`release/0.5.0` before the underlying `release/0.4.1` work is considered
-done.
--->
-
-### Fixed
 - Roaming Assistant recommendations silently stopped working on current UniFi firmware.
 - Fixed a rare crash or incorrect Roaming Assistant compliance result for a WLAN whose aggregated signal value was empty.
 - Roaming Assistant compliance no longer reports a false deviation for a WLAN with Roaming Assistant enabled but no RSSI threshold set yet.
@@ -55,7 +39,6 @@ done.
 - `Throughput` and `Latency` profiles: minimum 2.4 GHz data rate raised from 11 Mbps to 12 Mbps, dropping legacy 802.11b compatibility in favor of Cisco/Aruba/Ubiquiti's "kill 802.11b" guidance.
 - Roaming Assistant and Minimum RSSI defaults recalibrated to match Apple's published roaming triggers, reducing premature disconnects on iOS/macOS clients.
 - Minimum RSSI recommendation is now set with a safety margin below the roaming trigger instead of equal to it, preventing disconnect loops on 802.11v-capable clients.
-- WLANs using WPA3 Enterprise / WPA2/WPA3 Enterprise no longer have SAE Anti-clogging/Sync Time incorrectly checked against the profile baseline, since Enterprise doesn't use the SAE handshake. *(This bullet differs from `release/0.4.1`'s own wording: a later, more thorough fix on this branch superseded the initial SAE-Enterprise recognition backported from `release/0.4.1`, so it now describes the current, corrected behavior rather than that intermediate fix. See `documentation.md#parallel-unreleased-release-branches`'s note on divergence annotations.)*
 - The installer now creates `config.yaml` (and its backups) with restrictive file permissions, since it holds an API key and optionally an SSH password.
 - `SECURITY.md` corrected: SSH host-key verification and TLS certificate trust are disabled by design for this tool, not enforced as previously documented.
 - Coverage-gap warnings are now shown for every neighbor still below the target signal corridor, instead of only when TX power itself hit its hardware limit — a real coverage problem could previously be understated.
@@ -143,7 +126,6 @@ First public release.
 - Multi-site support.
 
 [0.5.0]: https://github.com/jtauschl/unifiwifioptimizer/compare/v0.4.0...release/0.5.0
-[0.4.1]: https://github.com/jtauschl/unifiwifioptimizer/compare/v0.4.0...release/0.4.1
 [0.4.0]: https://github.com/jtauschl/unifiwifioptimizer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jtauschl/unifiwifioptimizer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jtauschl/unifiwifioptimizer/compare/v0.1.0...v0.2.0

@@ -7,7 +7,9 @@ tagged release rather than as a backport to an older one.
 
 ## Reporting a vulnerability
 
-Report a suspected vulnerability by emailing **juergen.tauschl@gmail.com**.
+Report a suspected vulnerability privately through GitHub's private vulnerability reporting:
+[Report a vulnerability](https://github.com/jtauschl/unifiwifioptimizer/security/advisories/new).
+If you cannot use that form, email **security@tauschl.de** instead.
 
 **Do not open a public GitHub issue for a suspected vulnerability.**
 
