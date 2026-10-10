@@ -162,19 +162,47 @@ def test_fixture_u7_lite_runs_below_its_configured_5ghz_power() -> None:
     assert (radio_5g.configured_tx_dbm, radio_5g.max_tx_dbm, stats_5g.observed_tx_dbm) == (24, 24, 18)
     assert (radio_5g.channel, radio_5g.width_mhz, stats_5g.extension_channel) == (60, 80, 1)
     assert radio_5g.tx_power_mode is TxPowerMode.CUSTOM
-    assert (stats_5g.channel_utilisation_pct, stats_5g.tx_retries_pct, stats_5g.client_count) == (13, 3.7, 7)
+    assert (stats_5g.channel_utilisation_pct, stats_5g.tx_retries_pct, stats_5g.client_count) == (1, 21.3, 4)
+
+
+def test_fixture_auto_radio_has_no_configured_channel_and_runs_above_its_stale_power() -> None:
+    result = parse.parse_devices(fixture("stat_device.json"))
+    u6 = result.access_points[0]
+    radio_2g, stats_2g, radio_5g, stats_5g = (
+        u6.radio(Band.GHZ_2),
+        u6.stats(Band.GHZ_2),
+        u6.radio(Band.GHZ_5),
+        u6.stats(Band.GHZ_5),
+    )
+    assert radio_2g is not None and stats_2g is not None and radio_5g is not None and stats_5g is not None
+    # Live probe 2026-10-10: channel `auto`, width still numeric (an int here), the configured power is the
+    # stale custom value while the radio runs 11 dB above it.
+    assert (radio_2g.channel, radio_2g.width_mhz, radio_2g.tx_power_mode, radio_2g.configured_tx_dbm) == (
+        None,
+        20,
+        TxPowerMode.AUTO,
+        6,
+    )
+    assert (stats_2g.channel, stats_2g.observed_tx_dbm, stats_2g.state) == (6, 17, "RUN")
+    assert (
+        radio_5g.channel,
+        radio_5g.width_mhz,
+        radio_5g.configured_tx_dbm,
+        stats_5g.channel,
+        stats_5g.observed_tx_dbm,
+    ) == (None, 80, 19, 44, 20)
+    assert stats_2g.satisfaction_pct is None and stats_5g.extension_channel == 1
 
 
 def test_fixture_sentinels_and_string_widths_are_normalised() -> None:
     result = parse.parse_devices(fixture("stat_device.json"))
-    u6 = result.access_points[0]
-    radio_2g, stats_2g, stats_5g = u6.radio(Band.GHZ_2), u6.stats(Band.GHZ_2), u6.stats(Band.GHZ_5)
-    assert radio_2g is not None and stats_2g is not None and stats_5g is not None
-    assert (radio_2g.width_mhz, radio_2g.channel, radio_2g.configured_tx_dbm) == (20, 6, 6)
+    u7 = result.access_points[1]
+    radio_2g, stats_2g = u7.radio(Band.GHZ_2), u7.stats(Band.GHZ_2)
+    assert radio_2g is not None and stats_2g is not None
+    assert (radio_2g.width_mhz, radio_2g.channel, radio_2g.configured_tx_dbm) == (20, 1, 6)
     assert stats_2g.satisfaction_pct is None and stats_2g.state == "RUN"
-    assert (stats_5g.channel, stats_5g.extension_channel) == (128, -1)
-    busy = result.access_points[2].stats(Band.GHZ_2)
-    assert busy is not None and busy.satisfaction_pct == 99 and busy.tx_retries_pct == 34.8
+    busy = result.access_points[2].stats(Band.GHZ_5)
+    assert busy is not None and busy.satisfaction_pct == 96 and busy.extension_channel == -1
 
 
 def test_fixture_vaps_carry_real_bssids_distinct_from_the_device_mac() -> None:
@@ -242,11 +270,11 @@ def test_fixture_settings() -> None:
 def test_fixture_clients_are_wireless_only_and_carry_no_identifiers() -> None:
     result = parse.parse_clients(fixture("stat_sta.json"))
     assert result.problems == ()
-    assert len(result.items) == 22
+    assert len(result.items) == 26
     first = result.items[0]
-    assert (first.band, first.channel, first.signal_dbm, first.noise_dbm) == (Band.GHZ_5, 60, -57, -93)
-    assert (first.satisfaction_pct, first.fast_transition, first.essid) == (97, False, "SSID-1")
-    assert first.ap_mac == "02:00:00:00:00:08"
+    assert (first.band, first.channel, first.signal_dbm, first.noise_dbm) == (Band.GHZ_2, 11, -49, -94)
+    assert (first.satisfaction_pct, first.fast_transition, first.essid) == (100, False, "SSID-1")
+    assert first.ap_mac == "02:00:00:00:00:11"
     assert all(hasattr(c, name) is False for c in result.items for name in ("mac", "hostname", "ip"))
 
 

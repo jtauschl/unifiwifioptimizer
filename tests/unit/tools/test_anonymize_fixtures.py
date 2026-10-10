@@ -162,7 +162,9 @@ def test_text_outside_the_closed_rules_fails_the_run_naming_the_path() -> None:
         anonymize({"stat_device.json": {"data": [{"type": "usw", "model": "https://controller.example"}]}})
     with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.model: expected a model code"):
         anonymize({"stat_device.json": {"data": [{"type": "usw", "model": "U6LITE https://evil.example"}]}})
-    with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.radio_table\[0\]\.ht: expected a channel width"):
+    with pytest.raises(
+        tool.SpecError, match=r"\$\.data\[0\]\.radio_table\[0\]\.ht: expected a number or a digit string"
+    ):
         anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table": [{"ht": "80\n"}]}]}})
     with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.satisfaction: expected a non-text scalar"):
         anonymize({"stat_device.json": {"data": [{"type": "uap", "satisfaction": "hunter2"}]}})
@@ -198,6 +200,19 @@ def test_text_outside_the_closed_rules_fails_the_run_naming_the_path() -> None:
         anonymize({"stat_device.json": {"data": [{"type": "uap", "satisfaction": [1, 2]}]}})
     with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.radio_table_stats\[0\]\.state: expected one of"):
         anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table_stats": [{"state": "SN12345"}]}]}})
+
+
+def test_radio_channel_and_width_accept_the_auto_and_integer_forms() -> None:
+    radios = [{"radio": "ng", "channel": "auto", "ht": 20}, {"radio": "na", "channel": 44, "ht": "80"}]
+    fixtures, _ = anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table": radios}]}})
+    devices = fixtures["stat_device.json"]
+    assert isinstance(devices, dict) and devices["data"][0]["radio_table"] == radios
+    for bad in ({"channel": "6"}, {"channel": True}, {"ht": True}, {"ht": "20\n"}, {"ht": "auto"}):
+        with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.radio_table\[0\]\.(channel|ht): expected"):
+            anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table": [{"radio": "ng", **bad}]}]}})
+    assert check_fixture("stat_device.json", {"data": [{"type": "uap", "radio_table": [{"channel": "6"}]}]}) == [
+        "$.data[0].radio_table[0].channel: expected a channel number or auto"
+    ]
 
 
 def test_a_gateway_with_a_built_in_radio_keeps_its_radio_table() -> None:
@@ -485,7 +500,7 @@ def test_type_mismatches_fail_loudly_with_the_path() -> None:
         (
             "stat_device.json",
             {"data": [{"type": "uap", "radio_table": [{"ht": "80\n"}]}]},
-            "$.data[0].radio_table[0].ht: expected a channel width",
+            "$.data[0].radio_table[0].ht: expected a number or a digit string",
         ),
         ("sites.json", {"data": [{"desc": "Home"}]}, "$.data[0].desc: expected a synthetic site description"),
         ("sites.json", {"data": [{"name": "5k2m9x1q"}]}, "$.data[0].name: expected a synthetic site id"),

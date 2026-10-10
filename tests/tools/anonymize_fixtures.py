@@ -204,6 +204,7 @@ def _string_list_rule(method: Callable[[Anonymizer, str], str], check: Check) ->
     return Rule(apply, check_list)
 
 
+DIGITS = r"[0-9]{1,4}"
 SYNTHETIC_MAC_RE = re.compile(rf"{re.escape(SYNTHETIC_MAC_PREFIX)}[0-9a-f]{{2}}:[0-9a-f]{{2}}")
 SYNTHETIC_ID_RE = re.compile(rf"0{{{SYNTHETIC_ID_LEADING_ZEROS},}}[0-9a-f]{{{24 - SYNTHETIC_ID_LEADING_ZEROS}}}")
 SYNTHETIC_IP_RE = re.compile(rf"{re.escape(SYNTHETIC_IP_PREFIX)}(1?[0-9]?[0-9]|2[0-4][0-9]|25[0-4])")
@@ -306,6 +307,40 @@ def _check_hostkey(value: Json, path: str) -> list[str]:
 hostkey_fingerprint = _string_rule(Anonymizer.hostkey_fingerprint, _check_hostkey)
 
 
+def _check_number_text(value: Json, path: str) -> list[str]:
+    if (isinstance(value, str) and re.fullmatch(DIGITS, value)) or (
+        isinstance(value, int) and not isinstance(value, bool)
+    ):
+        return []
+    return [f"{path}: expected a number or a digit string"]
+
+
+def _number_text(_ctx: Anonymizer, value: Json) -> Json:
+    if _check_number_text(value, ""):
+        raise ValueError("expected a number or a digit string")
+    return value
+
+
+# The controller sends `radio_table[].ht` as a string on some radios and as an integer on others.
+number_text = Rule(_number_text, _check_number_text, keeps_verbatim=True)
+
+
+def _check_channel(value: Json, path: str) -> list[str]:
+    if value == "auto" or (isinstance(value, int) and not isinstance(value, bool)):
+        return []
+    return [f"{path}: expected a channel number or auto"]
+
+
+def _channel(_ctx: Anonymizer, value: Json) -> Json:
+    if _check_channel(value, ""):
+        raise ValueError("expected a channel number or auto")
+    return value
+
+
+# An auto-channel radio reports the string `auto` where every other radio reports its channel number.
+channel_or_auto = Rule(_channel, _check_channel, keeps_verbatim=True)
+
+
 def constant(value: str) -> Rule:
     def check(actual: Json, path: str) -> list[str]:
         return [] if actual == value else [f"{path}: expected the fixture constant"]
@@ -390,7 +425,6 @@ def envelope(data: Rule) -> Spec:
     return {"meta": nested({"rc": vocab("ok")}), "data": data}
 
 
-DIGITS = r"[0-9]{1,4}"
 # Model codes are upper-case alphanumerics but never twelve hex digits (a serial / MAC without colons).
 MODEL = r"(?![0-9A-F]{12}$)[A-Z0-9]{3,12}"
 # Firmware versions have three or four dotted groups whose last group is a long build number, unlike IPv4.
@@ -398,18 +432,19 @@ VERSION = r"[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}(\.[0-9]{4,6})?"
 # Five cron fields; an atom is `*` or at most two digits, joined by `-`, `,` or `/` — a phone number is not.
 CRON_ATOM = r"(\*|[0-9]{1,2})([-,/](\*|[0-9]{1,2}))*"
 CRON = rf"({CRON_ATOM} ){{4}}{CRON_ATOM}"
-RADIO_STATE = vocab("RUN", "INIT", "DOWN", "DISABLED", "UNKNOWN")
+RADIO_STATE = vocab("RUN", "INIT", "DOWN", "DISABLED", "UNKNOWN", "DFS_WAIT")
 INTERFACE = r"(ra|rai|wifi)[0-9](ap[0-9])?"
 RADIO = vocab("ng", "na", "6e")
 RADIO_SPEC: Spec = {
     **kept(
-        "channel", "tx_power", "min_txpower", "max_txpower", "min_rssi_enabled", "min_rssi", "antenna_gain",
+        "tx_power", "min_txpower", "max_txpower", "min_rssi_enabled", "min_rssi", "antenna_gain",
         "antenna_id", "builtin_antenna", "builtin_ant_gain", "current_antenna_gain", "nss", "has_dfs", "has_eht240",
         "is_11be", "sens_level_enabled", "hard_noise_floor_enabled", "radio_caps", "radio_caps2", "vwire_enabled",
     ),
     "radio": RADIO,
     "name": pattern(INTERFACE, "a radio interface name"),
-    "ht": pattern(DIGITS, "a channel width"),
+    "channel": channel_or_auto,
+    "ht": number_text,
     "tx_power_mode": vocab("auto", "high", "medium", "low", "custom"),
 }  # fmt: skip
 RADIO_STATS_SPEC: Spec = {
