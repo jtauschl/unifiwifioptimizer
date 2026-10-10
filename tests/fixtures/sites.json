@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "_id": "000000000000000000000001",
+      "attr_hidden_id": "default",
+      "attr_no_delete": true,
+      "desc": "Site-1",
+      "device_count": 11,
+      "name": "default",
+      "role": "admin"
+    },
+    {
+      "_id": "000000000000000000000002",
+      "desc": "Site-2",
+      "device_count": 0,
+      "name": "site-2",
+      "role": "admin"
+    }
+  ],
+  "meta": {
+    "rc": "ok"
+  }
+}

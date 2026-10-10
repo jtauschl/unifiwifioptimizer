@@ -1,0 +1,408 @@
+{
+  "data": [
+    {
+      "_id": "000000000000000000000016",
+      "key": "super_mail"
+    },
+    {
+      "_id": "000000000000000000000017",
+      "key": "super_fwupdate"
+    },
+    {
+      "_id": "000000000000000000000018",
+      "key": "super_sdn"
+    },
+    {
+      "_id": "000000000000000000000019",
+      "key": "super_cloudaccess"
+    },
+    {
+      "_id": "00000000000000000000001a",
+      "key": "super_identity"
+    },
+    {
+      "_id": "00000000000000000000001b",
+      "key": "super_mgmt"
+    },
+    {
+      "_id": "00000000000000000000001c",
+      "key": "super_smtp"
+    },
+    {
+      "_id": "00000000000000000000001d",
+      "key": "super_fabric_system_log"
+    },
+    {
+      "_id": "00000000000000000000001e",
+      "enabled": false,
+      "key": "connectivity",
+      "mlo_mesh_enabled": false,
+      "site_id": "000000000000000000000005",
+      "uplink_type": "gateway"
+    },
+    {
+      "_id": "00000000000000000000001f",
+      "key": "element_adopt",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000020",
+      "key": "ntp",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000021",
+      "key": "dpi",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000022",
+      "key": "lcm",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000023",
+      "key": "locale",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000024",
+      "code": "276",
+      "key": "country",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000025",
+      "key": "network_optimization",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000026",
+      "auto_adjust_channels_to_country": true,
+      "auto_channel_presets_type": "maximum_speed",
+      "auto_enabled": false,
+      "channels_6e": [
+        "1",
+        "5",
+        "9",
+        "13",
+        "17",
+        "21",
+        "25",
+        "29",
+        "33",
+        "37",
+        "41",
+        "45",
+        "49",
+        "53",
+        "57",
+        "61",
+        "65",
+        "69",
+        "73",
+        "77",
+        "81",
+        "85",
+        "89",
+        "93"
+      ],
+      "channels_blacklist": [
+        {
+          "channel": "2",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "3",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "4",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "5",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "7",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "8",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "9",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "10",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "12",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "13",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "14",
+          "channel_width": "20",
+          "radio": "ng"
+        },
+        {
+          "channel": "132",
+          "channel_width": "20",
+          "radio": "na"
+        },
+        {
+          "channel": "136",
+          "channel_width": "20",
+          "radio": "na"
+        },
+        {
+          "channel": "140",
+          "channel_width": "20",
+          "radio": "na"
+        }
+      ],
+      "channels_na": [
+        "36",
+        "40",
+        "44",
+        "48",
+        "52",
+        "56",
+        "60",
+        "64",
+        "100",
+        "104",
+        "108",
+        "112",
+        "116",
+        "120",
+        "124",
+        "128"
+      ],
+      "channels_ng": [
+        "1",
+        "6",
+        "11"
+      ],
+      "cron_expr": "0 5 * * *",
+      "default": true,
+      "enabled": true,
+      "exclude_devices": [],
+      "ht_modes_na": [
+        "20",
+        "40"
+      ],
+      "ht_modes_ng": [
+        "20"
+      ],
+      "key": "radio_ai",
+      "optimize": [
+        "channel"
+      ],
+      "radios": [
+        "ng",
+        "na"
+      ],
+      "radios_configuration": [
+        {
+          "channel_width": 80,
+          "dfs": true,
+          "radio": "na"
+        },
+        {
+          "channel_width": 20,
+          "dfs": false,
+          "radio": "ng"
+        },
+        {
+          "channel_width": 320,
+          "dfs": false,
+          "radio": "6e"
+        }
+      ],
+      "setting_preference": "auto",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000027",
+      "key": "auto_speedtest",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000028",
+      "key": "ips",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000029",
+      "advanced_feature_enabled": true,
+      "alert_enabled": true,
+      "auto_upgrade": true,
+      "auto_upgrade_hour": 5,
+      "debug_tools_enabled": false,
+      "direct_connect_enabled": false,
+      "key": "mgmt",
+      "led_enabled": false,
+      "outdoor_mode_enabled": false,
+      "site_id": "000000000000000000000005",
+      "unifi_idp_enabled": true,
+      "wifiman_enabled": true,
+      "x_ssh_auth_password_enabled": true,
+      "x_ssh_bind_wildcard": false,
+      "x_ssh_enabled": true,
+      "x_ssh_password": "fixture-ssh-password",
+      "x_ssh_username": "fixture-ssh-user"
+    },
+    {
+      "_id": "00000000000000000000002a",
+      "key": "rsyslogd",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000002b",
+      "key": "usg",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000002c",
+      "key": "guest_access",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000002d",
+      "key": "radius",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000002e",
+      "key": "teleport",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000002f",
+      "key": "global_switch",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000030",
+      "key": "magic_site_to_site_vpn",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000031",
+      "key": "doh",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000032",
+      "key": "openvpn",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000033",
+      "key": "ether_lighting",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000034",
+      "key": "peer_to_peer",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000035",
+      "key": "ssl_inspection",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000036",
+      "key": "dashboard",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000037",
+      "key": "global_nat",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000038",
+      "key": "netflow",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000039",
+      "key": "snmp",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003a",
+      "key": "mdns",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003b",
+      "key": "traffic_flow",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003c",
+      "key": "ugw",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003d",
+      "key": "igmp_snooping",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003e",
+      "key": "ips_suppression",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "00000000000000000000003f",
+      "key": "usg_geo",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000040",
+      "key": "global_network",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000041",
+      "key": "device_supervision",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000042",
+      "key": "ipsec",
+      "site_id": "000000000000000000000005"
+    },
+    {
+      "_id": "000000000000000000000043",
+      "key": "test_and_commit",
+      "site_id": "000000000000000000000005"
+    }
+  ],
+  "meta": {
+    "rc": "ok"
+  }
+}

@@ -15,3 +15,12 @@ class NotImplementedPathError(UwoError):
     def __init__(self, path: str) -> None:
         super().__init__(f"{path} is not implemented in this build")
         self.path = path
+
+
+class SchemaError(UwoError):
+    """Controller data violates the schema or a limit; `path` names the offending element."""
+
+    def __init__(self, path: str, message: str) -> None:
+        super().__init__(f"{path}: {message}")
+        self.path = path
+        self.detail = message

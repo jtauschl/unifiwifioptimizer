@@ -119,6 +119,8 @@ select = [
 "src/unifiwifioptimizer/report/**" = ["T20"]
 # Build helpers are command-line scripts; stderr diagnostics are their interface.
 "scripts/**" = ["T20"]
+# The fixture anonymizer is a maintainer command-line tool; its report is its interface.
+"tests/tools/**" = ["T20"]
 # pytest's assert statements are the test mechanism, and subprocess use in tests drives the harness.
 "tests/**" = ["S101", "S603", "S607"]
 
