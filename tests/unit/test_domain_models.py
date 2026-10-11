@@ -127,8 +127,9 @@ def test_snapshot_exposes_the_bssid_index_and_distinguishes_uncollected_clients(
         settings=SiteSettings(country_code=276, channel_ai=None, mlo_mesh_enabled=None, outdoor_mode_enabled=None),
         mgmt=None,
         clients=None,
+        problems=(),
     )
-    assert snapshot.clients is None
+    assert snapshot.clients is None and snapshot.problems == ()
     assert snapshot.bssids.lookup(ap.vaps[0].bssid) == (ap.mac, Band.GHZ_2)
 
 

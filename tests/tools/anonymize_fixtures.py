@@ -34,7 +34,7 @@ SYNTHETIC_IP_PREFIX = "192.0.2."
 SYNTHETIC_ID_LEADING_ZEROS = 16
 FIXTURE_SSH_USER = "fixture-ssh-user"
 # A fixture credential, not a secret: it exists so the parser's Secret path is exercised.
-FIXTURE_SSH_PASSWORD = "fixture-ssh-password"  # noqa: S105
+FIXTURE_SSH_PASSWORD = "fixture-ssh-password"
 HOSTKEY_SEED = "fixture-hostkey:"
 MAX_SYNTHETIC_HOSTKEYS = 64
 

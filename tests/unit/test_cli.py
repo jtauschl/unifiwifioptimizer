@@ -39,7 +39,7 @@ def test_every_planned_subcommand_is_registered() -> None:
     assert sorted(HANDLERS) == expected
 
 
-@pytest.mark.parametrize("subcommand", registered_subcommands)
+@pytest.mark.parametrize("subcommand", ["run", "trust-host-keys"])
 def test_unimplemented_subcommand_fails_loudly(subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
     code = main([subcommand])
     captured = capsys.readouterr()
@@ -66,7 +66,7 @@ def test_keyboard_interrupt_maps_to_130(capsys: pytest.CaptureFixture[str]) -> N
 
 @pytest.fixture
 def module_argv() -> Iterator[None]:
-    with mock.patch.object(sys, "argv", ["unifiwifioptimizer", "sites"]):
+    with mock.patch.object(sys, "argv", ["unifiwifioptimizer", "run"]):
         yield
 
 
@@ -74,4 +74,4 @@ def test_python_m_entry_point_exits_with_main_result(module_argv: None, capsys: 
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("unifiwifioptimizer", run_name="__main__", alter_sys=True)
     assert exc_info.value.code == ExitCode.UNEXPECTED_ERROR
-    assert "subcommand 'sites' is not implemented" in capsys.readouterr().err
+    assert "subcommand 'run' is not implemented" in capsys.readouterr().err

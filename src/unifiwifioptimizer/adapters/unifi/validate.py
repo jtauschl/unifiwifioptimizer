@@ -8,11 +8,11 @@ carry the path and a static description, never a controller value.
 import math
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import TypeVar
 
 from unifiwifioptimizer.domain.errors import SchemaError
+from unifiwifioptimizer.domain.models import FieldProblem
 
 T = TypeVar("T")
 
@@ -66,14 +66,6 @@ Json = object
 Accessor = Callable[[Json, str], T]
 
 
-@dataclass(frozen=True, slots=True)
-class FieldProblem:
-    """An optional field that was present but invalid; the record keeps None in its place."""
-
-    path: str
-    message: str
-
-
 def _segment(key: object) -> str:
     # Error paths end up in reports, so a controller-chosen key is shown only when it is a plain identifier.
     if isinstance(key, int):
@@ -82,10 +74,13 @@ def _segment(key: object) -> str:
 
 
 def walk_depth(value: Json) -> None:
-    """Reject nesting deeper than `MAX_DEPTH`, iteratively so the check itself cannot overflow the stack.
+    """Reject nesting deeper than `MAX_DEPTH` and strings that are not valid Unicode, iteratively so the
+    check itself cannot overflow the stack.
 
-    The stack carries parent links instead of rendered paths, so a long controller key is referenced
-    once rather than copied into every descendant's path; the path is rendered only for the error.
+    `json.loads` turns a `\\uD800` escape into a lone surrogate, which no later `encode()` survives; the
+    walk already visits every value, so it is where that is refused. The stack carries parent links
+    instead of rendered paths, so a long controller key is referenced once rather than copied into every
+    descendant's path; the path is rendered only for the error.
     """
     links: list[tuple[int, object]] = []
     stack: list[tuple[Json, int, int]] = [(value, 0, -1)]
@@ -93,8 +88,18 @@ def walk_depth(value: Json) -> None:
         node, depth, link = stack.pop()
         if depth > MAX_DEPTH:
             raise SchemaError(_render(links, link), f"nesting deeper than {MAX_DEPTH}")
-        if isinstance(node, dict):
+        if isinstance(node, str):
+            try:
+                node.encode("utf-8")
+            except UnicodeEncodeError:
+                raise SchemaError(_render(links, link), "invalid Unicode") from None
+        elif isinstance(node, dict):
             for key, child in node.items():
+                if isinstance(key, str):
+                    try:
+                        key.encode("utf-8")
+                    except UnicodeEncodeError:
+                        raise SchemaError(_render(links, link), "invalid Unicode in a key") from None
                 links.append((link, key))
                 stack.append((child, depth + 1, len(links) - 1))
         elif isinstance(node, list):
@@ -187,12 +192,26 @@ def require_ip(value: Json, path: str) -> IPv4Address | IPv6Address:
 
 
 class Fields:
-    """Typed access to one record; optional accessors collect problems instead of raising."""
+    """Typed access to one record; optional accessors collect problems instead of raising.
 
-    def __init__(self, record: Mapping[str, Json], path: str, problems: list[FieldProblem] | None = None) -> None:
+    Every key an accessor touches is remembered, so the number of keys the parser never looked at can be
+    reported without naming them (`--dump-api` controller-drift signal).
+    """
+
+    def __init__(
+        self,
+        record: Mapping[str, Json],
+        path: str,
+        problems: list[FieldProblem] | None = None,
+        parent: "Fields | None" = None,
+    ) -> None:
         self._record = record
         self._path = path
         self.problems: list[FieldProblem] = [] if problems is None else problems
+        self.read_keys: set[str] = set()
+        self.children: list[Fields] = []
+        if parent is not None:
+            parent.children.append(self)
 
     def path(self, key: str) -> str:
         return f"{self._path}.{key}"
@@ -202,33 +221,39 @@ class Fields:
         return self._path
 
     def raw(self, key: str) -> Json:
+        self.read_keys.add(key)
         return self._record.get(key)
 
     def has(self, key: str) -> bool:
-        return key in self._record and self._record[key] is not None
+        return self.raw(key) is not None
+
+    def unknown_key_count(self) -> int:
+        """Keys of this record and its nested records that no accessor read."""
+        own = sum(1 for key in self._record if key not in self.read_keys)
+        return own + sum(child.unknown_key_count() for child in self.children)
+
+    def _child(self, value: Json, path: str) -> "Fields":
+        return Fields(require_mapping(value, path), path, self.problems, parent=self)
 
     def string(self, key: str, max_bytes: int = MAX_NAME_BYTES) -> str:
-        return require_str(self._record.get(key), self.path(key), max_bytes)
+        return require_str(self.raw(key), self.path(key), max_bytes)
 
     def integer(self, key: str, allowed: range | None = None) -> int:
-        return require_int(self._record.get(key), self.path(key), allowed)
+        return require_int(self.raw(key), self.path(key), allowed)
 
     def mac(self, key: str) -> str:
-        return require_mac(self._record.get(key), self.path(key))
+        return require_mac(self.raw(key), self.path(key))
 
     def ip(self, key: str) -> IPv4Address | IPv6Address:
-        return require_ip(self._record.get(key), self.path(key))
+        return require_ip(self.raw(key), self.path(key))
 
     def sequence(self, key: str, max_items: int) -> list[Json]:
-        return require_list(self._record.get(key), self.path(key), max_items)
+        return require_list(self.raw(key), self.path(key), max_items)
 
     def records(self, key: str, max_items: int) -> list["Fields"]:
         """A mandatory list of objects; the children report their problems into this record's list."""
         path = self.path(key)
-        items = self.sequence(key, max_items)
-        return [
-            Fields(require_mapping(item, f"{path}[{i}]"), f"{path}[{i}]", self.problems) for i, item in enumerate(items)
-        ]
+        return [self._child(item, f"{path}[{i}]") for i, item in enumerate(self.sequence(key, max_items))]
 
     def opt_sequence(self, key: str, max_items: int) -> list[Json] | None:
         """An optional list: absent → None; not a list or too long → None plus one problem."""
@@ -242,8 +267,7 @@ class Fields:
 
     def opt_records(self, key: str, max_items: int) -> list["Fields"]:
         """Optional list of objects; an element that is not an object is skipped with its own problem."""
-        children = self.opt_items(key, max_items, lambda v, p: Fields(require_mapping(v, p), p, self.problems))
-        return list(children or ())
+        return list(self.opt_items(key, max_items, self._child) or ())
 
     def opt_items(self, key: str, max_items: int, accessor: Accessor[T]) -> tuple[T, ...] | None:
         """Optional list read element by element: an invalid element is one problem and is skipped, an
@@ -260,13 +284,13 @@ class Fields:
         return tuple(values)
 
     def opt_object(self, key: str) -> "Fields | None":
-        value = self._record.get(key)
+        value = self.raw(key)
         if value is None:
             return None
         if not isinstance(value, dict):
             self.problems.append(FieldProblem(self.path(key), "expected an object"))
             return None
-        return Fields(value, self.path(key), self.problems)
+        return self._child(value, self.path(key))
 
     def opt_string(self, key: str, max_bytes: int = MAX_NAME_BYTES) -> str | None:
         return self._optional(key, lambda v, p: require_str(v, p, max_bytes))
@@ -281,7 +305,7 @@ class Fields:
         return value
 
     def opt_float(self, key: str, low: float, high: float) -> float | None:
-        value = self._record.get(key)
+        value = self.raw(key)
         if value is None:
             return None
         # `isfinite` only on floats: it converts an int and overflows past 1e308; the comparison below is
@@ -313,7 +337,7 @@ class Fields:
         return self.opt_items(key, max_items, lambda v, p: require_str(v, p, max_bytes)) or ()
 
     def _optional(self, key: str, accessor: Accessor[T]) -> T | None:
-        value = self._record.get(key)
+        value = self.raw(key)
         if value is None:
             return None
         try:
@@ -321,6 +345,11 @@ class Fields:
         except SchemaError as exc:
             self.problems.append(FieldProblem(exc.path, exc.detail))
             return None
+
+
+# Called by a parser for every record it modelled, so `--dump-api` can report the unread-key counts of
+# exactly those records.
+Observer = Callable[[Fields], None]
 
 
 def iter_records(items: Sequence[Json], path: str, problems: list[FieldProblem]) -> Iterator[Fields]:

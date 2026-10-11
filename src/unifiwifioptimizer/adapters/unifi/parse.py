@@ -10,10 +10,8 @@ texts carry the path and a static description, never the offending value — a c
 travel into a report through an error message. Secrets are moved into `Secret` the moment they are read.
 """
 
-import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from unifiwifioptimizer.adapters.unifi.validate import (
     ANTENNA_GAIN_RANGE,
@@ -52,9 +50,9 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     TX_POWER_RANGE,
     WIDTHS_MHZ,
     Accessor,
-    FieldProblem,
     Fields,
     Json,
+    Observer,
     data_list,
     iter_records,
     require_list,
@@ -64,14 +62,19 @@ from unifiwifioptimizer.adapters.unifi.validate import (
 )
 from unifiwifioptimizer.domain.errors import SchemaError
 from unifiwifioptimizer.domain.models import (
+    SITE_ID_RE,
     AccessPoint,
     ApGroup,
     Band,
     ChannelAiSettings,
     ClientSighting,
+    DevicesResult,
+    FieldProblem,
     MgmtSettings,
+    ParsedList,
     Radio,
     RadioStats,
+    SettingsResult,
     Site,
     SiteSettings,
     TxPowerMode,
@@ -97,32 +100,8 @@ NO_VALUE_SENTINEL = -1
 # Channel numbers, widths and country codes have at most three digits; the cap also keeps `int()` away
 # from strings long enough to exceed the interpreter's digit limit.
 MAX_NUMERIC_TEXT_LENGTH = 3
-# A site id becomes a request-path segment later; anything outside this alphabet is a schema violation.
-SITE_ID_RE = re.compile(rf"[A-Za-z0-9_-]{{1,{MAX_ID_BYTES}}}")
 AUTO_CHANNEL = "auto"
 SETTING_KEYS = frozenset({"radio_ai", "country", "connectivity", "mgmt"})
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class DevicesResult:
-    access_points: tuple[AccessPoint, ...]
-    unparsable: tuple[UnparsableDevice, ...]
-    problems: tuple[FieldProblem, ...]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ParsedList(Generic[T]):
-    """Records that parsed, plus every problem — including one per record that could not be parsed."""
-
-    items: tuple[T, ...]
-    problems: tuple[FieldProblem, ...]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SettingsResult:
-    settings: SiteSettings
-    mgmt: MgmtSettings | None
-    problems: tuple[FieldProblem, ...]
 
 
 def small_int(text: str) -> int | None:
@@ -276,7 +255,7 @@ def parse_access_point(fields: Fields) -> AccessPoint:
     )
 
 
-def parse_devices(payload: Json) -> DevicesResult:
+def parse_devices(payload: Json, observe: Observer | None = None) -> DevicesResult:
     """`stat/device`: access points only (`type == "uap"` or `is_access_point`); other devices are dropped
     before anything is read."""
     access_points: list[AccessPoint] = []
@@ -290,6 +269,8 @@ def parse_devices(payload: Json) -> DevicesResult:
         except SchemaError as exc:
             device = UnparsableDevice(mac=fields.opt_mac("mac"), name=fields.opt_string("name"), reason=str(exc))
             unparsable.append(device)
+        if observe is not None:
+            observe(fields)
     return DevicesResult(access_points=tuple(access_points), unparsable=tuple(unparsable), problems=tuple(problems))
 
 
@@ -368,7 +349,9 @@ def parse_wlan(fields: Fields) -> WlanConfig:
     )
 
 
-def parse_isolated(items: Sequence[Json], path: str, parser: Callable[[Fields], T]) -> ParsedList[T]:
+def parse_isolated(
+    items: Sequence[Json], path: str, parser: Callable[[Fields], T], observe: Observer | None = None
+) -> ParsedList[T]:
     """One record's mandatory-field failure becomes a problem; the other records are still parsed."""
     parsed: list[T] = []
     problems: list[FieldProblem] = []
@@ -377,11 +360,14 @@ def parse_isolated(items: Sequence[Json], path: str, parser: Callable[[Fields], 
             parsed.append(parser(fields))
         except SchemaError as exc:
             problems.append(FieldProblem(exc.path, exc.detail))
+            continue
+        if observe is not None:
+            observe(fields)
     return ParsedList(items=tuple(parsed), problems=tuple(problems))
 
 
-def parse_wlans(payload: Json) -> ParsedList[WlanConfig]:
-    return parse_isolated(data_list(payload, MAX_WLANS), "$.data", parse_wlan)
+def parse_wlans(payload: Json, observe: Observer | None = None) -> ParsedList[WlanConfig]:
+    return parse_isolated(data_list(payload, MAX_WLANS), "$.data", parse_wlan, observe)
 
 
 def mac_set(fields: Fields, key: str, max_items: int) -> frozenset[str]:
@@ -396,10 +382,10 @@ def parse_ap_group(fields: Fields) -> ApGroup:
     )
 
 
-def parse_ap_groups(payload: Json) -> ParsedList[ApGroup]:
+def parse_ap_groups(payload: Json, observe: Observer | None = None) -> ParsedList[ApGroup]:
     """`v2/api/site/<id>/apgroups` answers with a bare list, not a `data` envelope."""
     walk_depth(payload)
-    return parse_isolated(require_list(payload, "$", MAX_AP_GROUPS), "$", parse_ap_group)
+    return parse_isolated(require_list(payload, "$", MAX_AP_GROUPS), "$", parse_ap_group, observe)
 
 
 def blacklist_entry(entry: Fields) -> tuple[Band, int, int] | None:
@@ -464,7 +450,7 @@ def parse_mgmt(fields: Fields) -> MgmtSettings:
     )
 
 
-def parse_settings(payload: Json) -> SettingsResult:
+def parse_settings(payload: Json, observe: Observer | None = None) -> SettingsResult:
     """`rest/setting`: only the `radio_ai`, `country`, `connectivity` and `mgmt` records are read; every
     other record is discarded unread. A duplicate of one of the four keys is a problem; the first wins."""
     by_key: dict[str, Fields] = {}
@@ -487,10 +473,13 @@ def parse_settings(payload: Json) -> SettingsResult:
         outdoor_mode_enabled=mgmt_fields.opt_bool("outdoor_mode_enabled") if mgmt_fields is not None else None,
     )
     mgmt = parse_mgmt(mgmt_fields) if mgmt_fields is not None else None
+    if observe is not None:
+        for fields in by_key.values():
+            observe(fields)
     return SettingsResult(settings=settings, mgmt=mgmt, problems=tuple(problems))
 
 
-def parse_clients(payload: Json) -> ParsedList[ClientSighting]:
+def parse_clients(payload: Json, observe: Observer | None = None) -> ParsedList[ClientSighting]:
     """`stat/sta`: wireless clients only, reduced to the per-AP signal picture; identifiers are never read."""
     clients: list[ClientSighting] = []
     problems: list[FieldProblem] = []
@@ -508,19 +497,22 @@ def parse_clients(payload: Json) -> ParsedList[ClientSighting]:
         band = RADIO_BANDS.get(radio) if isinstance(radio, str) else None
         if band is None:
             fields.problems.append(FieldProblem(fields.path("radio"), "unknown radio"))
-        if ap_mac is not None and band is not None:
-            clients.append(
-                ClientSighting(
-                    ap_mac=ap_mac,
-                    band=band,
-                    essid=fields.opt_string("essid", MAX_SSID_BYTES),
-                    channel=fields.opt_integer("channel", CHANNEL_RANGE),
-                    signal_dbm=fields.opt_integer("signal", RSSI_RANGE),
-                    noise_dbm=fields.opt_integer("noise", NOISE_RANGE),
-                    satisfaction_pct=fields.opt_integer("satisfaction", PERCENT_RANGE, sentinel=NO_VALUE_SENTINEL),
-                    fast_transition=fields.opt_bool("is_11r"),
-                )
+        if ap_mac is None or band is None:
+            continue
+        clients.append(
+            ClientSighting(
+                ap_mac=ap_mac,
+                band=band,
+                essid=fields.opt_string("essid", MAX_SSID_BYTES),
+                channel=fields.opt_integer("channel", CHANNEL_RANGE),
+                signal_dbm=fields.opt_integer("signal", RSSI_RANGE),
+                noise_dbm=fields.opt_integer("noise", NOISE_RANGE),
+                satisfaction_pct=fields.opt_integer("satisfaction", PERCENT_RANGE, sentinel=NO_VALUE_SENTINEL),
+                fast_transition=fields.opt_bool("is_11r"),
             )
+        )
+        if observe is not None:
+            observe(fields)
     return ParsedList(items=tuple(clients), problems=tuple(problems))
 
 
@@ -536,6 +528,6 @@ def parse_site(fields: Fields) -> Site:
     )
 
 
-def parse_sites(payload: Json) -> ParsedList[Site]:
+def parse_sites(payload: Json, observe: Observer | None = None) -> ParsedList[Site]:
     """`self/sites`."""
-    return parse_isolated(data_list(payload, MAX_SITES), "$.data", parse_site)
+    return parse_isolated(data_list(payload, MAX_SITES), "$.data", parse_site, observe)

@@ -37,11 +37,10 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     SAE_COUNTER_RANGE,
     SPATIAL_STREAMS_RANGE,
     TX_POWER_RANGE,
-    FieldProblem,
     Fields,
 )
 from unifiwifioptimizer.domain.errors import SchemaError
-from unifiwifioptimizer.domain.models import Band, TxPowerMode, UnparsableDevice
+from unifiwifioptimizer.domain.models import Band, FieldProblem, TxPowerMode, UnparsableDevice
 from unifiwifioptimizer.domain.secrets import Secret
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -1150,3 +1149,26 @@ def test_parsers_only_raise_schema_errors(payload: object) -> None:
     ):
         with contextlib.suppress(SchemaError):
             function(payload)
+
+
+def test_the_observer_sees_only_records_that_became_models() -> None:
+    seen: list[str] = []
+    sites = parse.parse_sites(
+        {"data": [{"name": "ok", "desc": "A"}, {"name": 5, "desc": "B"}, {"name": "also", "desc": "C"}]},
+        lambda fields: seen.append(fields.path_self),
+    )
+    assert [s.id for s in sites.items] == ["ok", "also"] and len(sites.problems) == 1
+    assert seen == ["$.data[0]", "$.data[2]"]
+    seen.clear()
+    clients = parse.parse_clients(
+        {
+            "data": [
+                {"is_wired": True, "ap_mac": "02:00:00:00:00:01", "radio": "ng"},
+                {"is_wired": False, "ap_mac": "02:00:00:00:00:01", "radio": "weird"},
+                {"is_wired": False, "radio": "ng"},
+                {"is_wired": False, "ap_mac": "02:00:00:00:00:01", "radio": "ng"},
+            ]
+        },
+        lambda fields: seen.append(fields.path_self),
+    )
+    assert len(clients.items) == 1 and seen == ["$.data[3]"]

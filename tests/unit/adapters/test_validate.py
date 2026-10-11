@@ -9,7 +9,6 @@ from unifiwifioptimizer.adapters.unifi import validate
 from unifiwifioptimizer.adapters.unifi.validate import (
     MAX_DEPTH,
     MAX_LIST_ITEMS,
-    FieldProblem,
     Fields,
     data_list,
     iter_records,
@@ -23,6 +22,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     walk_depth,
 )
 from unifiwifioptimizer.domain.errors import SchemaError
+from unifiwifioptimizer.domain.models import FieldProblem
 
 octets = st.integers(0, 255)
 
@@ -278,3 +278,26 @@ def test_the_limit_table_matches_the_plan_literally() -> None:
     }  # fmt: skip
     assert {name: getattr(validate, name) for name in ranges} == ranges
     assert {20, 40, 80, 160, 240, 320} == validate.WIDTHS_MHZ
+
+
+def test_fields_remember_read_keys_and_count_unread_ones_recursively() -> None:
+    record = {"a": 1, "b": {"x": 1, "y": 2}, "c": [{"p": 1, "q": 2}, {"p": 3}], "d": 4}
+    fields = Fields(record, "$")
+    assert fields.integer("a") == 1
+    child = fields.opt_object("b")
+    assert child is not None and child.integer("x") == 1
+    for entry in fields.opt_records("c", 5):
+        entry.opt_integer("p")
+    assert fields.read_keys == {"a", "b", "c"}
+    # d (own) + y (b) + q (c[0]) = 3; c[1] has nothing unread.
+    assert fields.unknown_key_count() == 3
+    assert [c.path_self for c in fields.children] == ["$.b", "$.c[0]", "$.c[1]"]
+
+
+def test_walk_depth_refuses_lone_surrogates_in_values_and_keys() -> None:
+    with pytest.raises(SchemaError) as exc:
+        walk_depth({"data": [{"name": "ok"}, {"name": "x\ud800y"}]})
+    assert exc.value.path == "$.data[1].name" and exc.value.detail == "invalid Unicode"
+    with pytest.raises(SchemaError, match="invalid Unicode in a key"):
+        walk_depth({"data": [{"\udcff": 1}]})
+    walk_depth({"data": [{"name": "\U0001f600 ok"}]})

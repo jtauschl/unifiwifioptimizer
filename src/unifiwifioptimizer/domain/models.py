@@ -1,13 +1,17 @@
 """Domain value types shared by the core: what the controller reports, typed and bounded."""
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
 from types import MappingProxyType
+from typing import Generic, TypeVar
 
 from unifiwifioptimizer.domain.secrets import Secret
+
+T = TypeVar("T")
 
 
 class Band(StrEnum):
@@ -32,6 +36,8 @@ class TxPowerMode(StrEnum):
 
 # Lower-case, colon-separated MAC address as the controller prints it; validated by the adapter.
 Mac = str
+# A site id becomes a request-path segment; anything outside this alphabet is rejected at every boundary.
+SITE_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,6 +116,14 @@ class AccessPoint:
     @property
     def bands(self) -> frozenset[Band]:
         return frozenset(r.band for r in self.radios)
+
+
+@dataclass(frozen=True, slots=True)
+class FieldProblem:
+    """An optional field the controller sent but the adapter could not use; the model keeps None there."""
+
+    path: str
+    message: str
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -213,8 +227,9 @@ class ApGroup:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ChannelAiSettings:
-    """`rest/setting/radio_ai`; which of `enabled` and `auto_enabled` means "nightly optimisation runs" is
-    not established, so both are carried."""
+    """`rest/setting/radio_ai`. `enabled` is the switch behind the UI's scheduled "Channel AI Optimization"
+    (`cron_expr` is its start time, `channels`/`width_candidates_mhz` its per-band candidate sets);
+    `auto_enabled` is a separate flag whose UI counterpart is not established, so it is carried as is."""
 
     enabled: bool
     auto_enabled: bool | None
@@ -272,6 +287,28 @@ class Site:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ParsedList(Generic[T]):
+    """Records that parsed, plus every problem — including one per record that could not be parsed."""
+
+    items: tuple[T, ...]
+    problems: tuple[FieldProblem, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DevicesResult:
+    access_points: tuple[AccessPoint, ...]
+    unparsable: tuple[UnparsableDevice, ...]
+    problems: tuple[FieldProblem, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SettingsResult:
+    settings: SiteSettings
+    mgmt: MgmtSettings | None
+    problems: tuple[FieldProblem, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SiteSnapshot:
     """Everything the controller said about one site at one moment."""
 
@@ -285,6 +322,8 @@ class SiteSnapshot:
     mgmt: MgmtSettings | None
     # None when the client picture was not collected, as opposed to a site without wireless clients.
     clients: tuple[ClientSighting, ...] | None
+    # Every optional field the adapter dropped while building this snapshot.
+    problems: tuple[FieldProblem, ...]
 
     @property
     def bssids(self) -> BssidIndex:

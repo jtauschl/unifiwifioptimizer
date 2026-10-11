@@ -39,6 +39,7 @@ CORE_ALLOWED_STDLIB = frozenset(
         "math",
         "operator",
         "re",
+        "base64",
         "statistics",
         "string",
         "textwrap",

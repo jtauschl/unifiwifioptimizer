@@ -121,8 +121,9 @@ select = [
 "scripts/**" = ["T20"]
 # The fixture anonymizer is a maintainer command-line tool; its report is its interface.
 "tests/tools/**" = ["T20"]
-# pytest's assert statements are the test mechanism, and subprocess use in tests drives the harness.
-"tests/**" = ["S101", "S603", "S607"]
+# pytest's assert statements are the test mechanism, subprocess use in tests drives the harness, the
+# "passwords" and /tmp paths in tests are fixture constants and fake locations, never live values.
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"
