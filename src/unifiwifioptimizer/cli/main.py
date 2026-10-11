@@ -11,10 +11,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from unifiwifioptimizer import __version__
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, default_store_path
 from unifiwifioptimizer.adapters.unifi.client import UnifiClient
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.adapters.unifi.tls import TlsPolicy, observe_fingerprint
 from unifiwifioptimizer.app import use_cases
+from unifiwifioptimizer.app.trust import trust_host_keys
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
@@ -22,6 +24,7 @@ from unifiwifioptimizer.config.locations import resolve_config_location
 from unifiwifioptimizer.config.schema import parse_controller_url
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
+    HostKeyTrustError,
     NotImplementedPathError,
     TlsError,
     ToolEnvironmentError,
@@ -71,6 +74,27 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("site", help="site id (or its description when unambiguous)")
         if name == "controller-fingerprint":
             sub.add_argument("--url", help="controller URL when no configuration file exists yet")
+        if name == "trust-host-keys":
+            sub.add_argument("--site", required=True, help="site id (or its description when unambiguous)")
+            sub.add_argument(
+                "--ap", action="append", default=[], metavar="NAME", help="only this access point (repeatable)"
+            )
+            sub.add_argument(
+                "--yes",
+                action="store_true",
+                help="store keys that match the configuration pin or the controller without asking",
+            )
+            sub.add_argument(
+                "--accept-unverified",
+                action="store_true",
+                help="store keys nothing can verify (trust on first use) without asking",
+            )
+            sub.add_argument(
+                "--known-hosts",
+                type=Path,
+                metavar="PATH",
+                help="host-key store (default: $XDG_STATE_HOME/unifiwifioptimizer/known_hosts)",
+            )
     return parser
 
 
@@ -138,6 +162,33 @@ def _controller_fingerprint(args: argparse.Namespace) -> ExitCode:
     return ExitCode.OK
 
 
+def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
+    loaded = load_config(args.config_file)
+    _warn_legacy(loaded)
+    client, _ = _client(loaded, args)
+    store = KnownHostsStore(args.known_hosts if args.known_hosts is not None else default_store_path())
+
+    def confirm(question: str) -> bool:
+        if not sys.stdin.isatty():
+            print(
+                f"{PROG}: {safe_text(question, max_chars=MAX_ERROR_CHARS)} — no terminal to ask; declined",
+                file=sys.stderr,
+            )
+            return False
+        answer = input(f"{safe_text(question, max_chars=MAX_ERROR_CHARS)} [y/N] ")
+        return answer.strip().lower() in ("y", "yes")
+
+    report = trust_host_keys(
+        client, loaded, store, args.site, args.ap,
+        assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=confirm,
+    )  # fmt: skip
+    for result in report.results:
+        basis = f" ({result.basis})" if result.basis is not None else ""
+        detail = f" {result.detail}" if result.detail else ""
+        print(safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}", max_chars=MAX_ERROR_CHARS))
+    return ExitCode.HOST_KEY if report.failed else ExitCode.OK
+
+
 def _warn_legacy(loaded: LoadedConfig) -> None:
     if loaded.location.legacy:
         print(
@@ -161,7 +212,7 @@ HANDLERS: dict[str, Handler] = {
     "config": _config,
     "init": _init,
     "controller-fingerprint": _controller_fingerprint,
-    "trust-host-keys": _not_implemented("trust-host-keys"),
+    "trust-host-keys": _trust_host_keys,
 }
 
 
@@ -170,6 +221,8 @@ def _exit_code_for(exc: UwoError) -> ExitCode:
         return ExitCode.CONFIG
     if isinstance(exc, TlsError):
         return ExitCode.TLS
+    if isinstance(exc, HostKeyTrustError):
+        return ExitCode.HOST_KEY
     if isinstance(exc, ToolEnvironmentError):
         return ExitCode.ENVIRONMENT
     return ExitCode.UNEXPECTED_ERROR

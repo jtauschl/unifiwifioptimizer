@@ -38,6 +38,7 @@ Security = "https://github.com/jtauschl/unifiwifioptimizer/blob/main/SECURITY.md
 
 [project.scripts]
 unifiwifioptimizer = "unifiwifioptimizer.cli.main:main"
+unifiwifioptimizer-askpass = "unifiwifioptimizer.cli.askpass:main"
 
 # Kept in sync with [dependency-groups].dev below for pip/venv contributors (`pip install -e .[dev]`).
 # Dev-only license review (never shipped; `./dev licenses` gates the runtime graph only): hypothesis and

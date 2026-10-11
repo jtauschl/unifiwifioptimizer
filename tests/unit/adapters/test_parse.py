@@ -1172,3 +1172,12 @@ def test_the_observer_sees_only_records_that_became_models() -> None:
         lambda fields: seen.append(fields.path_self),
     )
     assert len(clients.items) == 1 and seen == ["$.data[3]"]
+
+
+def test_a_controller_ssh_user_that_is_not_a_user_name_is_dropped_with_a_problem() -> None:
+    payload = {"data": [{"key": "mgmt", "x_ssh_enabled": True, "x_ssh_username": "ad min", "x_ssh_password": "p"}]}
+    result = parse.parse_settings(payload)
+    assert result.mgmt is not None and result.mgmt.ssh_user is None
+    assert any(p.message == "not a user name" and p.path.endswith("x_ssh_username") for p in result.problems)
+    upper = parse.parse_settings({"data": [{"key": "mgmt", "x_ssh_username": "Admin"}]}).mgmt
+    assert upper is not None and upper.ssh_user == "Admin"

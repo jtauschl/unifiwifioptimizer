@@ -1,0 +1,41 @@
+#!/bin/sh
+# Stand-in for busybox `ifconfig` on the access point: reports and records interface state in
+# /run/ifstate, so a test can see whether the scan script brought an interface up and put it down again.
+# Every toggle is appended to /run/stub/toggles for the restore assertions.
+
+iface="${1:-}"
+action="${2:-}"
+[ -n "$iface" ] || {
+  echo "ifconfig stub: interface required" >&2
+  exit 1
+}
+
+case "$iface" in
+ra0 | apcli0 | rai0 | apclii0 | mon0 | lo) ;;
+*)
+  echo "ifconfig: $iface: error fetching interface information: Device not found" >&2
+  exit 1
+  ;;
+esac
+
+case "$action" in
+"")
+  if [ -e "/run/ifstate/$iface.up" ]; then
+    printf '%s\tLink encap:Ethernet  HWaddr 02:00:00:00:00:01\n\t\tUP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1\n' "$iface"
+  else
+    printf '%s\tLink encap:Ethernet  HWaddr 02:00:00:00:00:01\n\t\tBROADCAST MULTICAST  MTU:1500  Metric:1\n' "$iface"
+  fi
+  ;;
+up)
+  : >"/run/ifstate/$iface.up"
+  echo "$iface up" >>/run/stub/toggles
+  ;;
+down)
+  rm -f "/run/ifstate/$iface.up"
+  echo "$iface down" >>/run/stub/toggles
+  ;;
+*)
+  echo "ifconfig stub: unsupported action $action" >&2
+  exit 1
+  ;;
+esac

@@ -295,12 +295,18 @@ collect_shell_scripts() {
   local listing listing_error
   new_temp_file listing
   new_temp_file listing_error
-  if ! find scripts tests -maxdepth 1 -name '*.sh' 2>"$listing_error" | sort >"$listing"; then
-    fail "find scripts/*.sh tests/*.sh discovery failed: $(cat "$listing_error")"
+  # The remote scan script is a package resource, piped to the access point's `sh -s`; it carries a
+  # `shellcheck shell=sh` directive instead of a shebang.
+  if ! find scripts tests src/unifiwifioptimizer/adapters/ssh -maxdepth 1 -name '*.sh' 2>"$listing_error" | sort >"$listing"; then
+    fail "find scripts/*.sh tests/*.sh src/…/adapters/ssh/*.sh discovery failed: $(cat "$listing_error")"
   fi
   while IFS= read -r f; do
     found+=("$f")
   done <"$listing"
+  # The harness stubs are shell scripts without an extension (they stand in for `iw` and `ifconfig`).
+  for f in docker/ap/entrypoint.sh docker/ap/stubs/iw docker/ap/stubs/ifconfig; do
+    [ -f "$f" ] && found+=("$f")
+  done
   eval "$1=(\"\${found[@]}\")"
 }
 

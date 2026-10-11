@@ -158,7 +158,14 @@ def test_api_key_falls_back_to_the_environment_only_when_absent() -> None:
         ({**minimal(), "sites": {"a": {"neighbors": {"x": [1]}}}}, "sites.a.neighbors.x"),
         ({**minimal(), "sites": {"a": {"neighbors": {"x": ["y"]}}}}, "sites.a.ssh"),
         ({**minimal(), "sites": {"a": {"ssh": {"auth": "magic"}}}}, "sites.a.ssh.auth"),
-        ({**minimal(), "sites": {"a": {"ssh": {"user": "Root"}}}}, "sites.a.ssh.user"),
+        ({**minimal(), "sites": {"a": {"ssh": {"user": "a b"}}}}, "sites.a.ssh.user"),
+        ({**minimal(), "sites": {"a": {"ssh": {"user": "x@y"}}}}, "sites.a.ssh.user"),
+        ({**minimal(), "sites": {"a": {"ssh": {"user": "-dash"}}}}, "sites.a.ssh.user"),
+        (
+            {**minimal(), "sites": {"a": {"ssh": {"auth": "key", "user": "u", "key_file": "keys/id"}}}},
+            "sites.a.ssh.key_file",
+        ),
+        (minimal(ca_cert="certs/ca.pem"), "controller.ca_cert"),
         (
             {**minimal(), "sites": {"a": {"ssh": {"auth": "password", "user": "u", "password": ""}}}},
             "sites.a.ssh.password",
@@ -252,6 +259,7 @@ def test_name_caps_admit_exactly_128_characters() -> None:
     Config.from_mapping(with_site({"ssh": {}, "neighbors": {"a" * 128: ["b" * 128]}}))
     assert error_path(with_site({"ssh": {}, "neighbors": {"a" * 129: []}})) == "sites.default.neighbors"
     Config.from_mapping(with_site({"ssh": {"user": "u" * 32, "auth": "key"}}))
+    Config.from_mapping(with_site({"ssh": {"user": "Admin", "auth": "key"}}))
     assert error_path(with_site({"ssh": {"password": "p" * 257, "user": "u"}})) == "sites.default.ssh.password"
     Config.from_mapping(with_site({"ssh": {"password": "p" * 256, "user": "u"}}))
 

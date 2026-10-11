@@ -1,7 +1,29 @@
-# Local integration-test harness for `./dev test-integration`. Every image is pinned by digest, which
-# tests/integration/test_harness.py asserts.
+# Local integration-test harness for `./dev test-integration`. Every base image is pinned by digest
+# (tests/integration/test_harness.py asserts it for images and for the FROM lines of built images).
+#
+#   ap     — what an access point looks like to the tool: dropbear on 22 (the real AP server), an OpenSSH
+#            server on 2222 (the other common server), busybox tools, stubbed `iw`/`ifconfig`, and the
+#            remote scan script's inputs (/etc/board.info). Ports are published on 127.0.0.1 only.
+#   ssh84  — the oldest OpenSSH client the tool supports (Debian bullseye ships 8.4p1), for the
+#            floor tests: `-F none` vs. a file named `none`, quoted paths, SSH_ASKPASS_REQUIRE=force.
 services:
   ap:
-    image: alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
-    command: ["sleep", "infinity"]
+    build:
+      context: ./ap
     init: true
+    ports:
+      - "127.0.0.1::22"
+      - "127.0.0.1::2222"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 22 && nc -z 127.0.0.1 2222"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  ssh84:
+    build:
+      context: ./ssh84
+    init: true
+    command: ["sleep", "infinity"]
+    depends_on:
+      ap:
+        condition: service_healthy

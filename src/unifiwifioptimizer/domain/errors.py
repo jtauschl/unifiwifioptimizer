@@ -73,3 +73,47 @@ class ResponseTooLargeError(ControllerError):
 
 class ToolEnvironmentError(UwoError):
     """The host lacks something the tool needs (a binary, a version, a writable directory)."""
+
+
+class ScanError(UwoError):
+    """A neighbour scan on one access point failed; the run isolates it and continues with the others."""
+
+
+class HostKeyUnknownError(ScanError):
+    """No host key is stored for the access point's alias; nothing was sent (run `trust-host-keys`)."""
+
+
+class HostKeyMismatchError(ScanError):
+    """OpenSSH refused the access point's host key against the stored one; nothing was authenticated."""
+
+
+class SshAuthenticationError(ScanError):
+    """The access point rejected the credentials."""
+
+
+class ScanTimeoutError(ScanError):
+    """The SSH call did not finish within its budget and was killed."""
+
+
+class ScanOutputTooLargeError(ScanError):
+    """The access point produced more output than the caps allow; the call was killed."""
+
+
+class ScanTransportError(ScanError):
+    """OpenSSH could not connect or ended abnormally for a reason other than the ones above."""
+
+
+class RemoteScriptError(ScanError):
+    """The remote scan script ended with a non-zero status of its own."""
+
+
+class ScanParseError(ScanError):
+    """The access point's output did not follow the scan protocol."""
+
+
+class AddressRefusedError(ScanError):
+    """The access point's address is not private and `allow_public_ap_addresses` is off."""
+
+
+class HostKeyTrustError(UwoError):
+    """`trust-host-keys` cannot decide which key to trust (no match, ambiguity, conflicting sources)."""

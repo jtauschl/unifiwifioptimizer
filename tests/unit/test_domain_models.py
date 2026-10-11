@@ -82,6 +82,7 @@ def access_point(mac: str, bands: tuple[Band, ...]) -> AccessPoint:
         radios=tuple(radio(b, 1) for b in bands),
         radio_stats=tuple(stats(b, 10) for b in bands),
         vaps=tuple(vap(b, f"02:00:00:00:{i:02x}:{mac[-2:]}") for i, b in enumerate(bands, start=1)),
+        ssh_host_key_fingerprint=None,
     )
 
 
@@ -91,11 +92,13 @@ def test_access_point_looks_up_radio_and_stats_by_band() -> None:
     without_stats = AccessPoint(
         mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, uplink_type=None,
         radios=(*ap.radios, radio(Band.GHZ_6, 5)), radio_stats=(stats(Band.GHZ_2, 6),), vaps=(),
+        ssh_host_key_fingerprint=None,
     )  # fmt: skip
     assert without_stats.bands == {Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}
     stats_only = AccessPoint(
         mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, uplink_type=None,
         radios=(radio(Band.GHZ_2, 1),), radio_stats=(stats(Band.GHZ_5, 10),), vaps=(),
+        ssh_host_key_fingerprint=None,
     )  # fmt: skip
     assert stats_only.bands == {Band.GHZ_2}
     assert ap.radio(Band.GHZ_5) is ap.radios[1]

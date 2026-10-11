@@ -38,6 +38,9 @@ class TxPowerMode(StrEnum):
 Mac = str
 # A site id becomes a request-path segment; anything outside this alphabet is rejected at every boundary.
 SITE_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+# A login name as it goes into ssh's `user@host`: controllers hand out mixed-case names, so POSIX's
+# lower-case-only rule would reject real controllers; letters, digits, `_`, `.` and `-` only.
+SSH_USER_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -106,6 +109,9 @@ class AccessPoint:
     radios: tuple[Radio, ...]
     radio_stats: tuple[RadioStats, ...]
     vaps: tuple[Vap, ...]
+    # `x_ssh_hostkey_fingerprint` as the controller reports it (SHA256:… or MD5 colon-hex), None when the
+    # controller has not learnt the key; compared, never trusted, by `trust-host-keys`.
+    ssh_host_key_fingerprint: str | None
 
     def radio(self, band: Band) -> Radio | None:
         return next((r for r in self.radios if r.band is band), None)

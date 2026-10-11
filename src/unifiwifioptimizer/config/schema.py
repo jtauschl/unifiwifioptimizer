@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from unifiwifioptimizer.domain.errors import ConfigError
-from unifiwifioptimizer.domain.models import SITE_ID_RE
+from unifiwifioptimizer.domain.models import SITE_ID_RE, SSH_USER_RE
 from unifiwifioptimizer.domain.secrets import Secret
 from unifiwifioptimizer.rf.constants import (
     CLIENT_TX_RANGE,
@@ -48,7 +48,6 @@ MAX_NEIGHBOUR_ENTRIES = 256
 MAX_HOST_KEYS = 256
 # ITU-R P.1238 tabulates distance power loss coefficients up to the low forties, i.e. exponents below 5.
 MAX_PATH_LOSS_EXPONENT = 10
-SSH_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 # An HTTP header value: printable ASCII without spaces, so a stray control character cannot reach
 # http.client, whose ValueError would echo the key.
 API_KEY_RE = re.compile(r"[\x21-\x7e]{1,512}")
@@ -130,7 +129,11 @@ def _path(mapping: Mapping[str, Value], path: str, key: str) -> Path | None:
     # OpenSSH expands `%` in path options and a quote would end the quoting the argv builder applies.
     if '"' in text or "%" in text or "\x00" in text:
         raise ConfigError(f"{path}.{key}", 'a path must not contain `"`, `%` or NUL')
-    return Path(text).expanduser()
+    resolved = Path(text).expanduser()
+    if not resolved.is_absolute():
+        # ssh runs from `/`; a relative path would silently point there, not next to the configuration file.
+        raise ConfigError(f"{path}.{key}", "a path must be absolute (or start with ~)")
+    return resolved
 
 
 def parse_fingerprint(text: str, path: str) -> bytes:
@@ -278,7 +281,7 @@ def _ssh(value: Value, path: str) -> SshConfig:
     _reject_unknown(mapping, path, known)
     user = _opt_text(mapping, path, "user", 32)
     if user is not None and not SSH_USER_RE.fullmatch(user):
-        raise ConfigError(f"{path}.user", "expected a POSIX user name")
+        raise ConfigError(f"{path}.user", "expected a user name (letters, digits, `_`, `.`, `-`)")
     password_text = _opt_text(mapping, path, "password", 256)
     key_file = _path(mapping, path, "key_file")
     password = Secret(password_text) if password_text else None

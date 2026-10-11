@@ -63,6 +63,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
 from unifiwifioptimizer.domain.errors import SchemaError
 from unifiwifioptimizer.domain.models import (
     SITE_ID_RE,
+    SSH_USER_RE,
     AccessPoint,
     ApGroup,
     Band,
@@ -238,6 +239,12 @@ def parse_entries(fields: Fields, key: str, max_items: int, parser: Callable[[Fi
     return tuple(parsed)
 
 
+def _host_key_fingerprint(fields: Fields) -> str | None:
+    # The controller sends "\n" for a key it has not learnt yet; whitespace-only is "none".
+    text = fields.opt_string("x_ssh_hostkey_fingerprint", MAX_NAME_BYTES)
+    return text.strip() or None if text is not None else None
+
+
 def parse_access_point(fields: Fields) -> AccessPoint:
     fields.string("type", MAX_TOKEN_BYTES)
     radios = tuple(parse_radio(r) for r in fields.records("radio_table", MAX_RADIOS_PER_DEVICE))
@@ -252,6 +259,7 @@ def parse_access_point(fields: Fields) -> AccessPoint:
         radios=radios,
         radio_stats=parse_entries(fields, "radio_table_stats", MAX_RADIOS_PER_DEVICE, parse_radio_stats),
         vaps=parse_entries(fields, "vap_table", MAX_VAPS_PER_DEVICE, parse_vap),
+        ssh_host_key_fingerprint=_host_key_fingerprint(fields),
     )
 
 
@@ -441,6 +449,10 @@ def country_code(fields: Fields) -> int | None:
 
 def parse_mgmt(fields: Fields) -> MgmtSettings:
     user = fields.opt_string("x_ssh_username", MAX_SHORT_TEXT_BYTES)
+    if user is not None and not SSH_USER_RE.fullmatch(user):
+        # It goes into ssh's `user@host`; anything that is not a plain user name is dropped, loudly.
+        fields.problems.append(FieldProblem(fields.path("x_ssh_username"), "not a user name"))
+        user = None
     password = fields.opt_string("x_ssh_password", MAX_PASSWORD_BYTES)
     return MgmtSettings(
         ssh_enabled=fields.opt_bool("x_ssh_enabled"),

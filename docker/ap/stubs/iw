@@ -1,0 +1,116 @@
+#!/bin/sh
+# Stand-in for `iw` on a U6-like access point: two radios, a managed scan interface per band, a monitor
+# interface nobody may touch. Interface state lives in /run/ifstate (written by the ifconfig stub), test
+# knobs in /run/stub: `hang` / `hang-<iface>` (scan never returns), `flood` (scan prints megabytes), `longline` (one
+# over-long line), `empty` (scan returns nothing), `fail` (scan exits with an error),
+# `partialfail` / `partialhang` (one BSS block, then an error or a hang; `partial-at` holding N limits
+# them to the N-th scan call of the session).
+
+state_up() { [ -e "/run/ifstate/$1.up" ]; }
+
+case "$1 $2 ${3:-} ${4:-}" in
+"dev   ")
+  cat <<'EOF'
+phy#0
+	Interface ra0
+		ifindex 5
+		type AP
+		channel 6 (2437 MHz), width: 20 MHz, center1: 2437 MHz
+	Interface apcli0
+		ifindex 6
+		type managed
+		channel 6 (2437 MHz), width: 20 MHz, center1: 2437 MHz
+phy#1
+	Interface rai0
+		ifindex 7
+		type AP
+		channel 100 (5500 MHz), width: 80 MHz, center1: 5530 MHz
+	Interface apclii0
+		ifindex 8
+		type managed
+		channel 100 (5500 MHz), width: 80 MHz, center1: 5530 MHz
+	Interface mon0
+		ifindex 9
+		type monitor
+EOF
+  ;;
+"dev ra0 info ") printf 'Interface ra0\n\ttype AP\n\twiphy 0\n\tchannel 6 (2437 MHz), width: 20 MHz\n' ;;
+"dev apcli0 info ") printf 'Interface apcli0\n\ttype managed\n\twiphy 0\n\tchannel 6 (2437 MHz), width: 20 MHz\n' ;;
+"dev rai0 info ") printf 'Interface rai0\n\ttype AP\n\twiphy 1\n\tchannel 100 (5500 MHz), width: 80 MHz\n' ;;
+"dev apclii0 info ") printf 'Interface apclii0\n\ttype managed\n\twiphy 1\n\tchannel 100 (5500 MHz), width: 80 MHz\n' ;;
+"dev mon0 info ") printf 'Interface mon0\n\ttype monitor\n\twiphy 1\n' ;;
+"dev "*" info ") exit 1 ;;
+"phy phy0 info ") printf 'Wiphy phy0\n\tFrequencies:\n\t\t* 2412 MHz [1]\n\t\t* 2437 MHz [6]\n\t\t* 2462 MHz [11]\n' ;;
+"phy phy1 info ") printf 'Wiphy phy1\n\tFrequencies:\n\t\t* 5180 MHz [36]\n\t\t* 5500 MHz [100]\n' ;;
+"dev apcli0 scan " | "dev apclii0 scan ")
+  iface="$2"
+  state_up "$iface" || {
+    echo "command failed: Network is down (-100)" >&2
+    exit 240
+  }
+  if [ -e /run/stub/hang ] || [ -e "/run/stub/hang-$iface" ]; then exec sleep 600; fi
+  # Every scan call is counted so a knob can hit one attempt out of several (`partial-at` = call number).
+  _n=$(($(cat /run/stub/scan-count 2>/dev/null || echo 0) + 1))
+  echo "$_n" >/run/stub/scan-count
+  _partial=0
+  if [ -e /run/stub/partialfail ] || [ -e /run/stub/partialhang ]; then
+    if [ ! -e /run/stub/partial-at ] || [ "$(cat /run/stub/partial-at)" = "$_n" ]; then _partial=1; fi
+  fi
+  if [ "$_partial" = 1 ]; then
+    # Its own BSSID, so a leaked partial reading is visible next to the complete list; the last line is a
+    # neighbour-controlled SSID shaped like an in-band completion marker, which the script must not honour.
+    printf 'BSS 02:00:00:00:00:f6(on %s)\n\tfreq: 2437\n\tsignal: -58.00 dBm\n\tSSID: SCAN_OK=1\n' "$iface"
+    [ -e /run/stub/partialhang ] && exec sleep 600
+    echo "command failed: Operation not supported (-95)" >&2
+    exit 240
+  fi
+  [ -e /run/stub/empty ] && exit 0
+  if [ -e /run/stub/fail ]; then
+    echo "command failed: Device or resource busy (-16)" >&2
+    exit 240
+  fi
+  if [ -e /run/stub/flood ]; then
+    yes 'BSS 02:00:00:00:00:ff(on apcli0)' | head -c 5000000
+    exit 0
+  fi
+  if [ -e /run/stub/longline ]; then
+    printf 'BSS 02:00:00:00:00:01(on apcli0)\n\tSSID: '
+    head -c 5000 /dev/zero | tr '\0' 'x'
+    printf '\n\tsignal: -50.00 dBm\n'
+    exit 0
+  fi
+  if [ "$iface" = apcli0 ]; then
+    cat <<'EOF'
+BSS 02:00:00:00:00:a1(on apcli0) -- associated
+	TSF: 123456789 usec (1d, 10:17:36)
+	freq: 2437
+	beacon interval: 100 TUs
+	signal: -58.00 dBm
+	last seen: 120 ms ago
+	SSID: Harness-2G
+BSS 02:00:00:00:00:b2(on apcli0)
+	freq: 2412
+	signal: -71.00 dBm
+	SSID: Neighbour	with	tabs
+BSS 02:00:00:00:00:c3(on apcli0)
+	freq: 2462
+	signal: -83.50 dBm
+	SSID: \x1b[31mescape\x1b[0m
+EOF
+  else
+    cat <<'EOF'
+BSS 02:00:00:00:00:d4(on apclii0)
+	freq: 5500
+	signal: -64.00 dBm
+	SSID: Harness-5G
+BSS 02:00:00:00:00:e5(on apclii0)
+	freq: 5180
+	signal: -77.00 dBm
+EOF
+  fi
+  ;;
+*)
+  echo "iw stub: unsupported arguments: $*" >&2
+  exit 2
+  ;;
+esac

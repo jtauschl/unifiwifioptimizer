@@ -39,7 +39,7 @@ def test_every_planned_subcommand_is_registered() -> None:
     assert sorted(HANDLERS) == expected
 
 
-@pytest.mark.parametrize("subcommand", ["run", "trust-host-keys"])
+@pytest.mark.parametrize("subcommand", ["run"])
 def test_unimplemented_subcommand_fails_loudly(subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
     code = main([subcommand])
     captured = capsys.readouterr()
