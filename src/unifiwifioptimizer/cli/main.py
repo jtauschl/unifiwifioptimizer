@@ -7,18 +7,23 @@ tool did not foresee is 1.
 
 import argparse
 import sys
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from unifiwifioptimizer import __version__
+from unifiwifioptimizer.adapters.clock import SystemClock
 from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, default_store_path
+from unifiwifioptimizer.adapters.ssh.openssh import OpenSshScanner, check_openssh_version
 from unifiwifioptimizer.adapters.unifi.client import UnifiClient
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.adapters.unifi.tls import TlsPolicy, observe_fingerprint
 from unifiwifioptimizer.app import use_cases
+from unifiwifioptimizer.app.run import RunResult, RunVerdict, run_analysis
 from unifiwifioptimizer.app.trust import trust_host_keys
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
+from unifiwifioptimizer.cli.progress import StderrProgress
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
 from unifiwifioptimizer.config.locations import ConfigLocation, resolve_config_location
 from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
@@ -26,15 +31,15 @@ from unifiwifioptimizer.config.schema import parse_controller_url
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
     HostKeyTrustError,
-    NotImplementedPathError,
     TlsError,
     ToolEnvironmentError,
     UwoError,
 )
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
+from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
 from unifiwifioptimizer.report.skeleton import render_skeleton
-from unifiwifioptimizer.report.text import render_site, render_sites
+from unifiwifioptimizer.report.text import render_report, render_site, render_sites
 
 PROG = "unifiwifioptimizer"
 
@@ -82,6 +87,17 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--profiles", action="store_true", help="print the effective WLAN profiles instead")
         elif name in SITE_SUBCOMMANDS:
             sub.add_argument("site", help="site id (or its description when unambiguous)")
+        if name == "run":
+            sub.add_argument(
+                "--site", action="append", default=[], metavar="ID", help="only this configured site (repeatable)"
+            )
+            sub.add_argument("--json", action="store_true", help="print one JSON document instead of the text report")
+            sub.add_argument(
+                "--no-scan", action="store_true", help="analyse the controller side only, no neighbour scans"
+            )
+            sub.add_argument(
+                "--clients", action="store_true", help="read the associated clients (signal only, no identities)"
+            )
         if name == "controller-fingerprint":
             sub.add_argument("--url", help="controller URL when no configuration file exists yet")
         if name == "trust-host-keys":
@@ -237,15 +253,48 @@ def _warn_legacy_location(location: ConfigLocation) -> None:
         )
 
 
-def _not_implemented(name: str) -> Handler:
-    def handler(_: argparse.Namespace) -> ExitCode:
-        raise NotImplementedPathError(f"subcommand '{name}'")
+def _run(args: argparse.Namespace) -> ExitCode:
+    loaded = load_config(args.config_file)
+    _warn_legacy(loaded)
+    profiles = load_profiles(args.profiles_file, loaded.location).profiles
+    client, dump = _client(loaded, args)
+    result = run_analysis(
+        loaded,
+        profiles,
+        client,
+        lambda: OpenSshScanner(KnownHostsStore(default_store_path())),
+        SystemClock(),
+        time.sleep,
+        StderrProgress(),
+        sites=args.site or None,
+        with_clients=args.clients,
+        skip_scan=args.no_scan,
+        environment_check=check_openssh_version,
+    )
+    if dump is not None:
+        for report in result.reports:
+            dump.write(f"s/{report.site_id}/run", report)
+    if args.json:
+        print(render_json(result.reports), end="")
+    else:
+        for report in result.reports:
+            print(render_report(report), end="")
+    return exit_code_for_run(result)
 
-    return handler
+
+def exit_code_for_run(result: RunResult) -> ExitCode:
+    """The exit-code contract for a completed run: 5 only when a site's host keys kept every access point
+    unverified, 6 for any partial result, else 0; the pre-scan aborts raise and are mapped by `_exit_code_for`."""
+    verdict = result.verdict
+    if verdict is RunVerdict.NO_VERIFIABLE_AP:
+        return ExitCode.HOST_KEY
+    if verdict is RunVerdict.PARTIAL:
+        return ExitCode.PARTIAL
+    return ExitCode.OK
 
 
 HANDLERS: dict[str, Handler] = {
-    "run": _not_implemented("run"),
+    "run": _run,
     "sites": _sites,
     "site": _site,
     "config": _config,

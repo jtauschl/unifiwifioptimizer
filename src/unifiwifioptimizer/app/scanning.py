@@ -7,9 +7,8 @@ systematically miss each other. Every `ScanError` is isolated to its access poin
 else propagates.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.schema import ControllerConfig, SiteConfig, SshAuth, SshConfig
@@ -34,9 +33,11 @@ from unifiwifioptimizer.domain.scan import (
     ScanFailureKind,
     ScanPass,
     ScanTarget,
+    SiteScan,
     SshAuthMethod,
     SshCredentials,
 )
+from unifiwifioptimizer.ports.progress import ScanProgress
 from unifiwifioptimizer.ports.scanner import Scanner
 
 Sleep = Callable[[float], None]
@@ -80,6 +81,10 @@ def resolve_credentials(
             raise ConfigError(
                 f"{path}.auth", "controller mode, but the controller has password authentication disabled"
             )
+        if mgmt.ssh_user_rejected:
+            raise ConfigError(
+                f"{path}.auth", "controller mode, but the controller's SSH user was rejected (not a user name)"
+            )
         if mgmt.ssh_user is None or mgmt.ssh_password is None:
             raise ConfigError(f"{path}.auth", "controller mode, but the controller reports no SSH user or password")
         if ssh.user is not None and ssh.user != mgmt.ssh_user:
@@ -99,16 +104,6 @@ def resolve_credentials(
     return SshCredentials(user=user, method=SshAuthMethod.AGENT, password=None, key_file=None)
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SiteScan:
-    """What a site's scan produced: one `ApScan` per access point that exists on the controller, plus the
-    configured names the controller does not know (a configuration drift, reported, not fatal)."""
-
-    site_id: str
-    scans: tuple[ApScan, ...]
-    unknown_names: tuple[str, ...]
-
-
 def scan_members(site: SiteConfig) -> tuple[str, ...]:
     """Every access point that takes part in a neighbour pair, by name, in configuration order."""
     names: list[str] = []
@@ -119,21 +114,44 @@ def scan_members(site: SiteConfig) -> tuple[str, ...]:
     return tuple(names)
 
 
+def configured_access_points(
+    snapshot: SiteSnapshot, site: SiteConfig
+) -> tuple[dict[str, AccessPoint], tuple[str, ...]]:
+    """The access point behind every configured name the controller knows, and the names it does not.
+
+    The neighbour matrix keys by name, so a configured name two controller devices share is a configuration
+    error — raised before any scan, for scanning and controller-only sites alike."""
+    by_name: dict[str, list[AccessPoint]] = {}
+    for candidate in snapshot.access_points:
+        by_name.setdefault(candidate.name, []).append(candidate)
+    found: dict[str, AccessPoint] = {}
+    unknown: list[str] = []
+    for name in scan_members(site):
+        candidates = by_name.get(name, [])
+        if len(candidates) > 1:
+            raise ConfigError(f"sites.{site.id}.neighbors", f"{len(candidates)} access points share a configured name")
+        if candidates:
+            found[name] = candidates[0]
+        else:
+            unknown.append(name)
+    return found, tuple(unknown)
+
+
 def build_targets(
     snapshot: SiteSnapshot, site: SiteConfig, loaded: LoadedConfig
 ) -> tuple[tuple[ScanTarget, ...], tuple[str, ...]]:
-    """Targets for the configured members found on the controller, and the names that were not."""
+    """Targets for the configured members found on the controller, and the names that were not.
+
+    An access point the controller reports as disconnected is left out (nothing answers there; the analysis
+    reports it as offline)."""
     if site.ssh is None:
         raise ConfigError(f"sites.{site.id}.ssh", "neighbour scans need an ssh section")
     credentials = resolve_credentials(site.ssh, snapshot.mgmt, loaded, site.id)
     origin = controller_origin(loaded.config.controller)
-    by_name: dict[str, AccessPoint] = {ap.name: ap for ap in snapshot.access_points}
+    found, unknown = configured_access_points(snapshot, site)
     targets: list[ScanTarget] = []
-    unknown: list[str] = []
-    for name in scan_members(site):
-        ap = by_name.get(name)
-        if ap is None:
-            unknown.append(name)
+    for ap in found.values():
+        if ap.offline:
             continue
         targets.append(
             ScanTarget(
@@ -149,7 +167,7 @@ def build_targets(
                 allow_public_address=site.ssh.allow_public_ap_addresses,
             )
         )
-    return tuple(targets), tuple(unknown)
+    return tuple(targets), unknown
 
 
 class ScanOrchestrator:
@@ -160,25 +178,54 @@ class ScanOrchestrator:
         self._sleep = sleep
         self._pass_pause_s = pass_pause_s
 
-    def scan_site(self, snapshot: SiteSnapshot, site: SiteConfig, loaded: LoadedConfig) -> SiteScan:
-        targets, unknown = build_targets(snapshot, site, loaded)
-        concurrency = site.ssh.scan_concurrency if site.ssh is not None else 1
+    def scan_site(
+        self,
+        site_id: str,
+        targets: Sequence[ScanTarget],
+        unknown_names: Sequence[str],
+        passes: int,
+        concurrency: int = 1,
+        progress: ScanProgress | None = None,
+    ) -> SiteScan:
+        """Runs the passes over targets that were built (and whose credentials were resolved) beforehand, so
+        nothing is resolved after the first scan has started."""
         results: dict[str, list[ScanPass | ScanFailure]] = {t.ap_mac: [] for t in targets}
-        for index in range(site.scan_passes):
+        for index in range(passes):
             if index:
                 self._sleep(self._pass_pause_s)
-            for mac, outcome in self._run_pass(targets, concurrency):
-                results[mac].append(outcome)
+            for target, outcome in self._run_pass(targets, concurrency, progress, index, passes):
+                results[target.ap_mac].append(outcome)
         scans = tuple(ApScan(ap_mac=t.ap_mac, ap_name=t.ap_name, passes=tuple(results[t.ap_mac])) for t in targets)
-        return SiteScan(site_id=site.id, scans=scans, unknown_names=unknown)
+        return SiteScan(site_id=site_id, scans=scans, unknown_names=tuple(unknown_names))
 
-    def _run_pass(self, targets: Iterable[ScanTarget], concurrency: int) -> list[tuple[str, ScanPass | ScanFailure]]:
-        targets = list(targets)
+    def _run_pass(
+        self,
+        targets: Sequence[ScanTarget],
+        concurrency: int,
+        progress: ScanProgress | None,
+        index: int,
+        passes: int,
+    ) -> Iterator[tuple[ScanTarget, ScanPass | ScanFailure]]:
+        """Progress events come from this (the coordinating) thread only; the serial path reports each access
+        point as it is reached, the pool reports every start first because the pool decides the order."""
         if concurrency <= 1 or len(targets) <= 1:
-            return [(t.ap_mac, self._scan_one(t)) for t in targets]
+            for target in targets:
+                if progress is not None:
+                    progress.scan_started(target.ap_name, index, passes)
+                outcome = self._scan_one(target)
+                if progress is not None:
+                    progress.scan_finished(target.ap_name, outcome)
+                yield target, outcome
+            return
+        if progress is not None:
+            for target in targets:
+                progress.scan_started(target.ap_name, index, passes)
         # Opt-in only (`scan_concurrency` > 1): concurrent scans make neighbours miss each other's beacons.
         with ThreadPoolExecutor(max_workers=min(concurrency, len(targets))) as pool:
-            return list(zip((t.ap_mac for t in targets), pool.map(self._scan_one, targets), strict=True))
+            for target, outcome in zip(targets, pool.map(self._scan_one, targets), strict=True):
+                if progress is not None:
+                    progress.scan_finished(target.ap_name, outcome)
+                yield target, outcome
 
     def _scan_one(self, target: ScanTarget) -> ScanPass | ScanFailure:
         try:

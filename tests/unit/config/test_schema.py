@@ -34,7 +34,11 @@ def test_minimal_configuration_fills_every_default() -> None:
     assert config.controller.api_key == Secret("k") and config.controller.port == 443
     assert config.controller.ca_cert is None and config.controller.cert_fingerprint is None
     assert config.sites == {}
-    assert (config.rf.client_tx_dbm, config.rf.noise_floor_dbm, config.rf.required_snr_db) == (15, -92, 25)
+    assert (config.rf.client_tx_dbm, config.rf.cell_edge.noise_floor_dbm, config.rf.cell_edge.required_snr_db) == (
+        15,
+        -92,
+        25,
+    )
     assert (config.rf.roaming.floor_dbm, config.rf.roaming.ceiling_dbm, config.rf.min_rssi_offset_db) == (-75, -65, 5)
 
 

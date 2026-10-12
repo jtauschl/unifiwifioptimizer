@@ -3,6 +3,7 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from hypothesis import given, settings
@@ -40,7 +41,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     Fields,
 )
 from unifiwifioptimizer.domain.errors import SchemaError
-from unifiwifioptimizer.domain.models import Band, FieldProblem, TxPowerMode, UnparsableDevice
+from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, TxPowerMode, UnparsableDevice
 from unifiwifioptimizer.domain.secrets import Secret
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -48,8 +49,13 @@ AP_MAC = "02:00:00:00:00:04"
 Payload = dict[str, object]
 
 
-def fixture(name: str) -> object:
+def fixture(name: str) -> Any:
     return json.loads((FIXTURES / name).read_text())
+
+
+def plain_problems(problems: tuple[FieldProblem, ...]) -> tuple[FieldProblem, ...]:
+    """Path and message only: these tests pin what was rejected, the attribution tests pin where it came from."""
+    return tuple(FieldProblem(p.path, p.message) for p in problems)
 
 
 def radio(**overrides: object) -> Payload:
@@ -145,7 +151,7 @@ def client(**overrides: object) -> Payload:
 def test_fixture_devices_parse_into_four_access_points_without_problems() -> None:
     result = parse.parse_devices(fixture("stat_device.json"))
     assert result.unparsable == ()
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     assert [ap.model for ap in result.access_points] == ["UAL6", "UAPA693", "UAL6", "UAPA693"]
     assert [ap.name for ap in result.access_points] == ["AP-1", "AP-2", "AP-3", "AP-4"]
     assert all(ap.bands == {Band.GHZ_2, Band.GHZ_5} for ap in result.access_points)
@@ -214,7 +220,7 @@ def test_fixture_vaps_carry_real_bssids_distinct_from_the_device_mac() -> None:
 
 def test_fixture_wlans() -> None:
     result = parse.parse_wlans(fixture("list_wlanconf.json"))
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     assert [(w.name, w.enabled) for w in result.items] == [
         ("SSID-1", True),
         ("SSID-2", False),
@@ -234,7 +240,7 @@ def test_fixture_wlans() -> None:
 
 def test_fixture_ap_groups_bare_list() -> None:
     result = parse.parse_ap_groups(fixture("apgroups.json"))
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     (group,) = result.items
     assert group.name == "Group-1"
     assert group.device_macs == {"02:00:00:00:00:04", "02:00:00:00:00:08", "02:00:00:00:00:0e", "02:00:00:00:00:11"}
@@ -242,7 +248,7 @@ def test_fixture_ap_groups_bare_list() -> None:
 
 def test_fixture_settings() -> None:
     result = parse.parse_settings(fixture("rest_setting.json"))
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     assert result.settings.country_code == 276
     assert result.settings.mlo_mesh_enabled is False and result.settings.outdoor_mode_enabled is False
     ai = result.settings.channel_ai
@@ -268,7 +274,7 @@ def test_fixture_settings() -> None:
 
 def test_fixture_clients_are_wireless_only_and_carry_no_identifiers() -> None:
     result = parse.parse_clients(fixture("stat_sta.json"))
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     assert len(result.items) == 26
     first = result.items[0]
     assert (first.band, first.channel, first.signal_dbm, first.noise_dbm) == (Band.GHZ_2, 11, -49, -94)
@@ -279,7 +285,7 @@ def test_fixture_clients_are_wireless_only_and_carry_no_identifiers() -> None:
 
 def test_fixture_sites() -> None:
     result = parse.parse_sites(fixture("sites.json"))
-    assert result.problems == ()
+    assert plain_problems(result.problems) == ()
     assert [(s.id, s.description, s.hidden_id, s.device_count) for s in result.items] == [
         ("default", "Site-1", "default", 11),
         ("site-2", "Site-2", None, 0),
@@ -292,7 +298,7 @@ def test_fixture_sites() -> None:
 def test_only_access_points_are_read_and_unknown_fields_are_ignored() -> None:
     payload = envelope({"type": "usw", "mac": "not a mac"}, device(), {"type": "udm", "is_access_point": False})
     result = parse.parse_devices(payload)
-    assert len(result.access_points) == 1 and result.unparsable == () and result.problems == ()
+    assert len(result.access_points) == 1 and result.unparsable == () and plain_problems(result.problems) == ()
     ap = result.access_points[0]
     assert (ap.mac, ap.name, str(ap.ip), ap.firmware, ap.uplink_type) == (AP_MAC, "AP-1", "192.0.2.1", "6.7.57", "wire")
     assert ap.radio_stats == () and ap.vaps == ()
@@ -317,6 +323,7 @@ def test_a_gateway_with_a_built_in_radio_counts_as_an_access_point() -> None:
     ("overrides", "reason"),
     [
         ({"mac": None}, "$.data[0].mac: expected a string"),
+        ({"mac": "nope"}, "$.data[0].mac: expected a MAC address"),
         ({"name": 5}, "$.data[0].name: expected a string"),
         ({"ip": "nope"}, "$.data[0].ip: expected an IP address"),
         ({"radio_table": [radio(radio="wifi7")]}, "$.data[0].radio_table[0].radio: unknown radio"),
@@ -339,6 +346,8 @@ def test_a_mandatory_field_failure_makes_the_device_unparsable(overrides: Payloa
     expected_name = None if "name" in overrides else "AP-1"
     assert result.unparsable == (UnparsableDevice(mac=expected_mac, name=expected_name, reason=reason),)
     assert [ap.mac for ap in result.access_points] == ["02:00:00:00:00:05"]
+    paths = [p.path for p in result.problems]
+    assert len(paths) == len(set(paths)), paths
 
 
 def test_unparsable_reasons_never_echo_controller_text() -> None:
@@ -355,7 +364,7 @@ def test_unparsable_reasons_never_echo_controller_text() -> None:
     ]
     assert all("TOPSECRET" not in p.message for p in result.problems)
     short = parse.parse_devices(envelope(device(radio_table=[radio(tx_power_mode="TOPSECRET", nss="TOPSECRET")])))
-    assert short.problems == (
+    assert plain_problems(short.problems) == (
         FieldProblem("$.data[0].radio_table[0].tx_power_mode", "unknown power mode"),
         FieldProblem("$.data[0].radio_table[0].nss", "expected an integer"),
     )
@@ -364,7 +373,7 @@ def test_unparsable_reasons_never_echo_controller_text() -> None:
 def test_problem_paths_count_every_record_including_skipped_ones() -> None:
     result = parse.parse_devices(envelope({"type": "usw"}, device(mac=None), device(radio_table=[radio(nss=0)])))
     assert result.unparsable[0].reason == "$.data[1].mac: expected a string"
-    assert result.problems == (FieldProblem("$.data[2].radio_table[0].nss", "outside 1..8"),)
+    assert plain_problems(result.problems) == (FieldProblem("$.data[2].radio_table[0].nss", "outside 1..8"),)
 
 
 def test_a_radio_keeps_only_band_and_width_mandatory() -> None:
@@ -375,7 +384,7 @@ def test_a_radio_keeps_only_band_and_width_mandatory() -> None:
     assert (parsed.band, parsed.channel, parsed.width_mhz) == (Band.GHZ_2, None, 20)
     assert parsed.tx_power_mode is None and parsed.configured_tx_dbm is None and parsed.interface_name is None
     assert parsed.min_tx_dbm is None and parsed.max_tx_dbm is None and parsed.min_rssi_enabled is False
-    assert ap.model is None and result.problems == ()
+    assert ap.model is None and plain_problems(result.problems) == ()
 
 
 def test_an_invalid_optional_field_is_dropped_with_a_problem() -> None:
@@ -428,10 +437,10 @@ def test_stats_and_vaps_accept_integer_widths_and_the_satisfaction_sentinel() ->
     )
     down = parse.parse_devices(envelope(device(vap_table=[{"radio": "ng", "bssid": "02:00:00:00:00:10"}])))
     assert down.access_points[0].vaps[0].up is False
-    assert result.problems == (FieldProblem("$.data[0].uplink", "expected an object"),)
+    assert plain_problems(result.problems) == (FieldProblem("$.data[0].uplink", "expected an object"),)
     nested = parse.parse_devices(envelope(device(uplink={"type": 5})))
     assert nested.access_points[0].uplink_type is None
-    assert nested.problems == (FieldProblem("$.data[0].uplink.type", "expected a string"),)
+    assert plain_problems(nested.problems) == (FieldProblem("$.data[0].uplink.type", "expected a string"),)
 
 
 def test_a_bad_stats_or_vap_entry_is_skipped_not_the_device() -> None:
@@ -448,7 +457,7 @@ def test_a_bad_stats_or_vap_entry_is_skipped_not_the_device() -> None:
     lenient = ap.vaps[1]
     assert (lenient.width_mhz, lenient.essid, lenient.channel) == (None, None, None)
     bare = parse.parse_devices(envelope(device(vap_table=[{"radio": "ng", "bssid": "02:00:00:00:00:10"}])))
-    assert bare.access_points[0].vaps[0].width_mhz is None and bare.problems == ()
+    assert bare.access_points[0].vaps[0].width_mhz is None and plain_problems(bare.problems) == ()
     assert [p.path for p in result.problems] == [
         "$.data[0].radio_table_stats[1].radio",
         "$.data[0].radio_table_stats[2].bw",
@@ -466,7 +475,7 @@ def test_an_invalid_entry_list_is_dropped_with_one_problem() -> None:
     result = parse.parse_devices(envelope(device(radio_table_stats="x", vap_table=[1])))
     (ap,) = result.access_points
     assert ap.radio_stats == () and ap.vaps == ()
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$.data[0].radio_table_stats", "expected a list"),
         FieldProblem("$.data[0].vap_table[0]", "expected an object"),
     )
@@ -515,7 +524,7 @@ def test_wlan_enabled_defaults_to_true_and_optional_fields_to_none() -> None:
 def test_parse_wlans_isolates_a_broken_record_and_collects_problems() -> None:
     result = parse.parse_wlans(envelope(wlan(dtim_ng=0), wlan(_id=None), wlan(group_rekey="never")))
     assert [w.dtim_ng for w in result.items] == [None, None]
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$.data[0].dtim_ng", "outside 1..255"),
         FieldProblem("$.data[1]._id", "expected a string"),
         FieldProblem("$.data[2].group_rekey", "expected an integer"),
@@ -531,7 +540,7 @@ def test_ap_groups_drop_invalid_macs_and_isolate_broken_records() -> None:
     )
     assert [g.name for g in result.items] == ["Group-1"]
     assert result.items[0].device_macs == {"02:00:00:00:00:04"}
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$[0].device_macs[1]", "expected a MAC address"),
         FieldProblem("$[1]._id", "expected a string"),
     )
@@ -539,7 +548,7 @@ def test_ap_groups_drop_invalid_macs_and_isolate_broken_records() -> None:
         parse.parse_ap_groups({"data": []})
     mixed = parse.parse_ap_groups([1, {"_id": "0" * 24, "name": "Group-1"}])
     assert [g.name for g in mixed.items] == ["Group-1"]
-    assert mixed.problems == (FieldProblem("$[0]", "expected an object"),)
+    assert plain_problems(mixed.problems) == (FieldProblem("$[0]", "expected an object"),)
 
 
 def test_settings_without_the_four_records_are_all_none() -> None:
@@ -547,13 +556,13 @@ def test_settings_without_the_four_records_are_all_none() -> None:
     assert result.settings.country_code is None and result.settings.channel_ai is None
     assert result.settings.mlo_mesh_enabled is None and result.settings.outdoor_mode_enabled is None
     assert result.mgmt is None
-    assert result.problems == (FieldProblem("$.data[1].key", "expected a string"),)
+    assert plain_problems(result.problems) == (FieldProblem("$.data[1].key", "expected a string"),)
 
 
 def test_duplicate_setting_records_are_reported_and_the_first_wins() -> None:
     result = parse.parse_settings(envelope(setting("country", code="276"), setting("country", code="840")))
     assert result.settings.country_code == 276
-    assert result.problems == (FieldProblem("$.data[1].key", "duplicate setting record"),)
+    assert plain_problems(result.problems) == (FieldProblem("$.data[1].key", "duplicate setting record"),)
 
 
 def test_connectivity_and_mgmt_flags_come_from_their_own_records() -> None:
@@ -624,7 +633,7 @@ def test_channel_ai_skips_a_blacklist_element_that_is_not_an_object() -> None:
     assert result.settings.channel_ai is not None
     assert result.settings.channel_ai.blacklist == frozenset({(Band.GHZ_2, 2, 20)})
     assert result.settings.channel_ai.enabled is False
-    assert result.problems == (FieldProblem("$.data[0].channels_blacklist[1]", "expected an object"),)
+    assert plain_problems(result.problems) == (FieldProblem("$.data[0].channels_blacklist[1]", "expected an object"),)
 
 
 def test_channel_ai_lists_keep_valid_siblings_and_integers() -> None:
@@ -645,7 +654,7 @@ def test_channel_ai_lists_keep_valid_siblings_and_integers() -> None:
 def test_channel_ai_empty_lists_are_kept_as_empty_sets() -> None:
     result = parse.parse_settings(envelope(setting("radio_ai", channels_ng=[], ht_modes_na=[], exclude_devices=[])))
     ai = result.settings.channel_ai
-    assert ai is not None and result.problems == ()
+    assert ai is not None and plain_problems(result.problems) == ()
     assert ai.channels == {Band.GHZ_2: frozenset()} and ai.width_candidates_mhz == {Band.GHZ_5: frozenset()}
     assert ai.excluded_devices == frozenset()
 
@@ -662,14 +671,14 @@ def test_channel_ai_list_caps_turn_into_problems() -> None:
     ai = result.settings.channel_ai
     assert ai is not None and ai.channels == {} and ai.blacklist == frozenset()
     assert ai.excluded_devices == {AP_MAC, "02:00:00:00:00:05"}
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$.data[0].channels_ng", f"more than {MAX_CHANNEL_LIST} items"),
         FieldProblem("$.data[0].ht_modes_ng", f"more than {MAX_WIDTH_LIST} items"),
         FieldProblem("$.data[0].channels_blacklist", f"more than {MAX_BLACKLIST} items"),
         FieldProblem("$.data[0].exclude_devices[1]", "expected a MAC address"),
     )
     exact = setting("radio_ai", channels_ng=["1"] * MAX_CHANNEL_LIST, ht_modes_ng=["20"] * MAX_WIDTH_LIST)
-    assert parse.parse_settings(envelope(exact)).problems == ()
+    assert plain_problems(parse.parse_settings(envelope(exact)).problems) == ()
 
 
 def test_channel_ai_mappings_are_read_only() -> None:
@@ -726,7 +735,7 @@ def test_sites_fall_back_to_the_name_as_description_and_reject_unsafe_ids() -> N
     )
     result = parse.parse_sites(payload)
     assert [(s.id, s.description) for s in result.items] == [("abc", "abc"), ("def", "def"), ("x" * 64, "x" * 64)]
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$.data[1].device_count", "expected an integer"),
         FieldProblem("$.data[2].name", "not a site id"),
         FieldProblem("$.data[3].name", "not a site id"),
@@ -822,7 +831,7 @@ PARSER_FOR_PREFIX: dict[str, Parser] = {
 def problems_of(result: object) -> tuple[FieldProblem, ...]:
     problems = getattr(result, "problems")  # noqa: B009
     assert isinstance(problems, tuple)
-    return problems
+    return plain_problems(problems)
 
 
 @pytest.mark.parametrize(("name", "build", "field", "allowed"), RANGE_CASES, ids=[c[0] for c in RANGE_CASES])
@@ -871,7 +880,7 @@ def test_mandatory_channel_range_and_radio_cap_make_the_device_unparsable() -> N
 def test_satisfaction_sentinel_sits_just_below_the_percent_range() -> None:
     def satisfaction(value: int) -> tuple[int | None, tuple[FieldProblem, ...]]:
         result = parse.parse_clients(envelope(client(satisfaction=value)))
-        return (result.items[0].satisfaction_pct if result.items else None), result.problems
+        return (result.items[0].satisfaction_pct if result.items else None), plain_problems(result.problems)
 
     assert satisfaction(0) == (0, ()) and satisfaction(100) == (100, ())
     assert satisfaction(-1) == (None, ())
@@ -887,7 +896,7 @@ def test_vaps_and_stats_caps_turn_into_problems() -> None:
             )
         )
     )
-    assert result.problems == (
+    assert plain_problems(result.problems) == (
         FieldProblem("$.data[0].radio_table_stats", f"more than {MAX_RADIOS_PER_DEVICE} items"),
         FieldProblem("$.data[0].vap_table", f"more than {MAX_VAPS_PER_DEVICE} items"),
     )
@@ -971,12 +980,12 @@ def test_mandatory_byte_caps_make_the_device_unparsable() -> None:
         assert ok.unparsable == () and len(ok.access_points) == 1
         result = parse.parse_devices(envelope(device(is_access_point=True, **{field: "x" * (cap + 1)})))
         assert result.unparsable[0].reason == f"$.data[0].{field}: longer than {cap} bytes"
-    assert parse.parse_settings(envelope({"key": "k" * 64})).problems == ()
-    assert parse.parse_settings(envelope({"key": "k" * 65})).problems == (
+    assert plain_problems(parse.parse_settings(envelope({"key": "k" * 64})).problems) == ()
+    assert plain_problems(parse.parse_settings(envelope({"key": "k" * 65})).problems) == (
         FieldProblem("$.data[0].key", "longer than 64 bytes"),
     )
-    assert parse.parse_sites(envelope({"name": "s" * 64})).problems == ()
-    assert parse.parse_sites(envelope({"name": "s" * 65})).problems == (
+    assert plain_problems(parse.parse_sites(envelope({"name": "s" * 64})).problems) == ()
+    assert plain_problems(parse.parse_sites(envelope({"name": "s" * 65})).problems) == (
         FieldProblem("$.data[0].name", "longer than 64 bytes"),
     )
 
@@ -1181,3 +1190,52 @@ def test_a_controller_ssh_user_that_is_not_a_user_name_is_dropped_with_a_problem
     assert any(p.message == "not a user name" and p.path.endswith("x_ssh_username") for p in result.problems)
     upper = parse.parse_settings({"data": [{"key": "mgmt", "x_ssh_username": "Admin"}]}).mgmt
     assert upper is not None and upper.ssh_user == "Admin"
+
+
+def test_the_offline_fixture_parses_into_a_disconnected_access_point_with_attributed_problems() -> None:
+    result = parse.parse_devices(fixture("stat_device_offline.json"))
+    (ap,) = result.access_points
+    assert ap.state_code == 0 and ap.state is DeviceState.DISCONNECTED and ap.offline is True
+    # Live shape: the radio table survives, the stats entries carry no channel and are skipped per entry.
+    assert ap.bands == {Band.GHZ_2, Band.GHZ_5} and ap.radio_stats == () and ap.vaps == ()
+    assert len(result.problems) == 2
+    assert all(p.endpoint == "stat/device" and p.device_mac == ap.mac for p in result.problems)
+    assert all(p.path.endswith(".channel") for p in result.problems)
+
+
+def test_device_problems_are_attributed_to_their_device_and_endpoint() -> None:
+    result = parse.parse_devices(fixture("stat_device.json"))
+    assert plain_problems(result.problems) == ()
+    payload = fixture("stat_device.json")
+    first_ap = next(d for d in payload["data"] if d["type"] == "uap")
+    first_ap["radio_table_stats"][0]["cu_total"] = 250
+    second = parse.parse_devices({"data": [first_ap, "not-a-record"]})
+    (cu_problem, record_problem) = second.problems
+    assert cu_problem.device_mac == first_ap["mac"] and cu_problem.endpoint == "stat/device"
+    assert record_problem.device_mac is None and record_problem.endpoint == "stat/device"
+
+
+def test_every_parser_stamps_its_endpoint_on_a_record_level_problem() -> None:
+    broken = {"data": ["x"]}
+    assert parse.parse_wlans(broken).problems[0].endpoint == "rest/wlanconf"
+    assert parse.parse_ap_groups(["x"]).problems[0].endpoint == "v2/apgroups"
+    assert parse.parse_settings(broken).problems[0].endpoint == "rest/setting"
+    assert parse.parse_clients(broken).problems[0].endpoint == "stat/sta"
+    assert parse.parse_sites(broken).problems[0].endpoint == "self/sites"
+
+
+def test_fixture_access_points_carry_state_and_uplink_mac() -> None:
+    result = parse.parse_devices(fixture("stat_device.json"))
+    assert all(ap.state is DeviceState.CONNECTED for ap in result.access_points)
+    assert all(ap.uplink_mac is not None and ap.uplink_mac.startswith("02:00:00:00:") for ap in result.access_points)
+    without = parse.parse_devices({"data": [{**fixture("stat_device.json")["data"][3], "state": None, "uplink": {}}]})
+    assert without.access_points[0].state is None and without.access_points[0].uplink_mac is None
+
+
+def test_a_rejected_controller_ssh_user_sets_the_typed_flag() -> None:
+    rejected = parse.parse_settings({"data": [{"key": "mgmt", "x_ssh_username": "ad min"}]}).mgmt
+    accepted = parse.parse_settings({"data": [{"key": "mgmt", "x_ssh_username": "Admin"}]}).mgmt
+    absent = parse.parse_settings({"data": [{"key": "mgmt"}]}).mgmt
+    assert rejected is not None and rejected.ssh_user_rejected is True and rejected.ssh_user is None
+    assert accepted is not None and accepted.ssh_user_rejected is False
+    assert absent is not None and absent.ssh_user_rejected is False

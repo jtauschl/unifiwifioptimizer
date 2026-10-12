@@ -1,0 +1,223 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Site       default  (Site-1), 2026-10-12T20:00+00:00
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Environment
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Path-loss model:                   Residential (n = 2.8, 2.4 GHz offset 6.21 dB)
+  Cell edge:                         -67 dBm (noise floor -92 dBm + SNR 25 dB)
+  Target RSSI @ neighbour 2.4 GHz:   -73 dBm to -67 dBm
+  Target RSSI @ neighbour 5 GHz:     -67 dBm to -61 dBm
+  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 15 dBm)
+  Roaming trigger bounds:            -75 dBm .. -65 dBm (margin 5 dB)
+  Scan passes:                       3
+
+  ! AP-1: lists AP-2 as a neighbour, which does not list it back; both directions are evaluated [AP-2]
+  ! AP-2: lists AP-3 as a neighbour, which does not list it back; both directions are evaluated [AP-3]
+  ! AP-3: lists AP-4 as a neighbour, which does not list it back; both directions are evaluated [AP-4]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-1  (profile Throughput)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✓ WiFi Band                          2.4 GHz, 5 GHz
+    ✓ Fast Roaming                       Enabled
+    ✓ Minimum Data Rate Mode             Manual
+    ✓ Minimum Data Rate 2.4 GHz          12 Mbps
+    ✓ Minimum Data Rate 5 GHz            24 Mbps
+    ✓ Multicast and Broadcast Blocker    Disabled
+    ✓ Multicast to Unicast               Disabled
+    ✓ Proxy ARP                          Enabled
+    ✓ Security Protocol                  WPA2/WPA3
+    ✓ PMF                                Optional
+    ✓ Hide WiFi Name                     Disabled
+    ✓ Client Device Isolation            Disabled
+    ✓ SAE Anti-clogging                  5
+    ✓ SAE Sync Time                      5
+    ✓ MLO                                Disabled
+    ✓ Band Steering                      Enabled
+    ✓ BSS Transition                     Enabled
+    ✓ UAPSD                              Disabled
+    ✓ DTIM Mode                          Custom
+    ✓ DTIM Period 2.4 GHz                3
+    ✓ DTIM Period 5 GHz                  3
+    ✓ Group Rekey Interval               3600 s
+    ✓ Show Access Point Name in Beacon   Disabled
+    ✓ 802.11b Support                    Disabled
+    ? Roaming Assistant                  threshold not available without neighbour data
+        * AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the floor -75 dBm; clamped to the floor (-80 dBm on the uplink) — no reachable roaming neighbour, fix placement
+        * AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the floor -75 dBm; clamped to the floor (-78 dBm on the uplink) — no reachable roaming neighbour, fix placement
+        AP-3: no reading of neighbour AP-4 (not sighted)
+        AP-4: no reading of neighbour AP-3 (not sighted)
+        Note: 4 pending transmit-power change(s) on this site; apply those first and re-run; the threshold follows the effective power
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-2  (profile Standard)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✗ WLAN Enabled                       Enabled (currently Disabled)
+        the WLAN is disabled on the controller
+        → WLAN edit → Enabled toggle
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-3  (profile Hotspot)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✗ WLAN Enabled                       Enabled (currently Disabled)
+        the WLAN is disabled on the controller
+        → WLAN edit → Enabled toggle
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-1 (UAL6)
+  MAC        02:00:00:00:00:04
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm (unverified))
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -70 dBm n=3 offset -12 dB
+
+  · AP-1 and AP-2 disagree by -12 dB after the power difference; one receiver reads the other's beacons systematically off [AP-2]
+
+  Recommendations:
+    ✓ Transmit Power           17 dBm (mode auto)
+    · Minimum RSSI             disabled (if enabled: -80 dBm on the uplink)
+
+  · airtime: utilisation 0 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
+  · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
+
+  5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm (unverified))
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -72 dBm n=3 offset -3 dB *
+
+  · the radio has not demonstrated power above 20 dBm on this channel
+
+  Recommendations:
+    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above the demonstrated power is unverified
+        → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
+    · Minimum RSSI             disabled (if enabled: -77 dBm on the uplink)
+
+  · airtime: utilisation 4 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
+  · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-2 (UAPA693)
+  MAC        02:00:00:00:00:08
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz  (channel 1, width 20 MHz, TX 6 dBm; max 23 dBm (unverified))
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-1                      -69 dBm n=3 offset +12 dB
+  AP-3                      -74 dBm n=3 offset +6 dB °
+
+  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off [AP-3]
+
+  Recommendations:
+    ✗ Transmit Power           10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated power is unverified
+        → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
+    · Minimum RSSI             disabled (if enabled: -69 dBm on the uplink)
+
+  · airtime: utilisation 12 %, self rx/tx 1/1 %, retries 10.9 %, 3 client(s)
+  · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
+
+  5 GHz  (channel 60, DFS (CAC 60 s), width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap); max 18 dBm)
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-1                      -71 dBm n=3 offset +3 dB *
+  AP-3                      -68 dBm n=3 offset +6 dB *
+
+  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept [AP-1, AP-3]
+  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off [AP-3]
+
+  Recommendations:
+    - Transmit Power           18 dBm, no change: at the effective maximum
+    · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
+
+  · airtime: utilisation 1 %, self rx/tx 0/1 %, retries 21.3 %, 4 client(s)
+  · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-3 (UAL6)
+  MAC        02:00:00:00:00:0e
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz  (channel 6, width 20 MHz, TX 11 dBm; max 23 dBm (unverified))
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -75 dBm n=3 offset -6 dB °
+  AP-4                      -76 dBm ~ °
+
+  Recommendations:
+    ✗ Transmit Power           17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated power is unverified
+        → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
+    · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
+
+  · airtime: utilisation 30 %, self rx/tx 0/3 %, retries 0 %, 0 client(s)
+  · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
+
+  5 GHz  (channel 104, DFS (CAC 60 s), width 80 MHz, TX 23 dBm; max 23 dBm)
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -69 dBm n=3 offset -6 dB
+  AP-4                      — (not sighted)
+
+  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point [AP-4]
+
+  Recommendations:
+    - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
+    · Minimum RSSI             disabled (if enabled: -80 dBm on the uplink)
+
+  · airtime: utilisation 3 %, self rx/tx 0/0 %, retries 17.5 %, satisfaction 96 %, 1 client(s)
+  · foreign networks heard: 1 (strongest -75 dBm), 1 on an overlapping channel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-4 (UAPA693)
+  MAC        02:00:00:00:00:11
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz  (channel 11, width 20 MHz, TX 10 dBm; max 23 dBm (unverified))
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-3                      -77 dBm n=3 °
+
+  * the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion
+
+  Recommendations:
+    ✗ Transmit Power           17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated power is unverified
+        → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
+    · Minimum RSSI             disabled (if enabled: -73 dBm on the uplink)
+
+  · airtime: utilisation 11 %, self rx/tx 0/0 %, retries 20.8 %, 7 client(s)
+
+  5 GHz  (channel 40, width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap); max 18 dBm)
+
+  Neighbour AP:             RSSI @ neighbour:
+  AP-3                      — (not sighted)
+
+  * at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point [AP-3]
+
+  Recommendations:
+    - Transmit Power           18 dBm, no change: at the effective maximum, neighbour unsighted
+    · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
+
+  · airtime: utilisation 8 %, self rx/tx 4/3 %, retries 13.2 %, 11 client(s)
+  · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Adjacency groups
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  AP-1, AP-2, AP-3, AP-4
+  ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
+
+
+  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes, run the tool again.
+  Partial result (band empty); the exit code says so.
+
+  Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It cannot see non-WiFi RF interference (BLE/Zigbee/microwave -- needs a spectrum analyzer), per-client MCS or retry statistics, real client roaming timing, or packet captures. Neighbour RSSI is an AP-to-AP beacon reading; client thresholds are converted to the uplink the controller evaluates with a typical client power (`rf.client_tx_dbm`), so a client with a weaker radio is still worse off than the corridor suggests. Recommendations are static-analysis heuristics, not runtime KPIs.
+

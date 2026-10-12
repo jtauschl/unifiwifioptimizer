@@ -661,6 +661,9 @@ class Endpoint:
 
 ENDPOINTS: tuple[Endpoint, ...] = (
     Endpoint("stat_device.json", "live_api_s_{site}_stat_device.json", nested(envelope(records(device_spec)))),
+    # A disconnected access point in the live-observed shape (`state: 0`, stats entries reduced to name, radio
+    # and client count); synthetic, hand-written, only checked.
+    Endpoint("stat_device_offline.json", None, nested(envelope(records(device_spec)))),
     Endpoint("list_wlanconf.json", "live_api_s_{site}_list_wlanconf.json", nested(envelope(list_of(WLAN_SPEC)))),
     Endpoint("apgroups.json", "live_v2_api_site_{site}_apgroups.json", list_of(AP_GROUP_SPEC)),
     Endpoint("rest_setting.json", "live_api_s_{site}_rest_setting.json", nested(envelope(records(setting_spec)))),

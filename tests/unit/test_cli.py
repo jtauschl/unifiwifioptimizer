@@ -39,15 +39,6 @@ def test_every_planned_subcommand_is_registered() -> None:
     assert sorted(HANDLERS) == expected
 
 
-@pytest.mark.parametrize("subcommand", ["run"])
-def test_unimplemented_subcommand_fails_loudly(subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
-    code = main([subcommand])
-    captured = capsys.readouterr()
-    assert code == ExitCode.UNEXPECTED_ERROR
-    assert captured.out == ""
-    assert captured.err == f"unifiwifioptimizer: error: subcommand '{subcommand}' is not implemented in this build\n"
-
-
 def test_not_implemented_error_records_the_path() -> None:
     exc = NotImplementedPathError("subcommand 'run'")
     assert isinstance(exc, UwoError)
@@ -66,12 +57,14 @@ def test_keyboard_interrupt_maps_to_130(capsys: pytest.CaptureFixture[str]) -> N
 
 @pytest.fixture
 def module_argv() -> Iterator[None]:
-    with mock.patch.object(sys, "argv", ["unifiwifioptimizer", "run"]):
+    with mock.patch.object(
+        sys, "argv", ["unifiwifioptimizer", "--config-file", "/nonexistent/uwo/config.yaml", "sites"]
+    ):
         yield
 
 
 def test_python_m_entry_point_exits_with_main_result(module_argv: None, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("unifiwifioptimizer", run_name="__main__", alter_sys=True)
-    assert exc_info.value.code == ExitCode.UNEXPECTED_ERROR
-    assert "subcommand 'run' is not implemented" in capsys.readouterr().err
+    assert exc_info.value.code == ExitCode.CONFIG
+    assert "/nonexistent/uwo" in capsys.readouterr().err

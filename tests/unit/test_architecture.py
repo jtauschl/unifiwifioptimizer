@@ -19,6 +19,21 @@ PACKAGE_ROOT = Path(unifiwifioptimizer.__file__).parent
 PACKAGE = "unifiwifioptimizer"
 
 CORE_PACKAGES = frozenset({"domain", "rf", "compliance", "analysis", "ports"})
+# Direction inside the core: the domain is the leaf, rf and ports build on it alone, compliance on rf, analysis
+# on everything but ports. An edge that is not listed is a violation.
+CORE_IMPORTS_ALLOWED: dict[str, frozenset[str]] = {
+    "domain": frozenset(),
+    "rf": frozenset({"domain"}),
+    "ports": frozenset({"domain"}),
+    "compliance": frozenset({"domain", "rf"}),
+    "analysis": frozenset({"domain", "rf", "compliance"}),
+}
+# Outside the core: the report is data plus text and never reaches an adapter or the command line; the
+# application layer never imports the composition root.
+LAYER_IMPORTS_FORBIDDEN: dict[str, frozenset[str]] = {
+    "report": frozenset({"adapters", "cli"}),
+    "app": frozenset({"cli"}),
+}
 # The only standard-library modules the core may import: pure data, math and typing. Anything that can
 # touch a socket, a file, a process or the environment is absent on purpose.
 CORE_ALLOWED_STDLIB = frozenset(
@@ -218,7 +233,8 @@ def enclosing_function(tree: ast.Module, target: ast.AST) -> tuple[str, str]:
 
 
 def check_core_imports(tree: ast.Module, relpath: str) -> list[str]:
-    if layer_of(relpath) not in CORE_PACKAGES:
+    layer = layer_of(relpath)
+    if layer not in CORE_PACKAGES:
         return []
     found: list[str] = []
     for module, names in imported_modules(tree, relpath):
@@ -227,13 +243,29 @@ def check_core_imports(tree: ast.Module, relpath: str) -> list[str]:
             layers = [module.split(".")[1]] if "." in module else names
             if not layers:
                 found.append(f"imports the bare {PACKAGE} package")
-            found.extend(
-                f"imports {PACKAGE}.{layer}, which is not a core package"
-                for layer in layers
-                if layer not in CORE_PACKAGES
-            )
+            for imported in layers:
+                if imported not in CORE_PACKAGES:
+                    found.append(f"imports {PACKAGE}.{imported}, which is not a core package")
+                elif imported != layer and imported not in CORE_IMPORTS_ALLOWED[layer]:
+                    found.append(f"imports {PACKAGE}.{imported}, against the core direction ({layer} may not)")
         elif root not in CORE_ALLOWED_STDLIB:
             found.append(f"imports {module}, which is not on the core allowlist")
+    return found
+
+
+def check_layer_imports(tree: ast.Module, relpath: str) -> list[str]:
+    layer = layer_of(relpath)
+    forbidden = LAYER_IMPORTS_FORBIDDEN.get(layer)
+    if forbidden is None:
+        return []
+    found: list[str] = []
+    for module, names in imported_modules(tree, relpath):
+        if module.split(".")[0] != PACKAGE:
+            continue
+        layers = [module.split(".")[1]] if "." in module else names
+        found.extend(
+            f"imports {PACKAGE}.{imported}, which {layer} may not" for imported in layers if imported in forbidden
+        )
     return found
 
 
@@ -377,6 +409,7 @@ def check_tls_bypass_confinement(tree: ast.Module, relpath: str) -> list[str]:
 CHECKERS: dict[str, Checker] = {
     "core-imports": check_core_imports,
     "dynamic-imports": check_dynamic_imports,
+    "layer-imports": check_layer_imports,
     "process-spawn-location": check_process_spawn_location,
     "shell-execution": check_shell_execution,
     "json-parse-location": check_json_parse_location,
@@ -408,6 +441,16 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("core-imports", "rf/x.py", "from unifiwifioptimizer import __main__\n"),
     ("core-imports", "rf/x.py", "import unifiwifioptimizer\n"),
     ("core-imports", "rf/x.py", "import uuid\n"),
+    ("core-imports", "domain/x.py", "from unifiwifioptimizer.rf import corridor\n"),
+    ("core-imports", "domain/x.py", "from unifiwifioptimizer.rf.roaming import RoamingCap\n"),
+    ("core-imports", "rf/x.py", "from unifiwifioptimizer.compliance import engine\n"),
+    ("core-imports", "ports/x.py", "from unifiwifioptimizer.rf import corridor\n"),
+    ("core-imports", "compliance/x.py", "from unifiwifioptimizer.analysis import txpower\n"),
+    ("core-imports", "compliance/x.py", "from unifiwifioptimizer.ports import controller\n"),
+    ("core-imports", "analysis/x.py", "from unifiwifioptimizer import ports\n"),
+    ("layer-imports", "report/x.py", "from unifiwifioptimizer.adapters.unifi import client\n"),
+    ("layer-imports", "report/x.py", "from unifiwifioptimizer import cli\n"),
+    ("layer-imports", "app/x.py", "from unifiwifioptimizer.cli.exit_codes import ExitCode\n"),
     ("dynamic-imports", "cli/x.py", "import importlib\nimportlib.import_module('subprocess')\n"),
     ("dynamic-imports", "cli/x.py", "__import__('subprocess')\n"),
     ("dynamic-imports", "cli/x.py", "from importlib import import_module as im\nim('os')\n"),
@@ -584,7 +627,7 @@ GOOD_SNIPPETS: list[tuple[str, str, str]] = [
         "rf/x.py",
         "import math\nfrom dataclasses import dataclass\nfrom unifiwifioptimizer.domain import models\n",
     ),
-    ("core-imports", "domain/x.py", "from . import errors\nfrom .errors import UwoError\nfrom ..rf import corridor\n"),
+    ("core-imports", "domain/x.py", "from . import errors\nfrom .errors import UwoError\nfrom .models import Band\n"),
     ("core-imports", "cli/x.py", "import subprocess\n"),
     ("process-spawn-location", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ssh'], shell=False)\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ssh'], check=True)\n"),
@@ -643,6 +686,11 @@ GOOD_SNIPPETS: list[tuple[str, str, str]] = [
         "analysis/x.py",
         "from unifiwifioptimizer.rf import corridor\nfrom unifiwifioptimizer import domain\n",
     ),
+    ("core-imports", "analysis/x.py", "from unifiwifioptimizer.compliance.engine import evaluate_site\n"),
+    ("core-imports", "rf/x.py", "from unifiwifioptimizer.domain.analysis import RoamingCap\n"),
+    ("core-imports", "domain/report.py", "from unifiwifioptimizer.domain.models import Band\n"),
+    ("layer-imports", "report/x.py", "from unifiwifioptimizer.app.use_cases import SiteOverview\n"),
+    ("layer-imports", "app/x.py", "from unifiwifioptimizer.adapters.unifi.client import UnifiClient\n"),
     (
         "tls-bypass-confinement",
         "adapters/unifi/tls.py",

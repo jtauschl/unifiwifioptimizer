@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import UTC, datetime
 from ipaddress import ip_address
 
@@ -8,6 +9,7 @@ from unifiwifioptimizer.domain.models import (
     Band,
     BssidIndex,
     ChannelAiSettings,
+    DeviceState,
     Radio,
     RadioStats,
     Site,
@@ -78,7 +80,9 @@ def access_point(mac: str, bands: tuple[Band, ...]) -> AccessPoint:
         ip=ip_address("192.0.2.1"),
         model="UAL6",
         firmware=None,
+        state_code=1,
         uplink_type="wire",
+        uplink_mac="02:00:00:00:00:03",
         radios=tuple(radio(b, 1) for b in bands),
         radio_stats=tuple(stats(b, 10) for b in bands),
         vaps=tuple(vap(b, f"02:00:00:00:{i:02x}:{mac[-2:]}") for i, b in enumerate(bands, start=1)),
@@ -90,19 +94,30 @@ def test_access_point_looks_up_radio_and_stats_by_band() -> None:
     ap = access_point("02:00:00:00:00:01", (Band.GHZ_2, Band.GHZ_5))
     assert ap.bands == {Band.GHZ_2, Band.GHZ_5}
     without_stats = AccessPoint(
-        mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, uplink_type=None,
-        radios=(*ap.radios, radio(Band.GHZ_6, 5)), radio_stats=(stats(Band.GHZ_2, 6),), vaps=(),
+        mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, state_code=None, uplink_type=None,
+        uplink_mac=None, radios=(*ap.radios, radio(Band.GHZ_6, 5)), radio_stats=(stats(Band.GHZ_2, 6),), vaps=(),
         ssh_host_key_fingerprint=None,
     )  # fmt: skip
     assert without_stats.bands == {Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}
     stats_only = AccessPoint(
-        mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, uplink_type=None,
-        radios=(radio(Band.GHZ_2, 1),), radio_stats=(stats(Band.GHZ_5, 10),), vaps=(),
+        mac=ap.mac, name=ap.name, ip=ap.ip, model=ap.model, firmware=None, state_code=4, uplink_type=None,
+        uplink_mac=None, radios=(radio(Band.GHZ_2, 1),), radio_stats=(stats(Band.GHZ_5, 10),), vaps=(),
         ssh_host_key_fingerprint=None,
     )  # fmt: skip
     assert stats_only.bands == {Band.GHZ_2}
     assert ap.radio(Band.GHZ_5) is ap.radios[1]
     assert ap.stats(Band.GHZ_2) is ap.radio_stats[0]
+
+
+def test_only_an_explicit_disconnected_state_is_offline() -> None:
+    connected = access_point("02:00:00:00:00:01", (Band.GHZ_2,))
+    assert connected.state is DeviceState.CONNECTED and connected.offline is False
+    for code, state in ((0, DeviceState.DISCONNECTED), (4, DeviceState.OTHER), (11, DeviceState.OTHER)):
+        ap = dataclasses.replace(connected, state_code=code)
+        assert ap.state is state and ap.offline is (code == 0)
+    # An older controller without the field: analysed normally, never called offline.
+    absent = dataclasses.replace(connected, state_code=None)
+    assert absent.state is None and absent.offline is False
     assert ap.radio(Band.GHZ_6) is None
     assert ap.stats(Band.GHZ_6) is None
 

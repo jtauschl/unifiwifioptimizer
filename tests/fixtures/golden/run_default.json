@@ -1,0 +1,1839 @@
+{
+  "schema_version": 1,
+  "sites": [
+    {
+      "aps": [
+        {
+          "bands": [
+            {
+              "airtime": {
+                "client_count": 0,
+                "satisfaction_pct": null,
+                "self_rx_pct": 0,
+                "self_tx_pct": 0,
+                "tx_retries_pct": 0.0,
+                "utilisation_pct": 0
+              },
+              "band": "2g",
+              "cac_seconds": null,
+              "channel": 6,
+              "channel_auto": true,
+              "clients": null,
+              "configured_channel": null,
+              "dfs": false,
+              "extension_channel": 0,
+              "findings": [
+                {
+                  "band": "2g",
+                  "code": "receiver_offset",
+                  "message": "AP-1 and AP-2 disagree by -12 dB after the power difference; one receiver reads the other's beacons systematically off",
+                  "peers": [
+                    "AP-2"
+                  ],
+                  "severity": "info",
+                  "subject": "AP-1"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -60
+              },
+              "neighbours": [
+                {
+                  "marker": null,
+                  "peer": "AP-2",
+                  "reason": null,
+                  "receiver_offset_db": -12,
+                  "rssi_dbm": -70,
+                  "samples": 3,
+                  "source": "measured"
+                }
+              ],
+              "outcome": "in_corridor",
+              "recommendations": [
+                {
+                  "band": "2g",
+                  "code": "tx_power",
+                  "current": 17,
+                  "current_mode": "auto",
+                  "kind": "confirmed",
+                  "reason": "weakest neighbour inside the corridor",
+                  "recommended": 17,
+                  "setting": "tx_power",
+                  "subject": "AP-1",
+                  "unverified_headroom": false
+                },
+                {
+                  "band": "2g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -80,
+                  "setting": "min_rssi",
+                  "subject": "AP-1",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 6,
+                "effective_dbm": 17,
+                "effective_max_dbm": 23,
+                "effective_max_verified": false,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "auto"
+              },
+              "weakest_dbm": -70,
+              "width_mhz": 20
+            },
+            {
+              "airtime": {
+                "client_count": 0,
+                "satisfaction_pct": null,
+                "self_rx_pct": 0,
+                "self_tx_pct": 0,
+                "tx_retries_pct": 0.0,
+                "utilisation_pct": 4
+              },
+              "band": "5g",
+              "cac_seconds": null,
+              "channel": 44,
+              "channel_auto": true,
+              "clients": null,
+              "configured_channel": null,
+              "dfs": false,
+              "extension_channel": 1,
+              "findings": [
+                {
+                  "band": "5g",
+                  "code": "headroom_unverified",
+                  "message": "the radio has not demonstrated power above 20 dBm on this channel",
+                  "peers": [],
+                  "severity": "info",
+                  "subject": "AP-1"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -75
+              },
+              "neighbours": [
+                {
+                  "marker": "below_unfixable",
+                  "peer": "AP-2",
+                  "reason": null,
+                  "receiver_offset_db": -3,
+                  "rssi_dbm": -72,
+                  "samples": 3,
+                  "source": "measured"
+                }
+              ],
+              "outcome": "raise_to_maximum",
+              "recommendations": [
+                {
+                  "band": "5g",
+                  "code": "tx_power",
+                  "current": 20,
+                  "current_mode": "auto",
+                  "kind": "change",
+                  "reason": "weakest neighbour below the corridor",
+                  "recommended": 23,
+                  "setting": "tx_power",
+                  "subject": "AP-1",
+                  "unverified_headroom": true
+                },
+                {
+                  "band": "5g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -77,
+                  "setting": "min_rssi",
+                  "subject": "AP-1",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 19,
+                "effective_dbm": 20,
+                "effective_max_dbm": 23,
+                "effective_max_verified": false,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "auto"
+              },
+              "weakest_dbm": -72,
+              "width_mhz": 80
+            }
+          ],
+          "configured": true,
+          "findings": [],
+          "mac": "02:00:00:00:00:04",
+          "model": "UAL6",
+          "name": "AP-1",
+          "state": "connected",
+          "state_code": 1,
+          "uplink_type": "wire"
+        },
+        {
+          "bands": [
+            {
+              "airtime": {
+                "client_count": 3,
+                "satisfaction_pct": null,
+                "self_rx_pct": 1,
+                "self_tx_pct": 1,
+                "tx_retries_pct": 10.9,
+                "utilisation_pct": 12
+              },
+              "band": "2g",
+              "cac_seconds": null,
+              "channel": 1,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 1,
+              "dfs": false,
+              "extension_channel": 0,
+              "findings": [
+                {
+                  "band": "2g",
+                  "code": "receiver_offset",
+                  "message": "AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off",
+                  "peers": [
+                    "AP-3"
+                  ],
+                  "severity": "info",
+                  "subject": "AP-2"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -60
+              },
+              "neighbours": [
+                {
+                  "marker": null,
+                  "peer": "AP-1",
+                  "reason": null,
+                  "receiver_offset_db": 12,
+                  "rssi_dbm": -69,
+                  "samples": 3,
+                  "source": "measured"
+                },
+                {
+                  "marker": "below_fixed",
+                  "peer": "AP-3",
+                  "reason": null,
+                  "receiver_offset_db": 6,
+                  "rssi_dbm": -74,
+                  "samples": 3,
+                  "source": "measured"
+                }
+              ],
+              "outcome": "out_of_corridor",
+              "recommendations": [
+                {
+                  "band": "2g",
+                  "code": "tx_power",
+                  "current": 6,
+                  "current_mode": "custom",
+                  "kind": "change",
+                  "reason": "weakest neighbour below the corridor",
+                  "recommended": 10,
+                  "setting": "tx_power",
+                  "subject": "AP-2",
+                  "unverified_headroom": true
+                },
+                {
+                  "band": "2g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -69,
+                  "setting": "min_rssi",
+                  "subject": "AP-2",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 6,
+                "effective_dbm": 6,
+                "effective_max_dbm": 23,
+                "effective_max_verified": false,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": -74,
+              "width_mhz": 20
+            },
+            {
+              "airtime": {
+                "client_count": 4,
+                "satisfaction_pct": null,
+                "self_rx_pct": 0,
+                "self_tx_pct": 1,
+                "tx_retries_pct": 21.3,
+                "utilisation_pct": 1
+              },
+              "band": "5g",
+              "cac_seconds": 60,
+              "channel": 60,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 60,
+              "dfs": true,
+              "extension_channel": 1,
+              "findings": [
+                {
+                  "band": "5g",
+                  "code": "coverage_gap",
+                  "message": "hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept",
+                  "peers": [
+                    "AP-1",
+                    "AP-3"
+                  ],
+                  "severity": "warning",
+                  "subject": "AP-2"
+                },
+                {
+                  "band": "5g",
+                  "code": "receiver_offset",
+                  "message": "AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off",
+                  "peers": [
+                    "AP-3"
+                  ],
+                  "severity": "info",
+                  "subject": "AP-2"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -75
+              },
+              "neighbours": [
+                {
+                  "marker": "below_unfixable",
+                  "peer": "AP-1",
+                  "reason": null,
+                  "receiver_offset_db": 3,
+                  "rssi_dbm": -71,
+                  "samples": 3,
+                  "source": "measured"
+                },
+                {
+                  "marker": "below_unfixable",
+                  "peer": "AP-3",
+                  "reason": null,
+                  "receiver_offset_db": 6,
+                  "rssi_dbm": -68,
+                  "samples": 3,
+                  "source": "measured"
+                }
+              ],
+              "outcome": "coverage_gap",
+              "recommendations": [
+                {
+                  "band": "5g",
+                  "code": "tx_power",
+                  "current": 18,
+                  "current_mode": "custom",
+                  "kind": "held",
+                  "reason": "at the effective maximum",
+                  "recommended": 18,
+                  "setting": "tx_power",
+                  "subject": "AP-2",
+                  "unverified_headroom": false
+                },
+                {
+                  "band": "5g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -75,
+                  "setting": "min_rssi",
+                  "subject": "AP-2",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 24,
+                "effective_dbm": 18,
+                "effective_max_dbm": 18,
+                "effective_max_verified": true,
+                "max_dbm": 24,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": -71,
+              "width_mhz": 80
+            }
+          ],
+          "configured": true,
+          "findings": [],
+          "mac": "02:00:00:00:00:08",
+          "model": "UAPA693",
+          "name": "AP-2",
+          "state": "connected",
+          "state_code": 1,
+          "uplink_type": "wire"
+        },
+        {
+          "bands": [
+            {
+              "airtime": {
+                "client_count": 0,
+                "satisfaction_pct": null,
+                "self_rx_pct": 0,
+                "self_tx_pct": 3,
+                "tx_retries_pct": 0.0,
+                "utilisation_pct": 30
+              },
+              "band": "2g",
+              "cac_seconds": null,
+              "channel": 6,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 6,
+              "dfs": false,
+              "extension_channel": 0,
+              "findings": [],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -60
+              },
+              "neighbours": [
+                {
+                  "marker": "below_fixed",
+                  "peer": "AP-2",
+                  "reason": null,
+                  "receiver_offset_db": -6,
+                  "rssi_dbm": -75,
+                  "samples": 3,
+                  "source": "measured"
+                },
+                {
+                  "marker": "below_fixed",
+                  "peer": "AP-4",
+                  "reason": "peer_scan_empty",
+                  "receiver_offset_db": null,
+                  "rssi_dbm": -76,
+                  "samples": 0,
+                  "source": "reciprocity"
+                }
+              ],
+              "outcome": "out_of_corridor",
+              "recommendations": [
+                {
+                  "band": "2g",
+                  "code": "tx_power",
+                  "current": 11,
+                  "current_mode": "custom",
+                  "kind": "change",
+                  "reason": "weakest neighbour below the corridor",
+                  "recommended": 17,
+                  "setting": "tx_power",
+                  "subject": "AP-3",
+                  "unverified_headroom": true
+                },
+                {
+                  "band": "2g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -74,
+                  "setting": "min_rssi",
+                  "subject": "AP-3",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 11,
+                "effective_dbm": 11,
+                "effective_max_dbm": 23,
+                "effective_max_verified": false,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": -76,
+              "width_mhz": 20
+            },
+            {
+              "airtime": {
+                "client_count": 1,
+                "satisfaction_pct": 96,
+                "self_rx_pct": 0,
+                "self_tx_pct": 0,
+                "tx_retries_pct": 17.5,
+                "utilisation_pct": 3
+              },
+              "band": "5g",
+              "cac_seconds": 60,
+              "channel": 104,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 104,
+              "dfs": true,
+              "extension_channel": -1,
+              "findings": [
+                {
+                  "band": "5g",
+                  "code": "coverage_gap",
+                  "message": "at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point",
+                  "peers": [
+                    "AP-4"
+                  ],
+                  "severity": "warning",
+                  "subject": "AP-3"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 1,
+                "strongest_dbm": -75
+              },
+              "neighbours": [
+                {
+                  "marker": null,
+                  "peer": "AP-2",
+                  "reason": null,
+                  "receiver_offset_db": -6,
+                  "rssi_dbm": -69,
+                  "samples": 3,
+                  "source": "measured"
+                },
+                {
+                  "marker": null,
+                  "peer": "AP-4",
+                  "reason": "not_sighted",
+                  "receiver_offset_db": null,
+                  "rssi_dbm": null,
+                  "samples": 0,
+                  "source": null
+                }
+              ],
+              "outcome": "no_sighting",
+              "recommendations": [
+                {
+                  "band": "5g",
+                  "code": "tx_power",
+                  "current": 23,
+                  "current_mode": "custom",
+                  "kind": "held",
+                  "reason": "at the effective maximum, neighbour unsighted",
+                  "recommended": 23,
+                  "setting": "tx_power",
+                  "subject": "AP-3",
+                  "unverified_headroom": false
+                },
+                {
+                  "band": "5g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -80,
+                  "setting": "min_rssi",
+                  "subject": "AP-3",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 23,
+                "effective_dbm": 23,
+                "effective_max_dbm": 23,
+                "effective_max_verified": true,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": -69,
+              "width_mhz": 80
+            }
+          ],
+          "configured": true,
+          "findings": [],
+          "mac": "02:00:00:00:00:0e",
+          "model": "UAL6",
+          "name": "AP-3",
+          "state": "connected",
+          "state_code": 1,
+          "uplink_type": "wire"
+        },
+        {
+          "bands": [
+            {
+              "airtime": {
+                "client_count": 7,
+                "satisfaction_pct": null,
+                "self_rx_pct": 0,
+                "self_tx_pct": 0,
+                "tx_retries_pct": 20.8,
+                "utilisation_pct": 11
+              },
+              "band": "2g",
+              "cac_seconds": null,
+              "channel": 11,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 11,
+              "dfs": false,
+              "extension_channel": 0,
+              "findings": [
+                {
+                  "band": "2g",
+                  "code": "radio_restart_suggested",
+                  "message": "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion",
+                  "peers": [],
+                  "severity": "warning",
+                  "subject": "AP-4"
+                }
+              ],
+              "foreign": null,
+              "neighbours": [
+                {
+                  "marker": "below_fixed",
+                  "peer": "AP-3",
+                  "reason": null,
+                  "receiver_offset_db": null,
+                  "rssi_dbm": -77,
+                  "samples": 3,
+                  "source": "measured"
+                }
+              ],
+              "outcome": "out_of_corridor",
+              "recommendations": [
+                {
+                  "band": "2g",
+                  "code": "tx_power",
+                  "current": 10,
+                  "current_mode": "custom",
+                  "kind": "change",
+                  "reason": "weakest neighbour below the corridor",
+                  "recommended": 17,
+                  "setting": "tx_power",
+                  "subject": "AP-4",
+                  "unverified_headroom": true
+                },
+                {
+                  "band": "2g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -73,
+                  "setting": "min_rssi",
+                  "subject": "AP-4",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 10,
+                "effective_dbm": 10,
+                "effective_max_dbm": 23,
+                "effective_max_verified": false,
+                "max_dbm": 23,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": -77,
+              "width_mhz": 20
+            },
+            {
+              "airtime": {
+                "client_count": 11,
+                "satisfaction_pct": null,
+                "self_rx_pct": 4,
+                "self_tx_pct": 3,
+                "tx_retries_pct": 13.2,
+                "utilisation_pct": 8
+              },
+              "band": "5g",
+              "cac_seconds": null,
+              "channel": 40,
+              "channel_auto": false,
+              "clients": null,
+              "configured_channel": 40,
+              "dfs": false,
+              "extension_channel": -1,
+              "findings": [
+                {
+                  "band": "5g",
+                  "code": "coverage_gap",
+                  "message": "at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point",
+                  "peers": [
+                    "AP-3"
+                  ],
+                  "severity": "warning",
+                  "subject": "AP-4"
+                }
+              ],
+              "foreign": {
+                "count": 1,
+                "overlapping_count": 0,
+                "strongest_dbm": -75
+              },
+              "neighbours": [
+                {
+                  "marker": null,
+                  "peer": "AP-3",
+                  "reason": "not_sighted",
+                  "receiver_offset_db": null,
+                  "rssi_dbm": null,
+                  "samples": 0,
+                  "source": null
+                }
+              ],
+              "outcome": "no_sighting",
+              "recommendations": [
+                {
+                  "band": "5g",
+                  "code": "tx_power",
+                  "current": 18,
+                  "current_mode": "custom",
+                  "kind": "held",
+                  "reason": "at the effective maximum, neighbour unsighted",
+                  "recommended": 18,
+                  "setting": "tx_power",
+                  "subject": "AP-4",
+                  "unverified_headroom": false
+                },
+                {
+                  "band": "5g",
+                  "code": "min_rssi",
+                  "current": null,
+                  "current_mode": null,
+                  "kind": "conditional",
+                  "reason": "disabled; the value to use if enabled",
+                  "recommended": -75,
+                  "setting": "min_rssi",
+                  "subject": "AP-4",
+                  "unverified_headroom": false
+                }
+              ],
+              "tx": {
+                "configured_dbm": 24,
+                "effective_dbm": 18,
+                "effective_max_dbm": 18,
+                "effective_max_verified": true,
+                "max_dbm": 24,
+                "min_dbm": 6,
+                "mode": "custom"
+              },
+              "weakest_dbm": null,
+              "width_mhz": 80
+            }
+          ],
+          "configured": true,
+          "findings": [],
+          "mac": "02:00:00:00:00:11",
+          "model": "UAPA693",
+          "name": "AP-4",
+          "state": "connected",
+          "state_code": 1,
+          "uplink_type": "wire"
+        }
+      ],
+      "captured_at": "2026-10-12T20:00:00+00:00",
+      "compliance": {
+        "evaluations": [
+          {
+            "checks": [
+              {
+                "actual": "2.4 GHz, 5 GHz",
+                "code": "wifi_bands",
+                "detail": "",
+                "expected": "2.4 GHz, 5 GHz",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Enabled",
+                "code": "fast_roaming",
+                "detail": "",
+                "expected": "Enabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Manual",
+                "code": "minrate_mode",
+                "detail": "",
+                "expected": "Manual",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "12 Mbps",
+                "code": "minrate_24",
+                "detail": "",
+                "expected": "12 Mbps",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "24 Mbps",
+                "code": "minrate_5",
+                "detail": "",
+                "expected": "24 Mbps",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "multicast_broadcast_blocker",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "multicast_to_unicast",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Enabled",
+                "code": "proxy_arp",
+                "detail": "",
+                "expected": "Enabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "WPA2/WPA3",
+                "code": "security_protocol",
+                "detail": "",
+                "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Optional",
+                "code": "pmf",
+                "detail": "",
+                "expected": "Optional",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "hide_wifi_name",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "client_device_isolation",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "5",
+                "code": "sae_anti_clogging",
+                "detail": "",
+                "expected": "5",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "5",
+                "code": "sae_sync_time",
+                "detail": "",
+                "expected": "5",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "mlo",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Enabled",
+                "code": "band_steering",
+                "detail": "",
+                "expected": "Enabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Enabled",
+                "code": "bss_transition",
+                "detail": "",
+                "expected": "Enabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "uapsd",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Custom",
+                "code": "dtim_mode",
+                "detail": "",
+                "expected": "Custom",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "3",
+                "code": "dtim_24",
+                "detail": "",
+                "expected": "3",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "3",
+                "code": "dtim_5",
+                "detail": "",
+                "expected": "3",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "3600 s",
+                "code": "group_rekey",
+                "detail": "",
+                "expected": "3600 s",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "ap_name_in_beacon",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "b_supported",
+                "detail": "",
+                "expected": "Disabled",
+                "status": "passed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Enabled, -75 dBm",
+                "code": "roaming_assistant",
+                "detail": "threshold not available without neighbour data",
+                "expected": "Enabled",
+                "status": "incomplete",
+                "subject": "SSID-1"
+              }
+            ],
+            "findings": [],
+            "profile": "Throughput",
+            "wlan": "SSID-1"
+          },
+          {
+            "checks": [
+              {
+                "actual": "Disabled",
+                "code": "wlan_enabled",
+                "detail": "the WLAN is disabled on the controller",
+                "expected": "Enabled",
+                "status": "failed",
+                "subject": "SSID-2"
+              }
+            ],
+            "findings": [],
+            "profile": "Standard",
+            "wlan": "SSID-2"
+          },
+          {
+            "checks": [
+              {
+                "actual": "Disabled",
+                "code": "wlan_enabled",
+                "detail": "the WLAN is disabled on the controller",
+                "expected": "Enabled",
+                "status": "failed",
+                "subject": "SSID-3"
+              }
+            ],
+            "findings": [],
+            "profile": "Hotspot",
+            "wlan": "SSID-3"
+          }
+        ],
+        "findings": []
+      },
+      "corridors": {
+        "2g": {
+          "high_dbm": -67,
+          "low_dbm": -73
+        },
+        "5g": {
+          "high_dbm": -61,
+          "low_dbm": -67
+        }
+      },
+      "derived": {
+        "checks": [
+          {
+            "actual": "2.4 GHz, 5 GHz",
+            "code": "wifi_bands",
+            "detail": "",
+            "expected": "2.4 GHz, 5 GHz",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Enabled",
+            "code": "fast_roaming",
+            "detail": "",
+            "expected": "Enabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Manual",
+            "code": "minrate_mode",
+            "detail": "",
+            "expected": "Manual",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "12 Mbps",
+            "code": "minrate_24",
+            "detail": "",
+            "expected": "12 Mbps",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "24 Mbps",
+            "code": "minrate_5",
+            "detail": "",
+            "expected": "24 Mbps",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "multicast_broadcast_blocker",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "multicast_to_unicast",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Enabled",
+            "code": "proxy_arp",
+            "detail": "",
+            "expected": "Enabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "WPA2/WPA3",
+            "code": "security_protocol",
+            "detail": "",
+            "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Optional",
+            "code": "pmf",
+            "detail": "",
+            "expected": "Optional",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "hide_wifi_name",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "client_device_isolation",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "5",
+            "code": "sae_anti_clogging",
+            "detail": "",
+            "expected": "5",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "5",
+            "code": "sae_sync_time",
+            "detail": "",
+            "expected": "5",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "mlo",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Enabled",
+            "code": "band_steering",
+            "detail": "",
+            "expected": "Enabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Enabled",
+            "code": "bss_transition",
+            "detail": "",
+            "expected": "Enabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "uapsd",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Custom",
+            "code": "dtim_mode",
+            "detail": "",
+            "expected": "Custom",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "3",
+            "code": "dtim_24",
+            "detail": "",
+            "expected": "3",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "3",
+            "code": "dtim_5",
+            "detail": "",
+            "expected": "3",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "3600 s",
+            "code": "group_rekey",
+            "detail": "",
+            "expected": "3600 s",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "ap_name_in_beacon",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "b_supported",
+            "detail": "",
+            "expected": "Disabled",
+            "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Enabled, -75 dBm",
+            "code": "roaming_assistant",
+            "detail": "threshold not available without neighbour data",
+            "expected": "Enabled",
+            "status": "incomplete",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "wlan_enabled",
+            "detail": "the WLAN is disabled on the controller",
+            "expected": "Enabled",
+            "status": "failed",
+            "subject": "SSID-2"
+          },
+          {
+            "actual": "Disabled",
+            "code": "wlan_enabled",
+            "detail": "the WLAN is disabled on the controller",
+            "expected": "Enabled",
+            "status": "failed",
+            "subject": "SSID-3"
+          }
+        ],
+        "findings": [
+          {
+            "band": null,
+            "code": "neighbours_asymmetric",
+            "message": "lists AP-2 as a neighbour, which does not list it back; both directions are evaluated",
+            "peers": [
+              "AP-2"
+            ],
+            "severity": "advisory",
+            "subject": "AP-1"
+          },
+          {
+            "band": null,
+            "code": "neighbours_asymmetric",
+            "message": "lists AP-3 as a neighbour, which does not list it back; both directions are evaluated",
+            "peers": [
+              "AP-3"
+            ],
+            "severity": "advisory",
+            "subject": "AP-2"
+          },
+          {
+            "band": null,
+            "code": "neighbours_asymmetric",
+            "message": "lists AP-4 as a neighbour, which does not list it back; both directions are evaluated",
+            "peers": [
+              "AP-4"
+            ],
+            "severity": "advisory",
+            "subject": "AP-3"
+          },
+          {
+            "band": "2g",
+            "code": "receiver_offset",
+            "message": "AP-1 and AP-2 disagree by -12 dB after the power difference; one receiver reads the other's beacons systematically off",
+            "peers": [
+              "AP-2"
+            ],
+            "severity": "info",
+            "subject": "AP-1"
+          },
+          {
+            "band": "5g",
+            "code": "headroom_unverified",
+            "message": "the radio has not demonstrated power above 20 dBm on this channel",
+            "peers": [],
+            "severity": "info",
+            "subject": "AP-1"
+          },
+          {
+            "band": "2g",
+            "code": "receiver_offset",
+            "message": "AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off",
+            "peers": [
+              "AP-3"
+            ],
+            "severity": "info",
+            "subject": "AP-2"
+          },
+          {
+            "band": "5g",
+            "code": "coverage_gap",
+            "message": "hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept",
+            "peers": [
+              "AP-1",
+              "AP-3"
+            ],
+            "severity": "warning",
+            "subject": "AP-2"
+          },
+          {
+            "band": "5g",
+            "code": "receiver_offset",
+            "message": "AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off",
+            "peers": [
+              "AP-3"
+            ],
+            "severity": "info",
+            "subject": "AP-2"
+          },
+          {
+            "band": "5g",
+            "code": "coverage_gap",
+            "message": "at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point",
+            "peers": [
+              "AP-4"
+            ],
+            "severity": "warning",
+            "subject": "AP-3"
+          },
+          {
+            "band": "2g",
+            "code": "radio_restart_suggested",
+            "message": "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion",
+            "peers": [],
+            "severity": "warning",
+            "subject": "AP-4"
+          },
+          {
+            "band": "5g",
+            "code": "coverage_gap",
+            "message": "at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point",
+            "peers": [
+              "AP-3"
+            ],
+            "severity": "warning",
+            "subject": "AP-4"
+          }
+        ],
+        "has_changes": true,
+        "partial": true,
+        "pending_tx_changes": 4,
+        "recommendations": [
+          {
+            "band": "2g",
+            "code": "tx_power",
+            "current": 17,
+            "current_mode": "auto",
+            "kind": "confirmed",
+            "reason": "weakest neighbour inside the corridor",
+            "recommended": 17,
+            "setting": "tx_power",
+            "subject": "AP-1",
+            "unverified_headroom": false
+          },
+          {
+            "band": "2g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -80,
+            "setting": "min_rssi",
+            "subject": "AP-1",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "tx_power",
+            "current": 20,
+            "current_mode": "auto",
+            "kind": "change",
+            "reason": "weakest neighbour below the corridor",
+            "recommended": 23,
+            "setting": "tx_power",
+            "subject": "AP-1",
+            "unverified_headroom": true
+          },
+          {
+            "band": "5g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -77,
+            "setting": "min_rssi",
+            "subject": "AP-1",
+            "unverified_headroom": false
+          },
+          {
+            "band": "2g",
+            "code": "tx_power",
+            "current": 6,
+            "current_mode": "custom",
+            "kind": "change",
+            "reason": "weakest neighbour below the corridor",
+            "recommended": 10,
+            "setting": "tx_power",
+            "subject": "AP-2",
+            "unverified_headroom": true
+          },
+          {
+            "band": "2g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -69,
+            "setting": "min_rssi",
+            "subject": "AP-2",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "tx_power",
+            "current": 18,
+            "current_mode": "custom",
+            "kind": "held",
+            "reason": "at the effective maximum",
+            "recommended": 18,
+            "setting": "tx_power",
+            "subject": "AP-2",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -75,
+            "setting": "min_rssi",
+            "subject": "AP-2",
+            "unverified_headroom": false
+          },
+          {
+            "band": "2g",
+            "code": "tx_power",
+            "current": 11,
+            "current_mode": "custom",
+            "kind": "change",
+            "reason": "weakest neighbour below the corridor",
+            "recommended": 17,
+            "setting": "tx_power",
+            "subject": "AP-3",
+            "unverified_headroom": true
+          },
+          {
+            "band": "2g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -74,
+            "setting": "min_rssi",
+            "subject": "AP-3",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "tx_power",
+            "current": 23,
+            "current_mode": "custom",
+            "kind": "held",
+            "reason": "at the effective maximum, neighbour unsighted",
+            "recommended": 23,
+            "setting": "tx_power",
+            "subject": "AP-3",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -80,
+            "setting": "min_rssi",
+            "subject": "AP-3",
+            "unverified_headroom": false
+          },
+          {
+            "band": "2g",
+            "code": "tx_power",
+            "current": 10,
+            "current_mode": "custom",
+            "kind": "change",
+            "reason": "weakest neighbour below the corridor",
+            "recommended": 17,
+            "setting": "tx_power",
+            "subject": "AP-4",
+            "unverified_headroom": true
+          },
+          {
+            "band": "2g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -73,
+            "setting": "min_rssi",
+            "subject": "AP-4",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "tx_power",
+            "current": 18,
+            "current_mode": "custom",
+            "kind": "held",
+            "reason": "at the effective maximum, neighbour unsighted",
+            "recommended": 18,
+            "setting": "tx_power",
+            "subject": "AP-4",
+            "unverified_headroom": false
+          },
+          {
+            "band": "5g",
+            "code": "min_rssi",
+            "current": null,
+            "current_mode": null,
+            "kind": "conditional",
+            "reason": "disabled; the value to use if enabled",
+            "recommended": -75,
+            "setting": "min_rssi",
+            "subject": "AP-4",
+            "unverified_headroom": false
+          }
+        ]
+      },
+      "environment": {
+        "delta_db": 6.21,
+        "exponent": 2.8,
+        "preset": "Residential"
+      },
+      "field_problems": [],
+      "groups": [
+        {
+          "members": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "missing": [
+            {
+              "a": "AP-3",
+              "b": "AP-4",
+              "band": "5g",
+              "direction": "both",
+              "reasons": [
+                "AP-4: not sighted",
+                "AP-3: not sighted"
+              ]
+            }
+          ],
+          "overlapping": [],
+          "reuse_infeasible": []
+        }
+      ],
+      "host_key_failed_ap_count": 0,
+      "partial_reasons": [
+        "band_empty"
+      ],
+      "rf": {
+        "cell_edge_dbm": -67,
+        "client_tx_dbm": 15,
+        "min_rssi_offset_db": 5,
+        "noise_floor_dbm": -92,
+        "required_snr_db": 25,
+        "roam_ceiling_dbm": -65,
+        "roam_floor_dbm": -75,
+        "roam_margin_db": 5,
+        "roam_offset_db": 0
+      },
+      "roaming": [
+        {
+          "broadcasting": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "limiting": [],
+          "per_ap": [
+            {
+              "ap": "AP-1",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -77,
+              "source": "measured",
+              "uplink_dbm": -80,
+              "weakest_peer": "AP-2",
+              "weakest_rssi_dbm": -72
+            },
+            {
+              "ap": "AP-2",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -76,
+              "source": "measured",
+              "uplink_dbm": -78,
+              "weakest_peer": "AP-1",
+              "weakest_rssi_dbm": -71
+            }
+          ],
+          "reasons": [
+            "AP-3: no reading of neighbour AP-4 (not sighted)",
+            "AP-4: no reading of neighbour AP-3 (not sighted)"
+          ],
+          "status": "incomplete",
+          "threshold_dbm": null,
+          "tx_change_pending": true,
+          "wlan": "SSID-1"
+        },
+        {
+          "broadcasting": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "limiting": [],
+          "per_ap": [
+            {
+              "ap": "AP-1",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -77,
+              "source": "measured",
+              "uplink_dbm": -80,
+              "weakest_peer": "AP-2",
+              "weakest_rssi_dbm": -72
+            },
+            {
+              "ap": "AP-2",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -76,
+              "source": "measured",
+              "uplink_dbm": -78,
+              "weakest_peer": "AP-1",
+              "weakest_rssi_dbm": -71
+            }
+          ],
+          "reasons": [
+            "AP-3: no reading of neighbour AP-4 (not sighted)",
+            "AP-4: no reading of neighbour AP-3 (not sighted)"
+          ],
+          "status": "incomplete",
+          "threshold_dbm": null,
+          "tx_change_pending": true,
+          "wlan": "SSID-2"
+        },
+        {
+          "broadcasting": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "limiting": [],
+          "per_ap": [
+            {
+              "ap": "AP-1",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -77,
+              "source": "measured",
+              "uplink_dbm": -80,
+              "weakest_peer": "AP-2",
+              "weakest_rssi_dbm": -72
+            },
+            {
+              "ap": "AP-2",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -76,
+              "source": "measured",
+              "uplink_dbm": -78,
+              "weakest_peer": "AP-1",
+              "weakest_rssi_dbm": -71
+            }
+          ],
+          "reasons": [
+            "AP-3: no reading of neighbour AP-4 (not sighted)",
+            "AP-4: no reading of neighbour AP-3 (not sighted)"
+          ],
+          "status": "incomplete",
+          "threshold_dbm": null,
+          "tx_change_pending": true,
+          "wlan": "SSID-3"
+        },
+        {
+          "broadcasting": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "limiting": [],
+          "per_ap": [
+            {
+              "ap": "AP-1",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -77,
+              "source": "measured",
+              "uplink_dbm": -80,
+              "weakest_peer": "AP-2",
+              "weakest_rssi_dbm": -72
+            },
+            {
+              "ap": "AP-2",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -76,
+              "source": "measured",
+              "uplink_dbm": -78,
+              "weakest_peer": "AP-1",
+              "weakest_rssi_dbm": -71
+            }
+          ],
+          "reasons": [
+            "AP-3: no reading of neighbour AP-4 (not sighted)",
+            "AP-4: no reading of neighbour AP-3 (not sighted)"
+          ],
+          "status": "incomplete",
+          "threshold_dbm": null,
+          "tx_change_pending": true,
+          "wlan": "SSID-4"
+        },
+        {
+          "broadcasting": [
+            "AP-1",
+            "AP-2",
+            "AP-3",
+            "AP-4"
+          ],
+          "limiting": [],
+          "per_ap": [
+            {
+              "ap": "AP-1",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -77,
+              "source": "measured",
+              "uplink_dbm": -80,
+              "weakest_peer": "AP-2",
+              "weakest_rssi_dbm": -72
+            },
+            {
+              "ap": "AP-2",
+              "cap": "capped_by_floor",
+              "downlink_dbm": -75,
+              "raw_cap_dbm": -76,
+              "source": "measured",
+              "uplink_dbm": -78,
+              "weakest_peer": "AP-1",
+              "weakest_rssi_dbm": -71
+            }
+          ],
+          "reasons": [
+            "AP-3: no reading of neighbour AP-4 (not sighted)",
+            "AP-4: no reading of neighbour AP-3 (not sighted)"
+          ],
+          "status": "incomplete",
+          "threshold_dbm": null,
+          "tx_change_pending": true,
+          "wlan": "SSID-5"
+        }
+      ],
+      "scan": {
+        "failures_by_ap": {
+          "AP-1": [],
+          "AP-2": [],
+          "AP-3": [],
+          "AP-4": []
+        },
+        "passes": 3,
+        "scanned": [
+          "AP-1",
+          "AP-2",
+          "AP-3",
+          "AP-4"
+        ],
+        "skipped": false,
+        "successes_by_ap": {
+          "AP-1": 3,
+          "AP-2": 3,
+          "AP-3": 3,
+          "AP-4": 3
+        },
+        "unknown_names": []
+      },
+      "scan_passes": 3,
+      "scanning": true,
+      "site_findings": [
+        {
+          "band": null,
+          "code": "neighbours_asymmetric",
+          "message": "lists AP-2 as a neighbour, which does not list it back; both directions are evaluated",
+          "peers": [
+            "AP-2"
+          ],
+          "severity": "advisory",
+          "subject": "AP-1"
+        },
+        {
+          "band": null,
+          "code": "neighbours_asymmetric",
+          "message": "lists AP-3 as a neighbour, which does not list it back; both directions are evaluated",
+          "peers": [
+            "AP-3"
+          ],
+          "severity": "advisory",
+          "subject": "AP-2"
+        },
+        {
+          "band": null,
+          "code": "neighbours_asymmetric",
+          "message": "lists AP-4 as a neighbour, which does not list it back; both directions are evaluated",
+          "peers": [
+            "AP-4"
+          ],
+          "severity": "advisory",
+          "subject": "AP-3"
+        }
+      ],
+      "site_id": "default",
+      "site_name": "Site-1",
+      "unparsable": [],
+      "verifiable_ap_count": 4
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "data": [
+    {
+      "_id": "0000000000000000000000f5",
+      "adopted": true,
+      "ip": "192.0.2.15",
+      "is_access_point": true,
+      "mac": "02:00:00:00:00:f5",
+      "model": "UAPA693",
+      "name": "AP-5",
+      "num_sta": 0,
+      "radio_table": [
+        {
+          "channel": 1,
+          "ht": "20",
+          "max_txpower": 23,
+          "min_rssi_enabled": false,
+          "min_txpower": 6,
+          "radio": "ng",
+          "tx_power": 12,
+          "tx_power_mode": "custom"
+        },
+        {
+          "channel": 36,
+          "ht": "80",
+          "max_txpower": 24,
+          "min_rssi_enabled": false,
+          "min_txpower": 6,
+          "radio": "na",
+          "tx_power": 20,
+          "tx_power_mode": "custom"
+        }
+      ],
+      "radio_table_stats": [
+        {
+          "name": "ra0",
+          "num_sta": 0,
+          "radio": "ng"
+        },
+        {
+          "name": "rai0",
+          "num_sta": 0,
+          "radio": "na"
+        }
+      ],
+      "state": 0,
+      "type": "uap",
+      "vap_table": [],
+      "version": "8.7.11.16723",
+      "x_has_ssh_hostkey": false
+    }
+  ],
+  "meta": {
+    "rc": "ok"
+  }
+}

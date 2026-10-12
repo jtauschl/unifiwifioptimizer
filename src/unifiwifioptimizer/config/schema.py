@@ -32,8 +32,9 @@ from unifiwifioptimizer.rf.constants import (
     NOISE_FLOOR_RANGE,
     SNR_RANGE,
 )
-from unifiwifioptimizer.rf.corridor import PathLossModel
+from unifiwifioptimizer.rf.corridor import CellEdge, PathLossModel
 from unifiwifioptimizer.rf.roaming import RoamingTunables
+from unifiwifioptimizer.rf.settings import RfSettings
 
 Value = object
 
@@ -395,16 +396,7 @@ def _site(site_id: str, value: Value) -> SiteConfig:
     return site
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class RfConfig:
-    client_tx_dbm: int
-    noise_floor_dbm: int
-    required_snr_db: int
-    min_rssi_offset_db: int
-    roaming: RoamingTunables
-
-
-def _rf(value: Value) -> RfConfig:
+def _rf(value: Value) -> RfSettings:
     path = "rf"
     mapping = _mapping(value, path) if value is not None else {}
     known = frozenset(
@@ -425,10 +417,12 @@ def _rf(value: Value) -> RfConfig:
         )
     except ValueError as exc:
         raise ConfigError(path, str(exc)) from None
-    return RfConfig(
+    return RfSettings(
+        cell_edge=CellEdge(
+            noise_floor_dbm=_integer(mapping, path, "noise_floor_dbm", NOISE_FLOOR_RANGE, DEFAULT_NOISE_FLOOR_DBM),
+            required_snr_db=_integer(mapping, path, "required_snr_db", SNR_RANGE, DEFAULT_REQUIRED_SNR_DB),
+        ),
         client_tx_dbm=_integer(mapping, path, "client_tx_dbm", CLIENT_TX_RANGE, DEFAULT_CLIENT_TX_DBM),
-        noise_floor_dbm=_integer(mapping, path, "noise_floor_dbm", NOISE_FLOOR_RANGE, DEFAULT_NOISE_FLOOR_DBM),
-        required_snr_db=_integer(mapping, path, "required_snr_db", SNR_RANGE, DEFAULT_REQUIRED_SNR_DB),
         min_rssi_offset_db=_integer(mapping, path, "min_rssi_offset_db", DB_TUNABLE_RANGE, DEFAULT_MIN_RSSI_OFFSET_DB),
         roaming=roaming,
     )
@@ -438,7 +432,7 @@ def _rf(value: Value) -> RfConfig:
 class Config:
     controller: ControllerConfig
     sites: Mapping[str, SiteConfig]
-    rf: RfConfig
+    rf: RfSettings
 
     @classmethod
     def from_mapping(cls, document: Value, env_api_key: str | None = None) -> "Config":

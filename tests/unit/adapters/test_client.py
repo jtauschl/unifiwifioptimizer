@@ -55,7 +55,7 @@ class ConnectFails:
 
 Step = Callable[[], FakeResponse] | ConnectFails
 # Keys of the fixture's first access point (incl. nested radio/stats/vap records) the parser never reads.
-AP_UNREAD_KEYS = 75
+AP_UNREAD_KEYS = 73
 # Keys of a wireless client record the parser never reads (28 keys, 9 read).
 CLIENT_UNREAD_KEYS = 19
 

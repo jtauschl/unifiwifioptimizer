@@ -5,45 +5,20 @@ of keys the parser never read. Field names or values the tool does not use are n
 alone shows controller drift; the operator fetches the raw endpoint with curl when a name is needed.
 """
 
-import dataclasses
 import json
 import os
 import stat
 from collections import defaultdict
-from collections.abc import Mapping
-from enum import Enum
-from ipaddress import IPv4Address, IPv6Address
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any
 
 from unifiwifioptimizer.domain.errors import ConfigError
-from unifiwifioptimizer.domain.secrets import Secret, is_secret_key
-
-MASK = "***"
-
-
-def _plain(value: object) -> Any:
-    if isinstance(value, Secret):
-        return MASK
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, Mapping | MappingProxyType):
-        return {str(_plain(k)): _plain(v) for k, v in value.items()}
-    if isinstance(value, list | tuple | frozenset | set):
-        items = [_plain(v) for v in value]
-        return sorted(items, key=repr) if isinstance(value, frozenset | set) else items
-    if isinstance(value, IPv4Address | IPv6Address):
-        return str(value)
-    if isinstance(value, bytes):
-        return value.hex()
-    return value
+from unifiwifioptimizer.domain.plain import MASK, SecretPolicy, plain
+from unifiwifioptimizer.domain.secrets import is_secret_key
 
 
 def redact(value: Any) -> Any:
-    """Mask every value under a secret-looking key, at any depth; a second line of defence after `_plain`."""
+    """Mask every value under a secret-looking key, at any depth; a second line of defence after the projection."""
     if isinstance(value, dict):
         return {k: (MASK if isinstance(k, str) and is_secret_key(k) else redact(v)) for k, v in value.items()}
     if isinstance(value, list):
@@ -67,7 +42,7 @@ class DumpWriter:
         name = label.strip("/").replace("/", "_") + ".json"
         document = {
             "label": label,
-            "models": redact(_plain(result)),
+            "models": redact(plain(result, SecretPolicy.MASK)),
             "unknown_field_count": {
                 endpoint: dict(sorted(records.items())) for endpoint, records in sorted(self._unknown.items())
             },

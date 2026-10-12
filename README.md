@@ -125,10 +125,41 @@ Each site report provides the values you use as the basis for your UniFi WLAN an
 
 - **Environment**: the site-wide RF target corridor derived from the configured environment
 - **WLAN**: per-SSID profile checks that show which settings already match and which should be corrected, including the Roaming Assistant target aggregated across the APs broadcasting that WLAN
-- **Access Points**: neighbor RSSI, overlap or coverage issues, and per-radio recommendations for transmit power and minimum RSSI
-- **Adjacency Groups**: group-level channel diagnostics — channel width budget (2.4 GHz: 60 MHz / 5 GHz: 320 MHz), spectral overlap between adjacent APs, and missing peer sightings
+- **Access Points**: neighbor RSSI (with the reason for every missing reading), overlap or coverage issues, and per-radio recommendations for transmit power and minimum RSSI
+- **Adjacency Groups**: group-level diagnostics — missing peer sightings per direction, spectral overlap between adjacent APs, and whether the group can be coloured with the channels available
 
 Apply the relevant changes in UniFi Network, run the tool again, and use the updated output to iteratively converge on a better result.
+
+### Running the analysis with the Python package
+
+```bash
+unifiwifioptimizer run                    # every configured site: snapshot, neighbour scans, report
+unifiwifioptimizer run --site default     # one configured site (repeatable)
+unifiwifioptimizer run --no-scan          # controller side only: WLAN checks, channel checks, airtime
+unifiwifioptimizer run --clients          # add the associated clients per radio (signal counts, no identities)
+unifiwifioptimizer run --json             # one JSON document for every site (`schema_version` 1)
+```
+
+`--no-scan` is the natural first run: it needs no SSH access and no stored host keys. A scanning run
+needs `trust-host-keys` first and OpenSSH 8.4 or newer on the host. Scans run site after site and access
+point after access point; an access point the controller reports as disconnected is not contacted.
+
+Exit codes (part of the public contract; scripts may branch on them):
+
+| Code | Meaning | When |
+| --- | --- | --- |
+| 0 | ok | report printed, nothing missing |
+| 1 | unexpected error | anything the tool did not foresee, incl. a controller endpoint that fails |
+| 2 | usage | bad command line |
+| 3 | configuration | file, key or site problem; the scan password missing; a configured access point name two controller devices share — all before the first SSH connection |
+| 4 | TLS | the controller connection was refused by the TLS policy |
+| 5 | host keys | a scanning site had no verifiable access point and a host key (unknown or mismatched) was the reason; run `trust-host-keys` |
+| 6 | partial | the report exists, but a finding says what is missing: an access point unparsable, not on the controller or sharing its name with another, a scan that failed, a band that was empty, failed or down |
+| 7 | environment | `ssh` missing or older than 8.4 (checked right after the configuration is read, before the scan password check, only when a site scans) |
+| 130 | interrupted | Ctrl-C |
+
+Code 5 is narrower than "no access point verified": a site whose every scan timed out is a partial result
+(6), not a host-key problem.
 
 ## Configuration
 

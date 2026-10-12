@@ -2,8 +2,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from unifiwifioptimizer.domain.analysis import RoamingCap
 from unifiwifioptimizer.rf.corridor import Corridor
-from unifiwifioptimizer.rf.roaming import RoamingCap, RoamingRecommendation, RoamingTunables, recommend_roaming
+from unifiwifioptimizer.rf.roaming import RoamingRecommendation, RoamingTunables, recommend_roaming
 
 RESIDENTIAL = Corridor(low=-73)
 TEST_TUNABLES = RoamingTunables(offset_db=0, margin_db=5, floor_dbm=-78, ceiling_dbm=-67)

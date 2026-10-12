@@ -45,7 +45,6 @@ UI_PATHS: Mapping[str, str] = {
     "b_supported": f"{ADVANCED} → Behavior Controls → 802.11b Support",
     "dns_assistance_mode": f"{ADVANCED} → DNS Assistance",
     "mdns_proxy_mode": f"{ADVANCED} → mDNS Proxy",
-    "channel_layout": "AP settings → Radios → Channel dropdown (2.4/5 GHz)",
     "tx_power": "AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field",
     "min_rssi": "AP settings → Radios → Minimum RSSI checkbox (2.4/5 GHz)",
 }

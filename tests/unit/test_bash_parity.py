@@ -18,6 +18,12 @@ TX = "unit/rf/test_txpower.py::"
 ROAMING = "unit/rf/test_roaming.py::"
 NORMALIZE = "unit/compliance/test_normalize.py::"
 ADVISORIES = "unit/compliance/test_advisories.py::"
+ANALYSIS_TX = "unit/analysis/test_txpower.py::"
+SITE = "unit/analysis/test_site_analyzer.py::"
+REPORT = "unit/report/test_report_renderers.py::"
+ROAMING_CHECK = "unit/compliance/test_roaming_check.py::"
+TARGETS = "unit/analysis/test_roaming_targets.py::"
+RUN = "unit/app/test_run.py::"
 # Bash test → pytest node (module::function) or the ticket that ports it.
 PORTED: dict[str, str] = {
     "security_test.sh::test_state_wpa3_enterprise": NORMALIZE + "test_state_wpa3_enterprise",
@@ -47,49 +53,85 @@ PORTED: dict[str, str] = {
     + "test_calculate_roaming_recommendation_default",
     "roaming_test.sh::test_calculate_roaming_recommendation_margin_cap": ROAMING
     + "test_calculate_roaming_recommendation_margin_cap",
+    "tx_test.sh::test_zero_sightings_with_peer_goes_to_max": (
+        ANALYSIS_TX + "test_zero_sightings_with_peer_goes_to_max"
+    ),
+    "tx_test.sh::test_zero_sightings_no_peer_unchanged": (ANALYSIS_TX + "test_zero_sightings_no_peer_unchanged"),
+    "tx_test.sh::test_print_rec_tx_zero_sightings_flags_real_change": (
+        REPORT + "test_print_rec_tx_zero_sightings_flags_real_change"
+    ),
+    "tx_test.sh::test_print_rec_tx_zero_sightings_no_flag_when_already_at_max": (
+        REPORT + "test_print_rec_tx_zero_sightings_no_flag_when_already_at_max"
+    ),
+    "tx_test.sh::test_prepare_site_tx_checks_counts_zero_sightings": (
+        SITE + "test_prepare_site_tx_checks_counts_zero_sightings"
+    ),
+    "tx_test.sh::test_prepare_site_tx_checks_zero_when_all_ok": (SITE + "test_prepare_site_tx_checks_zero_when_all_ok"),
+    "tx_test.sh::test_tx_pending_note_appears_when_incomplete_and_pending": (
+        REPORT + "test_tx_pending_note_appears_when_incomplete_and_pending"
+    ),
+    "tx_test.sh::test_tx_pending_note_absent_when_no_pending": (REPORT + "test_tx_pending_note_absent_when_no_pending"),
+    "tx_test.sh::test_expected_disabled_and_actually_disabled_is_ok": (ROAMING_CHECK + "test_profile_expecting_it_off"),
+    "tx_test.sh::test_expected_disabled_but_actually_enabled_is_flagged": (
+        ROAMING_CHECK + "test_profile_expecting_it_off"
+    ),
+    "tx_test.sh::test_expected_disabled_ignores_incomplete_aggregation": (
+        TARGETS + "test_an_incomplete_target_leaves_an_expected_off_wlan_judged_on_the_switch_alone"
+    ),
+    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_false": (
+        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+    ),
+    "tx_test.sh::test_na_older_api_ignores_expected_false": (
+        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+    ),
+    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_true": (
+        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+    ),
+    "tx_test.sh::test_na_older_api_ignores_expected_true": (
+        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+    ),
+    "roaming_test.sh::test_ssid_peer_filtering": (TARGETS + "test_ssid_peer_filtering"),
+    "roaming_test.sh::test_asymmetric_direction": (TARGETS + "test_asymmetric_direction"),
+    "roaming_test.sh::test_tie_handling_floor_clamp": (TARGETS + "test_tie_handling_floor_clamp"),
+    "roaming_test.sh::test_incomplete_no_relevant_neighbor": (TARGETS + "test_incomplete_no_relevant_neighbor"),
+    "roaming_test.sh::test_incomplete_missing_sighting": (TARGETS + "test_incomplete_missing_sighting"),
+    "roaming_test.sh::test_na_2g_only_wlan": (TARGETS + "test_na_2g_only_wlan"),
+    "roaming_test.sh::test_na_single_ap_wlan": (TARGETS + "test_na_single_ap_wlan"),
+    "roaming_test.sh::test_missing_new_field_no_row": (TARGETS + "test_missing_new_field_no_row"),
+    "roaming_test.sh::test_incomplete_partial_missing_sighting": (TARGETS + "test_incomplete_partial_missing_sighting"),
+    "roaming_test.sh::test_incomplete_unconfigured_broadcasting_ap": (
+        TARGETS + "test_incomplete_unconfigured_broadcasting_ap"
+    ),
+    "roaming_test.sh::test_2g_only_site_no_fallback_trigger": (TARGETS + "test_2g_only_site_no_fallback_trigger"),
+    "roaming_test.sh::test_overlapping_groups_deduplicated": (TARGETS + "test_overlapping_groups_deduplicated"),
+    "roaming_test.sh::test_incomplete_unknown_group_id": (TARGETS + "test_incomplete_unknown_group_id"),
+    "roaming_test.sh::test_multi_site_tx_lo_isolation": (RUN + "test_multi_site_tx_lo_isolation"),
+    "roaming_test.sh::test_field_present_but_apgroups_empty_still_produces_row": (
+        TARGETS + "test_field_present_but_apgroups_empty_still_produces_row"
+    ),
+    "roaming_test.sh::test_incomplete_all_group_ids_unknown": (TARGETS + "test_incomplete_all_group_ids_unknown"),
 }
-# Behaviour the standards-grounded model (ADR-002 D8) replaced; the shell test documents the old rule.
+# Behaviour the standards-grounded model (ADR-002 D8) or the Python design replaced; the shell test documents
+# the old rule.
 SUPERSEDED: dict[str, str] = {
     "tx_test.sh::test_partial_missing_peer_nudge_preserved": "ADR-002 D8: weakest-neighbour statistic, no nudge",
+    "tx_test.sh::test_tx_pending_note_absent_on_normal_verdict": (
+        "OP#2881: the note appears whenever a 5 GHz TX change is pending, because the uplink threshold follows "
+        "the effective power; an OK verdict is stale then too"
+    ),
+    "roaming_test.sh::test_site_wide_fallback_flag_set_when_any_wlan_has_field": (
+        "OP#2881: the per-radio Roaming Assistant fallback is gone; a WLAN without the field is INCOMPLETE"
+    ),
+    "roaming_test.sh::test_fetch_site_apgroups_survives_unreachable_endpoint": (
+        "OP#2881: a controller endpoint that fails is a ControllerError and aborts the run (exit 1); the client "
+        "retries 502-504, and skipping one endpoint would hide a controller problem behind an INCOMPLETE check"
+    ),
+    "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response": (
+        "OP#2881: a malformed endpoint body is a SchemaError and aborts the run (exit 1), as above"
+    ),
 }
 # Tests of report rendering, site aggregation and controller fetch paths follow their layers' tickets.
-DEFERRED: dict[str, str] = {
-    "tx_test.sh::test_zero_sightings_with_peer_goes_to_max": "OP#2881 analysis (reciprocity-first zero sightings)",
-    "tx_test.sh::test_zero_sightings_no_peer_unchanged": "OP#2881 analysis",
-    "tx_test.sh::test_print_rec_tx_zero_sightings_flags_real_change": "OP#2881 report",
-    "tx_test.sh::test_print_rec_tx_zero_sightings_no_flag_when_already_at_max": "OP#2881 report",
-    "tx_test.sh::test_prepare_site_tx_checks_counts_zero_sightings": "OP#2881 analysis",
-    "tx_test.sh::test_prepare_site_tx_checks_zero_when_all_ok": "OP#2881 analysis",
-    "tx_test.sh::test_tx_pending_note_appears_when_incomplete_and_pending": "OP#2881 report",
-    "tx_test.sh::test_tx_pending_note_absent_when_no_pending": "OP#2881 report",
-    "tx_test.sh::test_tx_pending_note_absent_on_normal_verdict": "OP#2881 report",
-    "tx_test.sh::test_expected_disabled_and_actually_disabled_is_ok": "OP#2881 compliance",
-    "tx_test.sh::test_expected_disabled_but_actually_enabled_is_flagged": "OP#2881 compliance",
-    "tx_test.sh::test_expected_disabled_ignores_incomplete_aggregation": "OP#2881 compliance",
-    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_false": "OP#2881 compliance",
-    "tx_test.sh::test_na_older_api_ignores_expected_false": "OP#2881 compliance",
-    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_true": "OP#2881 compliance",
-    "tx_test.sh::test_na_older_api_ignores_expected_true": "OP#2881 compliance",
-    "roaming_test.sh::test_ssid_peer_filtering": "OP#2881 analysis",
-    "roaming_test.sh::test_asymmetric_direction": "OP#2881 analysis",
-    "roaming_test.sh::test_tie_handling_floor_clamp": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_no_relevant_neighbor": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_missing_sighting": "OP#2881 analysis",
-    "roaming_test.sh::test_na_2g_only_wlan": "OP#2881 analysis",
-    "roaming_test.sh::test_na_single_ap_wlan": "OP#2881 analysis",
-    "roaming_test.sh::test_missing_new_field_no_row": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_partial_missing_sighting": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_unconfigured_broadcasting_ap": "OP#2881 analysis",
-    "roaming_test.sh::test_2g_only_site_no_fallback_trigger": "OP#2881 analysis",
-    "roaming_test.sh::test_overlapping_groups_deduplicated": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_unknown_group_id": "OP#2881 analysis",
-    "roaming_test.sh::test_fetch_site_apgroups_survives_unreachable_endpoint": "OP#2878 controller adapter",
-    "roaming_test.sh::test_site_wide_fallback_flag_set_when_any_wlan_has_field": "OP#2881 analysis",
-    "roaming_test.sh::test_multi_site_tx_lo_isolation": "OP#2881 analysis",
-    "roaming_test.sh::test_field_present_but_apgroups_empty_still_produces_row": "OP#2881 analysis",
-    "roaming_test.sh::test_incomplete_all_group_ids_unknown": "OP#2881 analysis",
-    "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response": "OP#2878 controller adapter",
-}
+DEFERRED: dict[str, str] = {}
 
 SHELL_TEST = re.compile(r"^(?:function\s+)?(test_[a-z0-9_]+)\s*(?:\(\))?\s*\{", re.MULTILINE)
 PYTEST_TEST = re.compile(r"^def (test_[a-z0-9_]+)\(", re.MULTILINE)

@@ -105,6 +105,19 @@ class ApScan:
         return tuple(p for p in self.passes if isinstance(p, ScanFailure))
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SiteScan:
+    """What a site's scan produced: one `ApScan` per access point that exists on the controller, plus the
+    configured names the controller does not know (a configuration drift, reported, not fatal)."""
+
+    site_id: str
+    scans: tuple[ApScan, ...]
+    unknown_names: tuple[str, ...]
+
+    def scan_of(self, ap_mac: Mac) -> ApScan | None:
+        return next((s for s in self.scans if s.ap_mac == ap_mac), None)
+
+
 class SshAuthMethod(StrEnum):
     """How the scanner authenticates; the configuration's `controller` mode resolves to PASSWORD with the
     credentials the controller manages."""

@@ -29,8 +29,9 @@ def effective_max_tx(configured_max: int, configured: int, observed: int) -> Eff
     """The power the radio can actually reach on its current channel.
 
     Regulatory EIRP limits minus antenna gain cap a radio below its configured maximum; that shows as
-    an observed power below the configured one, and the observed value is then the cap. The observed
-    power is a conducted total and never exceeds the configured one; the adapter guarantees that order.
+    an observed power below the configured one, and the observed value is then the cap. Meaningful only
+    while the radio runs in Custom mode: under the automatic modes the configured value is stale and may
+    sit below or above what the radio runs at, so the caller must not derive a cap from it there.
     """
     if observed < configured:
         return EffectiveMax(dbm=observed, verified=True)

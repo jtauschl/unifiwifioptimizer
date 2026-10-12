@@ -55,17 +55,19 @@ def test_scan_passwords_are_required_before_a_scan_not_at_load_time(monkeypatch:
     with pytest.raises(
         ConfigError, match=r"sites\.a\.ssh\.password: missing; set it in the file or in UNIFI_SSH_PASSWORD"
     ):
-        require_scan_passwords(loaded)
+        require_scan_passwords(loaded, loaded.config.sites.values())
+    # Only the sites the run is about to scan are checked: an unselected site needs nothing.
+    require_scan_passwords(loaded, [])
     monkeypatch.setenv(SSH_PASSWORD_ENV, "env-pw")
     loaded = load_config()
     assert loaded.env_ssh_password == Secret("env-pw")
-    require_scan_passwords(loaded)
+    require_scan_passwords(loaded, loaded.config.sites.values())
     monkeypatch.delenv(SSH_PASSWORD_ENV, raising=False)
     in_file = PASSWORD_SITE + "      password: in-file\n" + neighbors
     monkeypatch.setattr(load_module, "read_private_file", lambda path: in_file)
     loaded = load_config()
     assert loaded.env_ssh_password is None
-    require_scan_passwords(loaded)
+    require_scan_passwords(loaded, loaded.config.sites.values())
 
 
 def test_a_site_that_does_not_scan_never_needs_an_ssh_password(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,10 +77,10 @@ def test_a_site_that_does_not_scan_never_needs_an_ssh_password(monkeypatch: pyte
     )
     monkeypatch.setattr(load_module, "read_private_file", lambda path: PASSWORD_SITE)
     loaded = load_config()
-    require_scan_passwords(loaded)
+    require_scan_passwords(loaded, loaded.config.sites.values())
     assert loaded.config.sites["a"].ssh is not None and loaded.config.sites["a"].neighbors == {}
     template = PASSWORD_SITE + "    neighbors:\n      AP-1: []\n      AP-2: []\n"
     monkeypatch.setattr(load_module, "read_private_file", lambda path: template)
     loaded = load_config()
     assert loaded.config.sites["a"].scans is False
-    require_scan_passwords(loaded)
+    require_scan_passwords(loaded, loaded.config.sites.values())

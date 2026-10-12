@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.test_cli_commands import FixtureApi, loaded
+from tests.unit.test_cli_commands import SCANNING_SITE, FixtureApi, configured, loaded
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.cli.exit_codes import ExitCode
@@ -76,6 +76,16 @@ def test_the_cli_dump_never_contains_the_controller_managed_ssh_password(
     assert stat.S_IMODE(written.stat().st_mode) == 0o600 and [p.name for p in directory.iterdir()] == [
         "s_default_config.json"
     ]
+
+
+def test_the_cli_run_dump_writes_the_site_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    directory = tmp_path / "dump"
+    assert cli.main(["--dump-api", str(directory), "run", "--no-scan"]) == ExitCode.OK
+    document = json.loads((directory / "s_default_run.json").read_text())
+    assert document["label"] == "s/default/run" and document["models"]["site_id"] == "default"
+    assert document["models"]["scan"]["skipped"] is True and "unknown_field_count" in document
 
 
 def test_a_symlinked_dump_directory_is_refused(tmp_path: Path) -> None:

@@ -1,37 +1,20 @@
 """Profile compliance for a site: every configured WLAN against its profile, pure."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 
 from unifiwifioptimizer.compliance.advisories import evaluate_advisories
 from unifiwifioptimizer.compliance.roaming_check import roaming_assistant_checks
 from unifiwifioptimizer.compliance.rules import evaluate_rules
 from unifiwifioptimizer.domain.models import WlanConfig
 from unifiwifioptimizer.domain.profile import Profile, ProfileSet
-from unifiwifioptimizer.domain.report import CheckResult, CheckStatus, Finding, Severity
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class WlanEvaluation:
-    wlan: str
-    profile: str
-    checks: tuple[CheckResult, ...]
-    findings: tuple[Finding, ...]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SiteCompliance:
-    """`findings` carries the site-level problems (a configured WLAN the controller does not have, an
-    unknown profile name); the per-WLAN advisories sit inside each evaluation."""
-
-    evaluations: tuple[WlanEvaluation, ...]
-    findings: tuple[Finding, ...]
-
-    @property
-    def has_failures(self) -> bool:
-        return bool(self.findings) or any(
-            check.status is CheckStatus.FAILED for evaluation in self.evaluations for check in evaluation.checks
-        )
+from unifiwifioptimizer.domain.report import (
+    CheckResult,
+    CheckStatus,
+    Finding,
+    Severity,
+    SiteCompliance,
+    WlanEvaluation,
+)
 
 
 def evaluate_wlan(wlan: WlanConfig, profile: Profile, roaming_threshold_dbm: int | None = None) -> WlanEvaluation:

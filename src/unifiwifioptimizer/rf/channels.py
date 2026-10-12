@@ -47,6 +47,27 @@ def center_frequency_mhz(band: Band, channel: int) -> int:
     raise ValueError(f"{band.label} channel geometry is not evaluated")
 
 
+def center_frequency_or_none(band: Band, channel: int) -> int | None:
+    """`center_frequency_mhz` for a channel the controller reported, None when it is not one of the band's."""
+    try:
+        return center_frequency_mhz(band, channel)
+    except ValueError:
+        return None
+
+
+def channel_from_frequency(band: Band, frequency_mhz: int) -> int | None:
+    """The 20 MHz channel number a scan reported by its frequency; None off the band's grid."""
+    if band is Band.GHZ_2:
+        if frequency_mhz == 2484:
+            return 14
+        channel, rest = divmod(frequency_mhz - 2407, 5)
+        return channel if rest == 0 and channel in CHANNELS_2G else None
+    if band is Band.GHZ_5:
+        channel, rest = divmod(frequency_mhz - 5000, 5)
+        return channel if rest == 0 and channel in CHANNELS_5G else None
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class ChannelBlock:
     """Inclusive range of 20 MHz channel numbers a bonded 5 GHz channel occupies."""
@@ -101,18 +122,36 @@ def cac_seconds(channel: int, width_mhz: int = 20) -> int | None:
     return None
 
 
-def channels_overlap(band: Band, channel_a: int, width_a: int, channel_b: int, width_b: int) -> bool:
-    """Whether two channel/width pairs occupy overlapping spectrum."""
+def block_center_frequency_2g_mhz(channel: int, width_mhz: int, extension_channel: int | None) -> int:
+    """Centre of the occupied 2.4 GHz block. A 40 MHz block is the primary 20 MHz channel plus the secondary
+    above (`extension_channel` 1) or below (-1), so its centre sits 10 MHz off the primary; without the
+    secondary's position the primary's frequency is the best available centre (a known inexactness)."""
+    if width_mhz not in WIDTHS_2G:
+        raise ValueError(f"unsupported 2.4 GHz width {width_mhz} MHz")
+    frequency = center_frequency_mhz(Band.GHZ_2, channel)
+    if width_mhz == 40 and extension_channel in (-1, 1):
+        return frequency + 10 * extension_channel
+    return frequency
+
+
+def channels_overlap(
+    band: Band,
+    channel_a: int,
+    width_a: int,
+    channel_b: int,
+    width_b: int,
+    extension_a: int | None = None,
+    extension_b: int | None = None,
+) -> bool:
+    """Whether two channel/width pairs occupy overlapping spectrum; on 2.4 GHz the 40 MHz block centres follow
+    the extension channels when they are known."""
     if band is Band.GHZ_5:
         return channel_block_5g(channel_a, width_a).overlaps(channel_block_5g(channel_b, width_b))
     if band is Band.GHZ_2:
-        for width in (width_a, width_b):
-            if width not in WIDTHS_2G:
-                raise ValueError(f"unsupported 2.4 GHz width {width} MHz")
         half_a = width_a // 2 + GUARD_2G_MHZ
         half_b = width_b // 2 + GUARD_2G_MHZ
-        freq_a = center_frequency_mhz(band, channel_a)
-        freq_b = center_frequency_mhz(band, channel_b)
+        freq_a = block_center_frequency_2g_mhz(channel_a, width_a, extension_a)
+        freq_b = block_center_frequency_2g_mhz(channel_b, width_b, extension_b)
         return freq_a + half_a > freq_b - half_b and freq_b + half_b > freq_a - half_a
     raise ValueError(f"{band.label} channel geometry is not evaluated")
 

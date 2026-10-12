@@ -1,12 +1,13 @@
 """Configuration entry point: locate, read, parse, type; environment secrets consumed on the way."""
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from unifiwifioptimizer.config.loader import parse_yaml, read_private_file
 from unifiwifioptimizer.config.locations import ConfigLocation, resolve_config_location
-from unifiwifioptimizer.config.schema import Config, SshAuth
+from unifiwifioptimizer.config.schema import Config, SiteConfig, SshAuth
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.secrets import Secret
 
@@ -40,14 +41,14 @@ def load_config(explicit: Path | None = None) -> LoadedConfig:
     )
 
 
-def require_scan_passwords(loaded: LoadedConfig) -> None:
-    """Every site that scans in password mode has a password, in the file or in the environment.
+def require_scan_passwords(loaded: LoadedConfig, sites: Iterable[SiteConfig]) -> None:
+    """Every one of `sites` that scans in password mode has a password, in the file or in the environment.
 
-    Checked once by `run` before the first scan and never by the controller-only subcommands or by
-    `trust-host-keys` (which authenticates nothing): an SSH password that is merely absent must not keep
-    `sites` or `site` from working.
+    Checked once by `run` for the sites it is about to scan and never by the controller-only subcommands or
+    by `trust-host-keys` (which authenticates nothing): an SSH password that is merely absent must not keep
+    `sites` or `site` from working, nor a site the run was not asked for.
     """
-    for site in loaded.config.sites.values():
+    for site in sites:
         if (
             site.scans
             and site.ssh is not None

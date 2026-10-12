@@ -103,6 +103,29 @@ NO_VALUE_SENTINEL = -1
 MAX_NUMERIC_TEXT_LENGTH = 3
 AUTO_CHANNEL = "auto"
 SETTING_KEYS = frozenset({"radio_ai", "country", "connectivity", "mgmt"})
+# Endpoint names as the problems carry them; the client's request paths map onto these.
+DEVICES_ENDPOINT = "stat/device"
+WLANS_ENDPOINT = "rest/wlanconf"
+AP_GROUPS_ENDPOINT = "v2/apgroups"
+SETTINGS_ENDPOINT = "rest/setting"
+CLIENTS_ENDPOINT = "stat/sta"
+SITES_ENDPOINT = "self/sites"
+# The controller's device `state` is a small enumeration; anything outside stays an unread field.
+DEVICE_STATE_RANGE = range(0, 100)
+
+
+def attribute(problems: list[FieldProblem], start: int, endpoint: str, device_mac: str | None = None) -> None:
+    """Stamps the endpoint (and the device) onto the problems appended since `start`."""
+    for index in range(start, len(problems)):
+        problem = problems[index]
+        problems[index] = FieldProblem(problem.path, problem.message, endpoint=endpoint, device_mac=device_mac)
+
+
+def _attribute_unstamped(problems: list[FieldProblem], endpoint: str) -> None:
+    """Problems raised by the record walk itself (a non-object element) belong to the endpoint, to no device."""
+    for index, problem in enumerate(problems):
+        if problem.endpoint is None:
+            problems[index] = FieldProblem(problem.path, problem.message, endpoint=endpoint)
 
 
 def small_int(text: str) -> int | None:
@@ -255,7 +278,9 @@ def parse_access_point(fields: Fields) -> AccessPoint:
         ip=fields.ip("ip"),
         model=fields.opt_string("model", MAX_NAME_BYTES),
         firmware=fields.opt_string("version", MAX_ID_BYTES),
+        state_code=fields.opt_integer("state", DEVICE_STATE_RANGE),
         uplink_type=uplink.opt_string("type", MAX_TOKEN_BYTES) if uplink is not None else None,
+        uplink_mac=uplink.opt_mac("uplink_mac") if uplink is not None else None,
         radios=radios,
         radio_stats=parse_entries(fields, "radio_table_stats", MAX_RADIOS_PER_DEVICE, parse_radio_stats),
         vaps=parse_entries(fields, "vap_table", MAX_VAPS_PER_DEVICE, parse_vap),
@@ -270,15 +295,23 @@ def parse_devices(payload: Json, observe: Observer | None = None) -> DevicesResu
     unparsable: list[UnparsableDevice] = []
     problems: list[FieldProblem] = []
     for fields in iter_records(data_list(payload, MAX_DEVICES), "$.data", problems):
+        start = len(problems)
         if not is_access_point(fields):
+            attribute(problems, start, DEVICES_ENDPOINT)
             continue
+        mac: str | None
         try:
-            access_points.append(parse_access_point(fields))
+            access_point = parse_access_point(fields)
         except SchemaError as exc:
-            device = UnparsableDevice(mac=fields.opt_mac("mac"), name=fields.opt_string("name"), reason=str(exc))
-            unparsable.append(device)
+            mac = fields.opt_mac("mac")
+            unparsable.append(UnparsableDevice(mac=mac, name=fields.opt_string("name"), reason=str(exc)))
+        else:
+            access_points.append(access_point)
+            mac = access_point.mac
+        attribute(problems, start, DEVICES_ENDPOINT, mac)
         if observe is not None:
             observe(fields)
+    _attribute_unstamped(problems, DEVICES_ENDPOINT)
     return DevicesResult(access_points=tuple(access_points), unparsable=tuple(unparsable), problems=tuple(problems))
 
 
@@ -358,7 +391,7 @@ def parse_wlan(fields: Fields) -> WlanConfig:
 
 
 def parse_isolated(
-    items: Sequence[Json], path: str, parser: Callable[[Fields], T], observe: Observer | None = None
+    items: Sequence[Json], path: str, parser: Callable[[Fields], T], endpoint: str, observe: Observer | None = None
 ) -> ParsedList[T]:
     """One record's mandatory-field failure becomes a problem; the other records are still parsed."""
     parsed: list[T] = []
@@ -371,11 +404,12 @@ def parse_isolated(
             continue
         if observe is not None:
             observe(fields)
+    _attribute_unstamped(problems, endpoint)
     return ParsedList(items=tuple(parsed), problems=tuple(problems))
 
 
 def parse_wlans(payload: Json, observe: Observer | None = None) -> ParsedList[WlanConfig]:
-    return parse_isolated(data_list(payload, MAX_WLANS), "$.data", parse_wlan, observe)
+    return parse_isolated(data_list(payload, MAX_WLANS), "$.data", parse_wlan, WLANS_ENDPOINT, observe)
 
 
 def mac_set(fields: Fields, key: str, max_items: int) -> frozenset[str]:
@@ -393,7 +427,7 @@ def parse_ap_group(fields: Fields) -> ApGroup:
 def parse_ap_groups(payload: Json, observe: Observer | None = None) -> ParsedList[ApGroup]:
     """`v2/api/site/<id>/apgroups` answers with a bare list, not a `data` envelope."""
     walk_depth(payload)
-    return parse_isolated(require_list(payload, "$", MAX_AP_GROUPS), "$", parse_ap_group, observe)
+    return parse_isolated(require_list(payload, "$", MAX_AP_GROUPS), "$", parse_ap_group, AP_GROUPS_ENDPOINT, observe)
 
 
 def blacklist_entry(entry: Fields) -> tuple[Band, int, int] | None:
@@ -449,7 +483,8 @@ def country_code(fields: Fields) -> int | None:
 
 def parse_mgmt(fields: Fields) -> MgmtSettings:
     user = fields.opt_string("x_ssh_username", MAX_SHORT_TEXT_BYTES)
-    if user is not None and not SSH_USER_RE.fullmatch(user):
+    rejected = user is not None and not SSH_USER_RE.fullmatch(user)
+    if rejected:
         # It goes into ssh's `user@host`; anything that is not a plain user name is dropped, loudly.
         fields.problems.append(FieldProblem(fields.path("x_ssh_username"), "not a user name"))
         user = None
@@ -459,6 +494,7 @@ def parse_mgmt(fields: Fields) -> MgmtSettings:
         ssh_password_auth_enabled=fields.opt_bool("x_ssh_auth_password_enabled"),
         ssh_user=user,
         ssh_password=Secret(password) if password else None,
+        ssh_user_rejected=rejected,
     )
 
 
@@ -488,6 +524,7 @@ def parse_settings(payload: Json, observe: Observer | None = None) -> SettingsRe
     if observe is not None:
         for fields in by_key.values():
             observe(fields)
+    _attribute_unstamped(problems, SETTINGS_ENDPOINT)
     return SettingsResult(settings=settings, mgmt=mgmt, problems=tuple(problems))
 
 
@@ -525,6 +562,7 @@ def parse_clients(payload: Json, observe: Observer | None = None) -> ParsedList[
         )
         if observe is not None:
             observe(fields)
+    _attribute_unstamped(problems, CLIENTS_ENDPOINT)
     return ParsedList(items=tuple(clients), problems=tuple(problems))
 
 
@@ -542,4 +580,4 @@ def parse_site(fields: Fields) -> Site:
 
 def parse_sites(payload: Json, observe: Observer | None = None) -> ParsedList[Site]:
     """`self/sites`."""
-    return parse_isolated(data_list(payload, MAX_SITES), "$.data", parse_site, observe)
+    return parse_isolated(data_list(payload, MAX_SITES), "$.data", parse_site, SITES_ENDPOINT, observe)

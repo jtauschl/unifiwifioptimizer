@@ -36,6 +36,7 @@ from unifiwifioptimizer.domain.scan import (
     ScanMeta,
     ScanPass,
     ScanTarget,
+    SiteScan,
     SshAuthMethod,
 )
 from unifiwifioptimizer.domain.secrets import Secret
@@ -77,6 +78,14 @@ def loaded(site: dict[str, object], env_password: str | None = None) -> LoadedCo
 
 
 NEIGHBOURS = {"AP-1": ["AP-2", "AP-3"], "AP-2": ["AP-1"], "Ghost": ["AP-4"]}
+
+
+def scan(orchestrator: ScanOrchestrator, cfg: LoadedConfig, snap: SiteSnapshot | None = None) -> SiteScan:
+    """Targets are built (credentials resolved) before the first scan, as `run` does it."""
+    site = cfg.config.sites["default"]
+    targets, unknown = build_targets(snap or snapshot(), site, cfg)
+    assert site.ssh is not None
+    return orchestrator.scan_site("default", targets, unknown, site.scan_passes, site.ssh.scan_concurrency)
 
 
 def empty_pass() -> ScanPass:
@@ -189,7 +198,7 @@ def test_passes_are_round_robin_serial_and_failures_are_isolated_per_access_poin
     )
     sleeps: list[float] = []
     cfg = loaded({"ssh": {}, "scan_passes": 2, "neighbors": NEIGHBOURS})
-    result = ScanOrchestrator(scanner, sleeps.append).scan_site(snapshot(), cfg.config.sites["default"], cfg)
+    result = scan(ScanOrchestrator(scanner, sleeps.append), cfg)
     assert [name for name, _, _ in scanner.calls] == ["AP-1", "AP-2", "AP-3", "AP-4"] * 2
     assert len({thread for _, _, thread in scanner.calls}) == 1 and sleeps == [1.0]
     assert result.site_id == "default" and result.unknown_names == ("Ghost",)
@@ -207,15 +216,62 @@ def test_scan_concurrency_above_one_uses_a_pool_and_keeps_the_order_of_results()
     scanner = FakeScanner(delay_s=0.2)
     cfg = loaded({"ssh": {"scan_concurrency": 4}, "neighbors": NEIGHBOURS})
     started = time.monotonic()
-    result = ScanOrchestrator(scanner, lambda s: None).scan_site(snapshot(), cfg.config.sites["default"], cfg)
+    result = scan(ScanOrchestrator(scanner, lambda s: None), cfg)
     elapsed = time.monotonic() - started
     assert [s.ap_name for s in result.scans] == ["AP-1", "AP-2", "AP-3", "AP-4"]
     assert len({thread for _, _, thread in scanner.calls}) > 1 and elapsed < 0.6
     serial = FakeScanner(delay_s=0.05)
     cfg = loaded({"ssh": {}, "neighbors": NEIGHBOURS})
     started = time.monotonic()
-    ScanOrchestrator(serial, lambda s: None).scan_site(snapshot(), cfg.config.sites["default"], cfg)
+    scan(ScanOrchestrator(serial, lambda s: None), cfg)
     assert time.monotonic() - started >= 0.2 and len({thread for _, _, thread in serial.calls}) == 1
+
+
+class LoggingScanner:
+    """Writes its calls into the same log as the progress events, so their interleaving is observable."""
+
+    def __init__(self, log: list[tuple[str, str, int]]) -> None:
+        self._log = log
+
+    def scan(self, target: ScanTarget) -> ScanPass:
+        self._log.append(("scan", target.ap_name, -1))
+        return empty_pass()
+
+
+class LoggingProgress:
+    def __init__(self, log: list[tuple[str, str, int]]) -> None:
+        self._log = log
+
+    def scan_started(self, ap_name: str, pass_index: int, passes: int) -> None:
+        self._log.append(("start", ap_name, pass_index))
+
+    def scan_finished(self, ap_name: str, outcome: ScanPass | ScanFailure) -> None:
+        self._log.append(("done", ap_name, -1))
+
+
+def test_progress_follows_each_access_point_on_the_serial_path_and_every_start_first_in_the_pool() -> None:
+    names = ["AP-1", "AP-2", "AP-3", "AP-4"]
+    cfg = loaded({"ssh": {}, "scan_passes": 2, "neighbors": NEIGHBOURS})
+    site = cfg.config.sites["default"]
+    targets, unknown = build_targets(snapshot(), site, cfg)
+    serial: list[tuple[str, str, int]] = []
+    ScanOrchestrator(LoggingScanner(serial), lambda s: None).scan_site(
+        "default", targets, unknown, 2, 1, LoggingProgress(serial)
+    )
+    assert serial == [
+        event
+        for index in range(2)
+        for name in names
+        for event in (("start", name, index), ("scan", name, -1), ("done", name, -1))
+    ]
+    pooled: list[tuple[str, str, int]] = []
+    ScanOrchestrator(LoggingScanner(pooled), lambda s: None).scan_site(
+        "default", targets, unknown, 1, 4, LoggingProgress(pooled)
+    )
+    # The pool decides when each scan runs; every start is announced first, the results come in target order.
+    assert pooled[:4] == [("start", n, 0) for n in names]
+    assert [e for e in pooled if e[0] == "done"] == [("done", n, -1) for n in names]
+    assert sorted(e for e in pooled if e[0] == "scan") == [("scan", n, -1) for n in names]
 
 
 def test_errors_that_are_not_scan_errors_propagate() -> None:
@@ -225,7 +281,7 @@ def test_errors_that_are_not_scan_errors_propagate() -> None:
 
     cfg = loaded({"ssh": {}, "neighbors": NEIGHBOURS})
     with pytest.raises(RuntimeError):
-        ScanOrchestrator(Broken(), lambda s: None).scan_site(snapshot(), cfg.config.sites["default"], cfg)
+        scan(ScanOrchestrator(Broken(), lambda s: None), cfg)
 
 
 def test_every_scan_error_maps_onto_a_failure_kind() -> None:

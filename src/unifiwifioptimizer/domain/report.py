@@ -1,9 +1,23 @@
-"""Report values: what the analysis produces and the renderers print."""
+"""Report values: what the analysis and the compliance engine produce and the renderers print."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+from types import MappingProxyType
 
-from unifiwifioptimizer.domain.models import Band
+from unifiwifioptimizer.domain.analysis import (
+    BandTxOutcome,
+    MissDirection,
+    MissingReason,
+    NeighbourMarker,
+    PartialReason,
+    ReadingSource,
+    RoamingCap,
+    WlanRoamingStatus,
+)
+from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, TxPowerMode, UnparsableDevice
+from unifiwifioptimizer.domain.scan import ScanFailureKind
 
 
 class Severity(StrEnum):
@@ -24,14 +38,29 @@ class CheckStatus(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class RecommendationKind(StrEnum):
+    """`CHANGE`: the setting should move to `recommended`. `CONFIRMED`: the setting is right and fully
+    evaluated. `HELD`: no change is recommended, but not because the setting was confirmed (a hysteresis
+    hold, a neighbour that could not be evaluated, a blocked reduction, a radio already at its maximum).
+    `CONDITIONAL`: the setting is off by choice; `recommended` is the value to use if it is switched on."""
+
+    CHANGE = "change"
+    CONFIRMED = "confirmed"
+    HELD = "held"
+    CONDITIONAL = "conditional"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Finding:
+    """`subject` and `peers` carry the external names structured, so the renderer can sanitise each token
+    instead of truncating a composed line."""
+
     severity: Severity
     code: str
     message: str
     subject: str
     band: Band | None = None
-    ui_path: str | None = None
+    peers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -42,12 +71,19 @@ class CheckResult:
     detail: str
     expected: str | None = None
     actual: str | None = None
-    ui_path: str | None = None
+
+
+# The two radio settings a recommendation can address.
+TX_POWER = "tx_power"
+MIN_RSSI = "min_rssi"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Recommendation:
-    """A concrete setting change; `current == recommended` records a confirmed setting, not a change."""
+    """A setting verdict. `kind` is derived by the analysis from the values and the evaluation state; only
+    `CHANGE` counts as a pending change. `current_mode` is the radio's transmit-power mode when the setting
+    is a transmit power (a non-Custom radio is phrased as "set to Custom, N dBm"). `unverified_headroom`
+    marks an increase above the power the radio has demonstrated on its channel."""
 
     code: str
     subject: str
@@ -55,23 +91,266 @@ class Recommendation:
     setting: str
     current: int | None
     recommended: int
+    kind: RecommendationKind
     reason: str
-    ui_path: str | None = None
+    current_mode: TxPowerMode | None = None
+    unverified_headroom: bool = False
 
     @property
     def is_change(self) -> bool:
-        return self.current != self.recommended
+        return self.kind is RecommendationKind.CHANGE
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Report:
-    site_id: str
-    findings: tuple[Finding, ...]
+class WlanEvaluation:
+    wlan: str
+    profile: str
     checks: tuple[CheckResult, ...]
+    findings: tuple[Finding, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SiteCompliance:
+    """`findings` carries the site-level problems (a configured WLAN the controller does not have, an
+    unknown profile name); the per-WLAN advisories sit inside each evaluation."""
+
+    evaluations: tuple[WlanEvaluation, ...]
+    findings: tuple[Finding, ...]
+
+    @property
+    def has_failures(self) -> bool:
+        return bool(self.findings) or any(
+            check.status is CheckStatus.FAILED for evaluation in self.evaluations for check in evaluation.checks
+        )
+
+
+# --- the structured site report -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EnvironmentSummary:
+    preset: str | None
+    exponent: float
+    # Extra path loss from 60 % of the AP distance to the full distance, the 2.4 GHz corridor offset.
+    delta_db: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CorridorSummary:
+    low_dbm: int
+    high_dbm: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RfSummary:
+    cell_edge_dbm: int
+    noise_floor_dbm: int
+    required_snr_db: int
+    client_tx_dbm: int
+    min_rssi_offset_db: int
+    roam_offset_db: int
+    roam_margin_db: int
+    roam_floor_dbm: int
+    roam_ceiling_dbm: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NeighbourRow:
+    peer: str
+    rssi_dbm: int | None
+    source: ReadingSource | None
+    samples: int
+    reason: MissingReason | None
+    marker: NeighbourMarker | None
+    receiver_offset_db: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TxSummaryReport:
+    effective_dbm: int | None
+    configured_dbm: int | None
+    mode: TxPowerMode | None
+    min_dbm: int | None
+    max_dbm: int | None
+    effective_max_dbm: int | None
+    effective_max_verified: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AirtimeReport:
+    utilisation_pct: int | None
+    self_rx_pct: int | None
+    self_tx_pct: int | None
+    tx_retries_pct: float | None
+    satisfaction_pct: int | None
+    client_count: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ClientReport:
+    total: int
+    below_min_rssi: int
+    weakest_dbm: int | None
+    min_rssi_dbm: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ForeignReport:
+    count: int
+    strongest_dbm: int | None
+    overlapping_count: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BandReport:
+    band: Band
+    channel: int | None
+    width_mhz: int | None
+    extension_channel: int | None
+    channel_auto: bool
+    configured_channel: int | None
+    dfs: bool
+    cac_seconds: int | None
+    tx: TxSummaryReport
+    outcome: BandTxOutcome
+    weakest_dbm: int | None
+    neighbours: tuple[NeighbourRow, ...]
+    findings: tuple[Finding, ...]
     recommendations: tuple[Recommendation, ...]
+    airtime: AirtimeReport | None
+    clients: ClientReport | None
+    foreign: ForeignReport | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ApReport:
+    name: str
+    mac: str
+    model: str | None
+    state: DeviceState | None
+    state_code: int | None
+    uplink_type: str | None
+    configured: bool
+    bands: tuple[BandReport, ...]
+    findings: tuple[Finding, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RoamingApDetail:
+    ap: str
+    weakest_peer: str
+    weakest_rssi_dbm: int
+    source: ReadingSource
+    downlink_dbm: int
+    uplink_dbm: int
+    cap: RoamingCap
+    raw_cap_dbm: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WlanRoamingSummary:
+    wlan: str
+    status: WlanRoamingStatus
+    threshold_dbm: int | None
+    reasons: tuple[str, ...]
+    limiting: tuple[str, ...]
+    broadcasting: tuple[str, ...]
+    per_ap: tuple[RoamingApDetail, ...]
+    # A pending 5 GHz TX change on a broadcasting AP makes even an OK threshold stale.
+    tx_change_pending: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MissingPair:
+    band: Band
+    a: str
+    b: str
+    direction: MissDirection
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GroupReport:
+    members: tuple[str, ...]
+    missing: tuple[MissingPair, ...]
+    overlapping: tuple[tuple[Band, str, str], ...]
+    reuse_infeasible: tuple[Band, ...]
+
+    @property
+    def clean(self) -> bool:
+        return not self.missing and not self.overlapping and not self.reuse_infeasible
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ScanSummary:
+    passes: int
+    scanned: tuple[str, ...]
+    unknown_names: tuple[str, ...]
+    # AP name -> the failure kinds of its failed passes (empty tuple: every pass succeeded).
+    failures_by_ap: Mapping[str, tuple[ScanFailureKind, ...]]
+    # AP name -> number of successful passes.
+    successes_by_ap: Mapping[str, int]
+    skipped: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "failures_by_ap", MappingProxyType(dict(self.failures_by_ap)))
+        object.__setattr__(self, "successes_by_ap", MappingProxyType(dict(self.successes_by_ap)))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SiteReport:
+    """Everything the renderers print for one site; the flat views are derived from the nested blocks so
+    there is one source of truth."""
+
+    site_id: str
+    site_name: str
+    captured_at: datetime
+    environment: EnvironmentSummary
+    rf: RfSummary
+    corridors: Mapping[Band, CorridorSummary]
+    scan_passes: int
+    aps: tuple[ApReport, ...]
+    compliance: SiteCompliance
+    roaming: tuple[WlanRoamingSummary, ...]
+    groups: tuple[GroupReport, ...]
+    scan: ScanSummary
+    site_findings: tuple[Finding, ...]
+    field_problems: tuple[FieldProblem, ...]
+    unparsable: tuple[UnparsableDevice, ...]
+    partial_reasons: tuple[PartialReason, ...]
+    verifiable_ap_count: int
+    host_key_failed_ap_count: int
+    # Whether neighbour scans ran for this site (False under `--no-scan` and for a controller-only site).
+    scanning: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "corridors", MappingProxyType(dict(self.corridors)))
+
+    @property
+    def findings(self) -> tuple[Finding, ...]:
+        nested = [f for ap in self.aps for band in ap.bands for f in band.findings]
+        ap_level = [f for ap in self.aps for f in ap.findings]
+        wlan_level = [f for e in self.compliance.evaluations for f in e.findings]
+        return (*self.site_findings, *self.compliance.findings, *wlan_level, *ap_level, *nested)
+
+    @property
+    def recommendations(self) -> tuple[Recommendation, ...]:
+        return tuple(r for ap in self.aps for band in ap.bands for r in band.recommendations)
+
+    @property
+    def checks(self) -> tuple[CheckResult, ...]:
+        return tuple(c for e in self.compliance.evaluations for c in e.checks)
+
+    @property
+    def pending_tx_changes(self) -> int:
+        return sum(1 for r in self.recommendations if r.setting == TX_POWER and r.is_change)
 
     @property
     def has_changes(self) -> bool:
         return any(r.is_change for r in self.recommendations) or any(
             c.status is CheckStatus.FAILED for c in self.checks
         )
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.partial_reasons)

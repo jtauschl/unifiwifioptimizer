@@ -5,8 +5,8 @@ there, and then converted to the uplink the controller evaluates it on.
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
 
+from unifiwifioptimizer.domain.analysis import RoamingCap
 from unifiwifioptimizer.rf.constants import (
     DB_TUNABLE_RANGE,
     DBM_TUNABLE_RANGE,
@@ -40,14 +40,6 @@ class RoamingTunables:
 
 
 DEFAULT_TUNABLES = RoamingTunables()
-
-
-class RoamingCap(StrEnum):
-    NONE = "none"
-    # The weakest neighbour minus the margin pulled the threshold below the default, at or above the floor.
-    MARGIN = "capped_by_margin"
-    # The weakest neighbour minus the margin fell below the floor and was clamped to it.
-    FLOOR = "capped_by_floor"
 
 
 @dataclass(frozen=True, slots=True)

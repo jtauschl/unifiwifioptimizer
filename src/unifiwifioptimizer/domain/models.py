@@ -34,6 +34,23 @@ class TxPowerMode(StrEnum):
     CUSTOM = "custom"
 
 
+class DeviceState(StrEnum):
+    """The controller's device `state` integer, classified: 1 is connected, 0 disconnected (both live-verified);
+    every other value (upgrading, provisioning, isolated, ...) is `OTHER` and carried with its raw code."""
+
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    OTHER = "other"
+
+    @classmethod
+    def of(cls, code: int) -> "DeviceState":
+        if code == 1:
+            return cls.CONNECTED
+        if code == 0:
+            return cls.DISCONNECTED
+        return cls.OTHER
+
+
 # Lower-case, colon-separated MAC address as the controller prints it; validated by the adapter.
 Mac = str
 # A site id becomes a request-path segment; anything outside this alphabet is rejected at every boundary.
@@ -61,6 +78,10 @@ class Radio:
     antenna_gain_dbi: int | None
     spatial_streams: int | None
     dfs_capable: bool | None
+
+
+# The controller's radio state while a 5 GHz radio runs its DFS channel availability check.
+DFS_WAIT_STATE = "DFS_WAIT"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -105,13 +126,27 @@ class AccessPoint:
     ip: IPv4Address | IPv6Address
     model: str | None
     firmware: str | None
+    # The device `state` integer as sent; None when the controller did not send it (an older API).
+    state_code: int | None
     uplink_type: str | None
+    # `uplink.uplink_mac`: the switch for a wired uplink (live-verified); for a wireless uplink it names the
+    # parent access point (semantics unverified until a mesh dump exists).
+    uplink_mac: Mac | None
     radios: tuple[Radio, ...]
     radio_stats: tuple[RadioStats, ...]
     vaps: tuple[Vap, ...]
     # `x_ssh_hostkey_fingerprint` as the controller reports it (SHA256:… or MD5 colon-hex), None when the
     # controller has not learnt the key; compared, never trusted, by `trust-host-keys`.
     ssh_host_key_fingerprint: str | None
+
+    @property
+    def state(self) -> DeviceState | None:
+        return DeviceState.of(self.state_code) if self.state_code is not None else None
+
+    @property
+    def offline(self) -> bool:
+        """Only an explicit `disconnected` counts; an absent or unfamiliar state is analysed normally."""
+        return self.state is DeviceState.DISCONNECTED
 
     def radio(self, band: Band) -> Radio | None:
         return next((r for r in self.radios if r.band is band), None)
@@ -126,10 +161,14 @@ class AccessPoint:
 
 @dataclass(frozen=True, slots=True)
 class FieldProblem:
-    """An optional field the controller sent but the adapter could not use; the model keeps None there."""
+    """An optional field the controller sent but the adapter could not use; the model keeps None there.
+    `endpoint` names the controller endpoint and `device_mac` the device record the field belongs to, so a
+    problem can be attributed after the snapshot has merged every endpoint's list."""
 
     path: str
     message: str
+    endpoint: str | None = None
+    device_mac: Mac | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -267,6 +306,8 @@ class MgmtSettings:
     ssh_password_auth_enabled: bool | None
     ssh_user: str | None
     ssh_password: Secret | None
+    # The controller sent a user name the tool refuses to put into ssh's `user@host`; `ssh_user` is None then.
+    ssh_user_rejected: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

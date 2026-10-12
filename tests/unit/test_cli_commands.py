@@ -351,3 +351,74 @@ def test_client_factory_wires_the_tls_policy_and_the_dump_observer() -> None:
     assert dump is not None
     assert dump is writer.return_value
     assert client._observe_unknown_keys == writer.return_value.observe_unknown_keys
+
+
+# --- run -------------------------------------------------------------------------------------------------------
+
+
+def configured(sites: dict[str, object], legacy: bool = False) -> LoadedConfig:
+    config = Config.from_mapping({"controller": {"url": "https://unifi.example", "api_key": "k"}, "sites": sites})
+    return LoadedConfig(
+        config=config, location=ConfigLocation(Path("/cfg/config.yaml"), legacy=legacy), env_ssh_password=None
+    )
+
+
+SCANNING_SITE = {
+    "ssh": {},
+    "neighbors": {"AP-1": ["AP-2"], "AP-2": ["AP-3"], "AP-3": ["AP-4"]},
+    "wlans": {"SSID-1": "Throughput"},
+}
+
+
+@pytest.fixture
+def run_faked(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    # Not reached under --no-scan; a loud failure proves it.
+    monkeypatch.setattr(cli, "check_openssh_version", lambda: (_ for _ in ()).throw(AssertionError("ssh -V ran")))
+
+
+def test_run_without_scan_prints_the_text_report(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["run", "--no-scan"]) == ExitCode.OK
+    captured = capsys.readouterr()
+    assert "Site       default" in captured.out and "neighbour scans skipped" in captured.out
+    assert "Transmit Power" not in captured.out and "WLAN       SSID-1" in captured.out
+    assert "analysing site default" in captured.err and "scanning" not in captured.err
+
+
+def test_run_json_prints_one_document(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["run", "--no-scan", "--json"]) == ExitCode.OK
+    document = json.loads(capsys.readouterr().out)
+    assert document["schema_version"] == 1 and [s["site_id"] for s in document["sites"]] == ["default"]
+    assert document["sites"][0]["scan"]["skipped"] is True
+
+
+def test_run_refuses_an_unknown_site_selector(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["run", "--no-scan", "--site", "nowhere"]) == ExitCode.CONFIG
+    assert "not a configured site id" in capsys.readouterr().err
+
+
+def test_run_exit_codes_follow_the_verdict() -> None:
+    from unifiwifioptimizer.app.run import RunResult, SiteOutcome
+    from unifiwifioptimizer.domain.analysis import PartialReason
+
+    def result(**overrides: object) -> RunResult:
+        values: dict[str, object] = {
+            "site_id": "default", "scanning": True, "partial_reasons": (), "scanned_ap_count": 4,
+            "verifiable_ap_count": 4, "host_key_failed_ap_count": 0,
+        }  # fmt: skip
+        values.update(overrides)
+        return RunResult(reports=(), outcomes=(SiteOutcome(**values),))  # type: ignore[arg-type]
+
+    assert cli.exit_code_for_run(result()) == ExitCode.OK
+    assert cli.exit_code_for_run(result(partial_reasons=(PartialReason.BAND_EMPTY,))) == ExitCode.PARTIAL
+    assert (
+        cli.exit_code_for_run(
+            result(verifiable_ap_count=0, host_key_failed_ap_count=1, partial_reasons=(PartialReason.SCAN_FAILED,))
+        )
+        == ExitCode.HOST_KEY
+    )
+    assert (
+        cli.exit_code_for_run(result(verifiable_ap_count=0, partial_reasons=(PartialReason.SCAN_FAILED,)))
+        == ExitCode.PARTIAL
+    )

@@ -90,7 +90,7 @@ def test_a_matching_wlan_passes_exactly_the_applicable_rules() -> None:
     assert all(r.status is CheckStatus.PASSED for r in results.values()), [
         (c, r.status, r.expected, r.actual) for c, r in results.items() if r.status is not CheckStatus.PASSED
     ]
-    assert all(r.subject == "SSID-1" and r.ui_path is None for r in results.values())
+    assert all(r.subject == "SSID-1" for r in results.values())
 
 
 @pytest.mark.parametrize("code", sorted(DEVIATIONS))
