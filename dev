@@ -278,6 +278,13 @@ cmd_smoke() {
   uv pip install --quiet --python "$venv/venv/bin/python" "$wheel" || fail "could not install the wheel"
   "$venv/venv/bin/unifiwifioptimizer" --version || fail "installed entry point failed"
   "$venv/venv/bin/python" -m unifiwifioptimizer --help >/dev/null || fail "python -m unifiwifioptimizer failed"
+  # The shipped profiles are package data; printing them from the installed wheel proves they were packaged.
+  # The developer's own configuration, data and home trees stay out of it (a legacy install would otherwise
+  # be found), and a refusal must be the configuration exit code, not a crash.
+  local rc=0
+  env HOME="$venv" XDG_CONFIG_HOME="$venv" XDG_DATA_HOME="$venv" "$venv/venv/bin/unifiwifioptimizer" --profiles-file /dev/null config --profiles >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 3 ] || fail "config --profiles with /dev/null exited $rc, expected 3"
+  env HOME="$venv" XDG_CONFIG_HOME="$venv" XDG_DATA_HOME="$venv" "$venv/venv/bin/unifiwifioptimizer" config --profiles | grep '^profiles:' >/dev/null || fail "config --profiles did not print the shipped profiles"
   ok "smoke — wheel installs and runs"
 }
 

@@ -13,6 +13,7 @@ from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.locations import ConfigLocation
+from unifiwifioptimizer.config.profiles import shipped_profiles_text
 from unifiwifioptimizer.config.schema import Config
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
@@ -267,6 +268,72 @@ def test_controller_fingerprint_falls_back_to_the_configuration(
     monkeypatch.setattr(cli, "observe_fingerprint", observe)
     assert cli.main(["controller-fingerprint"]) == ExitCode.OK
     assert seen == [("unifi.example", 443)]
+
+
+def test_config_profiles_prints_the_shipped_profiles_without_a_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert cli.main(["config", "--profiles"]) == ExitCode.OK
+    out = capsys.readouterr().out
+    assert out.startswith("# Shipped WLAN profiles") and "\nprofiles:\n" in out and "evidence:\n" in out
+    assert "overrides from" not in out
+
+
+def test_config_profiles_appends_the_override_file_and_sanitises_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    override = tmp_path / "mine.yaml"
+    shipped = shipped_profiles_text()
+    # A bidirectional override is printable to YAML but reorders what a reader sees; the sanitiser drops it.
+    override.write_text(shipped.replace("# Shipped WLAN profiles", "# Mine \u202ereversed", 1))
+    assert cli.main(["--profiles-file", str(override), "config", "--profiles"]) == ExitCode.OK
+    out = capsys.readouterr().out
+    assert f"# --- overrides from {override} ---" in out
+    assert "\u202e" not in out and "# Mine \ufffdreversed" in out
+    assert out.count("\nprofiles:\n") == 2
+
+
+def test_config_profiles_finds_the_override_beside_the_configuration_file_in_use(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "cfg" / "config.yaml"
+    config.parent.mkdir()
+    (tmp_path / "cfg" / "profiles.yaml").write_text(shipped_profiles_text())
+    assert cli.main(["--config-file", str(config), "config", "--profiles"]) == ExitCode.OK
+    assert f"# --- overrides from {tmp_path / 'cfg' / 'profiles.yaml'} ---" in capsys.readouterr().out
+
+
+def test_config_profiles_ignores_the_bash_installers_profiles_in_the_legacy_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    legacy = tmp_path / "data" / "unifiwifioptimizer"
+    legacy.mkdir(parents=True)
+    (legacy / "config.yaml").write_text("controller: {url: https://unifi.example, api_key: k}\n")
+    (legacy / "profiles.yaml").write_text("profiles:\n  Standard:\n    group_rekey: 0\n")
+    assert cli.main(["config", "--profiles"]) == ExitCode.OK
+    out, err = capsys.readouterr()
+    assert out.startswith("# Shipped WLAN profiles") and "overrides from" not in out
+    assert "a profiles.yaml in the legacy directory is not read" in err
+
+
+def test_config_profiles_refuses_a_profiles_file_that_is_not_a_regular_file(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--profiles-file", "/dev/null", "config", "--profiles"]) == ExitCode.CONFIG
+    assert "not a regular file" in capsys.readouterr().err
+
+
+def test_config_without_a_site_and_without_profiles_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["config"])
+    assert exc.value.code == 2 and "config needs a site id, or --profiles" in capsys.readouterr().err
+
+
+def test_config_profiles_with_a_site_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["config", "default", "--profiles"])
+    assert exc.value.code == 2 and "takes no site" in capsys.readouterr().err
 
 
 def test_site_subcommands_require_a_site_argument() -> None:

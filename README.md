@@ -12,7 +12,7 @@ It reads radio configuration and WLAN settings from the UniFi Network API, compa
 - profile-based WLAN best practices for Standard, IoT, Hotspot, Throughput, and Latency profiles, including a Roaming Assistant compliance check
 - access point settings: `Transmit Power`, `Minimum RSSI`
 
-The shipped profiles map either to current UniFi defaults (`Standard`, `IoT`) or to optimized presets for specific use cases such as public hotspots, throughput-focused WLANs, and low-latency WLANs.
+The shipped profiles are recommendations with an evidence tier per setting (standard, vendor, practice) for everyday WLANs, 2.4 GHz-only IoT WLANs, public hotspots, throughput-focused WLANs, and low-latency WLANs; see [docs/PROFILES.md](docs/PROFILES.md).
 
 AP recommendations are derived from AP-to-AP neighbor scan RSSI and target the long-established practical design goal of about 20% cell overlap at -67 dBm, adjusted for the configured RF environment such as open space, office, or obstructed layouts.
 
@@ -132,7 +132,7 @@ Apply the relevant changes in UniFi Network, run the tool again, and use the upd
 
 ## Configuration
 
-Site configuration lives in `config.yaml`. Reusable WLAN baselines live in `profiles.yaml`.
+Site configuration lives in `config.yaml`. The WLAN profiles ship inside the package (`unifiwifioptimizer config --profiles` prints them); your own `profiles.yaml` next to the configuration file in use extends or replaces them.
 
 Starter files:
 

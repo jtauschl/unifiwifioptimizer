@@ -1,0 +1,206 @@
+# Shipped WLAN profiles — recommendations, not controller snapshots.
+#
+# Every profile describes how a WLAN of that kind should be configured so that the compliance check
+# reports deviations from a well-founded baseline. Each key has an evidence tier in the `evidence`
+# section at the end: `standard` (IEEE 802.11, Wi-Fi Alliance, IETF), `vendor` (reproducible official
+# guidance from Apple, Cisco, Ubiquiti), `practice` (community and vendor habit without a published
+# derivation). Practice-tier values are tunables: adjust them in your own profiles file (see
+# docs/PROFILES.md) when your clients or policy need something else. A profile may carry its own
+# `evidence` entries where a value is a compatibility choice that the key's standard argues against.
+#
+# Field guide:
+# - wifi_bands: bands the WLAN must broadcast on (2g, 5g, 6g)
+# - security_protocols: accepted controller security protocols; order is preference, any listed one passes
+# - pmf: accepted PMF settings (Disabled, Optional, Required); a list because OWE transition and OWE-only
+#   legitimately differ
+# - fast_roaming (802.11r), bss_transition (802.11v BTM support), roaming_assistant (whether the controller
+#   should actively send BTM requests; the RSSI threshold itself always comes from the site's RF model),
+#   band_steering, mlo, uapsd, proxy_arp, multicast_broadcast_blocker, multicast_to_unicast,
+#   hide_wifi_name, client_device_isolation, ap_name_in_beacon: compared as on/off
+# - minrate_mode auto|manual with minrate_24_kbps/minrate_5_kbps when manual
+# - dtim_mode default|custom with dtim_24/dtim_5/dtim_6 when custom
+# - group_rekey_s: seconds, 0 = disabled; sae_anti_clogging/sae_sync_time: checked when the WLAN uses SAE
+# - optional keys, checked only when present: iot_dtim_lock, iot_channel_lock, enhanced_iot, b_supported,
+#   dns_assistance_mode (off|auto|custom), mdns_proxy_mode (off|auto|custom), ppsk, wpa3_enhanced_192
+
+profiles:
+  # Everyday WLAN for phones and laptops across both bands.
+  Standard:
+    wifi_bands: [2g, 5g]
+    security_protocols: ["WPA2/WPA3"]
+    pmf: [Optional]
+    fast_roaming: true
+    bss_transition: true
+    roaming_assistant: true
+    band_steering: true
+    mlo: false
+    uapsd: false
+    proxy_arp: false
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    hide_wifi_name: false
+    client_device_isolation: false
+    ap_name_in_beacon: false
+    minrate_mode: auto
+    dtim_mode: default
+    group_rekey_s: 3600
+    sae_anti_clogging: 5
+    sae_sync_time: 5
+    evidence:
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+
+  # 2.4 GHz-only WLAN for low-capability clients. WPA2 with PMF off is accepted because many of them break
+  # on PMF or on WPA3 IEs; a WPA2/WPA3 transition with PMF Optional is accepted too (backward-compatible by
+  # design), never demanded. No 802.11r, no active steering, no group rekey (rekeys disconnect flaky clients).
+  IoT:
+    wifi_bands: [2g]
+    security_protocols: [WPA2, "WPA2/WPA3"]
+    pmf: [Disabled, Optional]
+    fast_roaming: false
+    bss_transition: false
+    roaming_assistant: false
+    band_steering: false
+    mlo: false
+    uapsd: false
+    proxy_arp: false
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    hide_wifi_name: false
+    client_device_isolation: false
+    ap_name_in_beacon: false
+    minrate_mode: auto
+    dtim_mode: default
+    group_rekey_s: 0
+    sae_anti_clogging: 5
+    sae_sync_time: 5
+    evidence:
+      security_protocols: {tier: practice, source: "compatibility of low-capability clients; the standard tier would prefer WPA3"}
+      pmf: {tier: practice, source: "compatibility: PMF breaks some IoT clients; IEEE 802.11w would prefer it on"}
+      fast_roaming: {tier: practice, source: "802.11r IEs break some IoT clients (ESP32-era, older printers, first-generation speakers)"}
+      bss_transition: {tier: practice, source: "no steering of stationary low-power clients"}
+      roaming_assistant: {tier: practice, source: "no steering of stationary low-power clients"}
+      band_steering: {tier: practice, source: "2.4 GHz-only clients cannot be steered"}
+      group_rekey_s: {tier: practice, source: "rekeys disconnect flaky IoT clients; disabled on purpose"}
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+
+  # Guest WLAN: encryption without a password through OWE (transition mode keeps devices without OWE on),
+  # isolated clients, plain Open accepted for captive-portal setups that cannot use OWE yet.
+  Hotspot:
+    wifi_bands: [2g, 5g]
+    security_protocols: ["Enhanced Open with Transition", "Enhanced Open (OWE)", Open]
+    pmf: [Optional, Required, Disabled]
+    fast_roaming: false
+    bss_transition: true
+    roaming_assistant: false
+    band_steering: true
+    mlo: false
+    uapsd: false
+    proxy_arp: false
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    hide_wifi_name: false
+    client_device_isolation: true
+    ap_name_in_beacon: false
+    minrate_mode: auto
+    dtim_mode: default
+    group_rekey_s: 3600
+    sae_anti_clogging: 5
+    sae_sync_time: 5
+    mdns_proxy_mode: off
+    evidence:
+      security_protocols: {tier: practice, source: "plain Open stays accepted for captive portals that cannot use OWE yet; OWE itself is RFC 8110"}
+      pmf: {tier: practice, source: "follows the protocol in use (Open: off, OWE transition: optional or required, OWE: required), checked by the pmf_matches_protocol advisory"}
+      fast_roaming: {tier: practice, source: "802.11r needs an RSN with an FT AKM; Open has none and the Open twin of an OWE transition keeps it off"}
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+
+  # Primary WLAN tuned for airtime efficiency.
+  Throughput:
+    wifi_bands: [2g, 5g]
+    security_protocols: ["WPA2/WPA3", "WPA2/WPA3 Enterprise"]
+    pmf: [Optional]
+    fast_roaming: true
+    bss_transition: true
+    roaming_assistant: true
+    band_steering: true
+    mlo: false
+    uapsd: false
+    proxy_arp: true
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    hide_wifi_name: false
+    client_device_isolation: false
+    ap_name_in_beacon: false
+    minrate_mode: manual
+    minrate_24_kbps: 12000
+    minrate_5_kbps: 24000
+    dtim_mode: custom
+    dtim_24: 3
+    dtim_5: 3
+    group_rekey_s: 3600
+    sae_anti_clogging: 5
+    sae_sync_time: 5
+    b_supported: false
+
+  # Primary WLAN tuned for responsiveness (voice, gaming, realtime).
+  Latency:
+    wifi_bands: [2g, 5g]
+    security_protocols: ["WPA2/WPA3", "WPA2/WPA3 Enterprise"]
+    pmf: [Optional]
+    fast_roaming: true
+    bss_transition: true
+    roaming_assistant: true
+    band_steering: true
+    mlo: false
+    uapsd: true
+    proxy_arp: true
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: false
+    hide_wifi_name: false
+    client_device_isolation: false
+    ap_name_in_beacon: false
+    minrate_mode: manual
+    minrate_24_kbps: 12000
+    minrate_5_kbps: 24000
+    dtim_mode: custom
+    dtim_24: 1
+    dtim_5: 1
+    group_rekey_s: 3600
+    sae_anti_clogging: 5
+    sae_sync_time: 5
+    b_supported: false
+
+# One entry per profile key: the tier and the source the recommendation rests on.
+evidence:
+  wifi_bands: {tier: practice, source: "deployment choice; 6 GHz values are detect-only (see docs/PROFILES.md)"}
+  security_protocols: {tier: standard, source: "Wi-Fi Alliance WPA3 Specification (SAE, transition mode), RFC 8110 (OWE)"}
+  pmf: {tier: standard, source: "IEEE 802.11w; a WPA3 transition mode runs PMF optional, WPA3-only required (Wi-Fi Alliance WPA3 Specification)"}
+  fast_roaming: {tier: standard, source: "IEEE 802.11r Fast BSS Transition; Apple and Android roaming documentation"}
+  bss_transition: {tier: standard, source: "IEEE 802.11v BSS Transition Management"}
+  roaming_assistant: {tier: vendor, source: "Ubiquiti Handoff Suggestions; threshold from the site RF model (ALGORITHM.md §7)"}
+  band_steering: {tier: vendor, source: "Ubiquiti band steering (no2ghz_oui); dual-band clients perform better on 5 GHz"}
+  mlo: {tier: practice, source: "MLO is IEEE 802.11be, its WPA3 requirement Wi-Fi Alliance certification; keeping it off until the site has Wi-Fi 7 clients on a WPA3-only WLAN is a deployment choice"}
+  uapsd: {tier: practice, source: "the mechanism is IEEE 802.11e U-APSD / Wi-Fi Alliance WMM Power Save; on for latency, off elsewhere because of client bugs"}
+  proxy_arp: {tier: standard, source: "IEEE 802.11v Proxy ARP service, required by Hotspot 2.0; reduces broadcast ARP"}
+  multicast_broadcast_blocker: {tier: practice, source: "Ubiquiti setting; off because mDNS and DHCP need broadcast"}
+  multicast_to_unicast: {tier: practice, source: "Ubiquiti setting; tunable for streaming-heavy WLANs"}
+  hide_wifi_name: {tier: standard, source: "hidden SSIDs add probe traffic and no security (IEEE 802.11 probe request behaviour)"}
+  client_device_isolation: {tier: practice, source: "guest isolation principle; Ubiquiti setting"}
+  ap_name_in_beacon: {tier: practice, source: "Ubiquiti setting; information leak with no client benefit"}
+  minrate_mode: {tier: vendor, source: "Cisco and Aruba high-density guidance: fixed minimum basic rates"}
+  minrate_24_kbps: {tier: vendor, source: "12 Mbit/s = lowest OFDM rate (IEEE 802.11g); value is vendor guidance"}
+  minrate_5_kbps: {tier: vendor, source: "24 Mbit/s basic rate on 5 GHz: Cisco/Aruba high-density guidance"}
+  dtim_mode: {tier: practice, source: "DTIM mechanics are IEEE 802.11; choosing custom values is practice"}
+  dtim_24: {tier: practice, source: "3 for throughput (power saving), 1 for latency (multicast latency)"}
+  dtim_5: {tier: practice, source: "as dtim_24"}
+  dtim_6: {tier: practice, source: "as dtim_24"}
+  group_rekey_s: {tier: practice, source: "3600 s is the common vendor default (Cisco, Ubiquiti); 0 disables rekeying"}
+  sae_anti_clogging: {tier: vendor, source: "Ubiquiti default for SAE WLANs"}
+  sae_sync_time: {tier: vendor, source: "Ubiquiti default for SAE WLANs"}
+  iot_dtim_lock: {tier: vendor, source: "Ubiquiti IoT lock (Network Application 10.4); 2.4 GHz-only IoT WLANs"}
+  iot_channel_lock: {tier: vendor, source: "Ubiquiti IoT lock (Network Application 10.4); 2.4 GHz-only IoT WLANs"}
+  enhanced_iot: {tier: vendor, source: "Ubiquiti Enhanced IoT Connectivity"}
+  b_supported: {tier: standard, source: "802.11b DSSS rates cost airtime on every OFDM frame (IEEE 802.11 protection mechanism)"}
+  dns_assistance_mode: {tier: vendor, source: "Ubiquiti DNS Assistance (Network Application 10.3)"}
+  mdns_proxy_mode: {tier: practice, source: "mDNS proxy only where cross-VLAN discovery is wanted; never on isolated WLANs"}
+  ppsk: {tier: vendor, source: "Ubiquiti Private Pre-Shared Keys; need a PSK handshake (WPA2 or WPA2/WPA3)"}
+  wpa3_enhanced_192: {tier: standard, source: "Wi-Fi Alliance WPA3-Enterprise 192-bit mode (CNSA suite), WPA3 Enterprise only"}

@@ -1,77 +1,132 @@
 # Profiles
 
-`profiles.yaml` defines the shipped WLAN baselines used by `UniFi WiFi Optimizer`.
+A profile describes how a WLAN of one kind should be configured. The compliance check compares every
+WLAN you map to a profile (`sites.<id>.wlans` in `config.yaml`) against that profile and reports each
+deviation with the controller UI path to fix it.
 
-Profiles ship ready to use and can be adjusted if your environment or policy requires different WLAN settings.
+Profiles are **recommendations with a stated evidence tier per key**, not snapshots of controller
+defaults. A finding therefore means "this differs from a well-founded baseline", never merely "this
+differs from the factory preset".
 
-## Included Profiles
+## Shipped profiles
 
-| Profile | Intent |
-|---|---|
-| `Standard` | General-purpose baseline mirroring the UniFi WLAN preset `Application: Standard` with `Advanced: Auto` on 2.4/5 GHz. Intended as a broadly compatible default for normal client WLANs. |
-| `IoT` | Compatibility-oriented baseline mirroring the UniFi WLAN preset `Application: IoT` with `Advanced: Auto` on 2.4 GHz. Intended for IoT and lower-capability clients that benefit from 2.4 GHz coverage, simpler security and roaming behavior, and more compatibility-oriented settings. |
-| `Hotspot` | Public WiFi baseline for restaurants, cafes, hotels, retail, and similar guest-facing environments. Intended for guest/public deployments, including Captive Portal or Passpoint setups, where compatibility and isolation matter more than aggressive performance tuning. |
-| `Throughput` | Optimized primary WLAN profile for higher throughput and better airtime efficiency. Intended for client WLANs where raw throughput matters more than latency. |
-| `Latency` | Optimized primary WLAN profile for lower latency and faster client responsiveness. Intended for voice, VoIP, gaming, and similar realtime traffic where responsiveness matters more than maximum throughput. |
+| Profile | Intent | Key choices |
+| --- | --- | --- |
+| `Standard` | Everyday WLAN for phones and laptops on 2.4 + 5 GHz | WPA2/WPA3 transition with PMF Optional, 802.11r + 802.11v, Roaming Assistant on, band steering on |
+| `IoT` | 2.4 GHz-only WLAN for low-capability clients | WPA2 (a WPA2/WPA3 transition is accepted too), PMF off or optional, no 802.11r, no active steering, no band steering, no group rekey — many such clients break on each of these |
+| `Hotspot` | Guest WLAN | Enhanced Open (OWE, preferably in transition mode) or plain Open for captive portals, client isolation on, mDNS proxy off |
+| `Throughput` | Primary WLAN tuned for airtime | WPA2/WPA3 (Personal or Enterprise), fixed minimum rates 12/24 Mbit/s, 802.11b off, DTIM 3, group rekey 3600 s, Proxy ARP |
+| `Latency` | Primary WLAN tuned for responsiveness | As Throughput, with DTIM 1 and U-APSD on |
 
-## Example
+Print the effective set, comments and evidence included:
+
+```sh
+unifiwifioptimizer config --profiles
+```
+
+## Your own profiles
+
+Put a `profiles.yaml` next to the configuration file the run uses (`--config-file` or the XDG path; the
+legacy data directory is never searched, because the 0.4.x installer left its own, differently shaped
+`profiles.yaml` there) or pass `--profiles-file PATH`; a symlink to a regular file is fine. The file has the same
+shape as the shipped one. A profile with a shipped name **replaces that profile whole** — no per-key
+merge, so the file shows the complete expectation; new names are added; `evidence` entries replace the
+shipped ones key by key, and a profile may carry its own `evidence` block for keys whose tier differs for
+that profile. Unknown keys, unknown values and missing required keys are errors; the legacy key
+`group_rekey` is reported as renamed to `group_rekey_s`, a scalar `pmf`/`security_protocols` as needing a
+list.
 
 ```yaml
 profiles:
-  Throughput:
-    wifi_bands:
-      - 2g
-      - 5g
-    fast_roaming: true
-    minrate_mode: manual
-    minrate_24_kbps: 12000
-    minrate_5_kbps: 24000
-    multicast_broadcast_blocker: false
-    multicast_to_unicast: false
+  Media:
+    wifi_bands: [5g]
+    security_protocols: ["WPA2/WPA3"]
+    pmf: [Optional]
+    fast_roaming: false
+    bss_transition: true
+    roaming_assistant: false
+    band_steering: false
+    mlo: false
+    uapsd: false
     proxy_arp: true
-    security_protocols:
-      - WPA2/WPA3
-      - WPA2/WPA3 Enterprise
-    pmf: Optional
+    multicast_broadcast_blocker: false
+    multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
+    ap_name_in_beacon: false
+    minrate_mode: auto
+    dtim_mode: default
+    group_rekey_s: 3600
     sae_anti_clogging: 5
     sae_sync_time: 5
-    mlo: false
-    bss_transition: true
-    uapsd: false
-    dtim_mode: custom
-    dtim_24: 3
-    dtim_5: 3
-    group_rekey: 3600
-    ap_name_in_beacon: false
-    roaming_assistant: true
-    band_steering: true
+    evidence:
+      multicast_to_unicast: {tier: practice, source: "our streaming boxes drop frames without it"}
 ```
 
-## Field Guide
+## Keys
 
-- `wifi_bands`: expected band availability
-- `fast_roaming`, `mlo`, `bss_transition`, `uapsd`, `band_steering`: roaming and client behavior controls
-- `roaming_assistant`: whether Roaming Assistant / "Handoff Suggestions (802.11v)" should be enabled — a different mechanism from `fast_roaming` (802.11r) and `bss_transition` (802.11v protocol support itself); see `ALGORITHM.md` §7 "Enable/disable expectation". Only the on/off expectation is profile-driven — the RSSI threshold is always computed from the site's RF model, never from the profile.
-- `minrate_mode`, `minrate_*`: minimum data rate mode and per-band values
-- `dtim_mode`, `dtim_*`: DTIM mode and per-band DTIM values
-- `group_rekey`: group rekey interval, always checked
-- `multicast_*`, `proxy_arp`, `client_device_isolation`: broadcast and multicast handling plus client isolation
-- `security_protocols`, `pmf`, `sae_*`: security posture and WPA3/SAE-related expectations
-- `hide_wifi_name`, `ap_name_in_beacon`: SSID visibility and beacon presentation
+| Key | Compared against | Values |
+| --- | --- | --- |
+| `wifi_bands` | the WLAN's bands | list of `2g`, `5g`, `6g`; must match exactly |
+| `security_protocols` | `security` + `wpa_mode` + `wpa3_support` + `wpa3_transition` | list; any listed protocol passes: `Open`, `Enhanced Open (OWE)`, `Enhanced Open with Transition`, `WPA2`, `WPA3`, `WPA2/WPA3`, `WPA2 Enterprise`, `WPA3 Enterprise`, `WPA2/WPA3 Enterprise` |
+| `pmf` | `pmf_mode` | list of `Disabled`, `Optional`, `Required` |
+| `fast_roaming` | `fast_roaming_enabled` (802.11r) | bool |
+| `bss_transition` | `bss_transition` (802.11v BTM support) | bool |
+| `roaming_assistant` | `roaming_assistant_na_enabled` | bool — only whether Handoff Suggestions should be on; the RSSI threshold always comes from the site's RF model (ALGORITHM.md §7). For a WLAN on 6 GHz the `roaming_assistant_6e_enabled` switch is shown as a separate, not evaluable result |
+| `band_steering` | `no2ghz_oui` | bool |
+| `mlo`, `uapsd`, `proxy_arp`, `multicast_broadcast_blocker`, `multicast_to_unicast`, `hide_wifi_name`, `client_device_isolation`, `ap_name_in_beacon` | the matching controller flag | bool |
+| `minrate_mode` | `minrate_setting_preference` | `auto` or `manual` |
+| `minrate_24_kbps`, `minrate_5_kbps` | `minrate_ng/na_enabled` + `_data_rate_kbps` | required when `manual` and the band is listed; a rate that is not enforced fails |
+| `dtim_mode` | `dtim_mode` | `default` or `custom` |
+| `dtim_24`, `dtim_5`, `dtim_6` | `dtim_ng`, `dtim_na`, `dtim_6e` | required when `custom` and the band is listed |
+| `group_rekey_s` | `group_rekey` | seconds, 0 = disabled |
+| `sae_anti_clogging`, `sae_sync_time` | `sae_anti_clogging`, `sae_sync` | checked only when the WLAN uses SAE (WPA3 or WPA2/WPA3 Personal) |
+| `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `b_supported`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
+| `dns_assistance_mode`, `mdns_proxy_mode` | the matching controller field | optional `off`, `auto`, `custom`; unset = not checked |
 
-## Notes
+A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A
+combination the controller did send but the tool has no name for (for example `wpapsk/wpa1`) is a
+**deviation** and shows the raw pair. 6 GHz values (`dtim_6`) are **not evaluable** (6 GHz is detect-only).
 
-- `minrate_*` is only required when `minrate_mode: manual`
-- `dtim_*` is only required when `dtim_mode: custom`
-- `minrate_*` and `dtim_*` only apply to bands listed in `wifi_bands`
-- `group_rekey: 0` renders as `Disabled`
-- `mlo: false` is the shipped default for all current profiles
-- `band_steering` (controller field `no2ghz_oui`): live-verified 2026-08-08 against a real controller -- `true` for `Standard`/`Hotspot`/`Throughput`/`Latency` matches the current UniFi preset default (steers dual-band clients toward 5 GHz). `false` for `IoT` is a deliberate deviation from that default: many IoT clients are 2.4-GHz-only.
+## Evidence tiers
+
+Every key carries a tier in the `evidence` section of the profiles file; a profile overrides it for keys
+where its value is a compatibility choice (the IoT profile's PMF and protocol entries are `practice`
+although the mechanisms are standards, because the standard argues for the stricter setting):
+
+- **standard** — a published standard: IEEE 802.11 (r, v incl. the Proxy ARP service, w, protection
+  mechanism), Wi-Fi Alliance (WPA3, Enhanced Open), IETF (RFC 8110 OWE).
+- **vendor** — reproducible official guidance: Cisco/Aruba high-density minimum rates, Apple roaming
+  behaviour, Ubiquiti feature documentation.
+- **practice** — community and vendor habit without a published derivation: DTIM values, group rekey
+  interval, U-APSD on or off, multicast handling, isolation. These are the tunables to adjust first when your
+  environment disagrees.
+
+## Advisories
+
+Beyond the per-key comparison, the check reports cross-setting observations on the WLAN's actual
+configuration:
+
+| Advisory | Fires when |
+| --- | --- |
+| `mlo_requires_wpa3_pmf` | MLO is on without a WPA3-only protocol (Personal or Enterprise, no transition) and PMF Required (Wi-Fi Alliance Wi-Fi 7 certification; IEEE 802.11be itself does not mandate a security suite) |
+| `pmf_matches_protocol` | PMF does not fit the protocol: WPA3-only and OWE-only need Required, a WPA3 transition mode exactly Optional (Required would lock out its WPA2 clients), OWE transition Optional or Required, plain Open has no RSN for PMF to protect (Wi-Fi Alliance WPA3 Specification, Wi-Fi Enhanced Open) |
+| `fast_roaming_without_bss_transition` | 802.11r is on and 802.11v is off |
+| `fast_roaming_on_2g_only_wlan` | 802.11r is on for a WLAN that broadcasts only on 2.4 GHz (IoT-class clients) |
+| `min_rate_2g_dsss`, `min_rate_2g_below_ofdm` | the WLAN broadcasts on 2.4 GHz with a fixed (`manual`) minimum rate that is a DSSS rate or below 12 Mbit/s, and 802.11b support is known to be on; silent under `auto` and while `b_supported` is unknown |
+| `iot_locks_on_dual_band_wlan` | an IoT lock is on for a WLAN whose profile expects 5 or 6 GHz |
+| `mdns_proxy_with_isolation` | the mDNS proxy is on while clients are isolated |
+| `ppsk_requires_psk` | Private Pre-Shared Keys are on without a PSK handshake (WPA2 or WPA2/WPA3) |
+| `wpa3_192_requires_enterprise` | Enhanced 192-bit is on for anything but WPA3 Enterprise without transition (WPA2 Enterprise and WPA2/WPA3 Enterprise included) |
+
+6 GHz is not judged for the WPA3/PMF requirement: the WLAN-level fields are shared across bands and the
+controller enforces WPA3-only + PMF Required on the 6 GHz radio internally.
 
 ## References
 
+- IEEE Std 802.11-2020 (incl. 802.11r/v/w/e); IEEE 802.11be
+- Wi-Fi Alliance: WPA3 Specification; Wi-Fi Enhanced Open; WMM Power Save
+- IETF RFC 8110 — Opportunistic Wireless Encryption
 - Ubiquiti: [UniFi WiFi SSID and AP Settings Overview](https://help.ui.com/hc/en-us/articles/32065480092951-UniFi-WiFi-SSID-level-Settings-Overview)
 - Ubiquiti: [UniFi Wireless Guest Network Setup](https://help.ui.com/hc/en-us/articles/115000166827-UniFi-Wireless-Guest-Network-Setup)
 - Ubiquiti: [Setting Up Passpoint on UniFi Network](https://help.ui.com/hc/en-us/articles/25473982758551-Setting-Up-Passpoint-on-UniFi-Network)

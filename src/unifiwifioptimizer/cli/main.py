@@ -20,7 +20,8 @@ from unifiwifioptimizer.app.trust import trust_host_keys
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
-from unifiwifioptimizer.config.locations import resolve_config_location
+from unifiwifioptimizer.config.locations import ConfigLocation, resolve_config_location
+from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
 from unifiwifioptimizer.config.schema import parse_controller_url
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
@@ -67,10 +68,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dump-api", type=Path, metavar="DIR", help="write what was read from each endpoint (models, masked) into DIR"
     )
+    parser.add_argument(
+        "--profiles-file",
+        type=Path,
+        metavar="PATH",
+        help="WLAN profiles that extend or replace the shipped ones (default: profiles.yaml beside the config file)",
+    )
     subparsers = parser.add_subparsers(dest="subcommand", metavar="<subcommand>", required=True)
     for name, help_text in SUBCOMMAND_HELP.items():
         sub = subparsers.add_parser(name, help=help_text, description=help_text)
-        if name in SITE_SUBCOMMANDS:
+        if name == "config":
+            sub.add_argument("site", nargs="?", help="site id (or its description when unambiguous)")
+            sub.add_argument("--profiles", action="store_true", help="print the effective WLAN profiles instead")
+        elif name in SITE_SUBCOMMANDS:
             sub.add_argument("site", help="site id (or its description when unambiguous)")
         if name == "controller-fingerprint":
             sub.add_argument("--url", help="controller URL when no configuration file exists yet")
@@ -129,6 +139,14 @@ def _site(args: argparse.Namespace) -> ExitCode:
 
 
 def _config(args: argparse.Namespace) -> ExitCode:
+    if args.profiles:
+        if args.site is not None:
+            build_parser().error("--profiles prints the profiles; it takes no site")
+        location = resolve_config_location(args.config_file)
+        _warn_legacy_location(location)
+        return _print_profiles(args.profiles_file, location)
+    if args.site is None:
+        build_parser().error("config needs a site id, or --profiles")
     loaded = load_config(args.config_file)
     _warn_legacy(loaded)
     client, dump = _client(loaded, args)
@@ -137,6 +155,23 @@ def _config(args: argparse.Namespace) -> ExitCode:
         dump.write(f"s/{overview.site.id}/config", overview)
     print(render_skeleton(overview), end="")
     return ExitCode.OK
+
+
+def _print_profiles(override: Path | None, location: ConfigLocation) -> ExitCode:
+    """The shipped profiles as shipped (their comments carry the evidence tiers), then the override file as
+    validated, so what is printed is exactly what the check compares against."""
+    loaded = load_profiles(override, location)
+    _print_lines(shipped_profiles_text())
+    if loaded.override_path is not None and loaded.override_text is not None:
+        print(f"\n# --- overrides from {safe_text(str(loaded.override_path), max_chars=MAX_ERROR_CHARS)} ---")
+        _print_lines(loaded.override_text)
+    return ExitCode.OK
+
+
+def _print_lines(text: str) -> None:
+    # Line by line: the sanitiser treats a newline as a control character.
+    for line in text.splitlines():
+        print(safe_text(line, max_chars=MAX_ERROR_CHARS))
 
 
 def _init(args: argparse.Namespace) -> ExitCode:
@@ -190,10 +225,14 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
 
 
 def _warn_legacy(loaded: LoadedConfig) -> None:
-    if loaded.location.legacy:
+    _warn_legacy_location(loaded.location)
+
+
+def _warn_legacy_location(location: ConfigLocation) -> None:
+    if location.legacy:
         print(
-            f"{PROG}: reading the legacy configuration at {loaded.location.path}; move it to "
-            "$XDG_CONFIG_HOME/unifiwifioptimizer/config.yaml",
+            f"{PROG}: reading the legacy configuration at {location.path}; move it to "
+            "$XDG_CONFIG_HOME/unifiwifioptimizer/config.yaml (a profiles.yaml in the legacy directory is not read)",
             file=sys.stderr,
         )
 

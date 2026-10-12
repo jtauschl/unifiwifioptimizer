@@ -10,14 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Give UniFi operators verified, actionable RF and WLAN-profile recommendations on current controller releases — including the WLAN-level Handoff Suggestions check, the extended profile schema, and secure-by-default controller and AP access — by rebuilding the optimizer as a typed, tested Python package.
 
 ### Added
+- WLAN profiles carry an evidence tier per key (`standard`, `vendor`, `practice`) with its source in the `evidence` section; `unifiwifioptimizer config --profiles` prints the effective profiles with those annotations.
+- Your own `profiles.yaml` next to `config.yaml` (or `--profiles-file PATH`) extends the shipped profiles or replaces a shipped profile whole; unknown keys and values are errors.
+- Optional profile keys checked only when set: `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `b_supported`, `dns_assistance_mode`, `mdns_proxy_mode`, `ppsk`, `wpa3_enhanced_192`.
+- Advisories for IoT locks on a WLAN meant for 5 GHz clients, an mDNS proxy on an isolated WLAN, Private Pre-Shared Keys without a PSK handshake, WPA3 Enhanced 192-bit on anything but WPA3 Enterprise, and a PMF setting that does not fit the protocol in use (WPA3-only/OWE need Required, a WPA3 transition mode exactly Optional, OWE transition Optional or Required, Open none).
+- A WLAN setting the controller did not send is reported as `incomplete` instead of being compared against an assumed default; a combination it did send but the tool cannot name (e.g. `wpapsk/wpa1`) is a deviation showing the raw pair.
+- A profile may carry its own `evidence` block for keys whose tier differs from the set-wide one (the IoT profile's compatibility choices are `practice`).
 - Terminology note in `docs/ALGORITHM.md` clarifying that UniFi's "Handoff Suggestions (802.11v)" UI label refers to the same setting this tool calls Roaming Assistant.
 - TX power for an AP/band with a configured neighbor but no sighting yet now jumps straight to the radio's maximum, to maximize the chance of a sighting on the next run; once already at maximum with no sighting, this is reported as a distinct informational state.
 - "Fix TX power first" note next to an `Incomplete`/`Not evaluable` Roaming Assistant verdict when the site still has pending TX power recommendations.
-- New `roaming_assistant` profile field controlling whether Roaming Assistant should be enabled for a WLAN. Shipped defaults: disabled for `Standard`/`IoT`/`Hotspot`, enabled for `Throughput`/`Latency`.
+- New `roaming_assistant` profile field controlling whether Roaming Assistant should be enabled for a WLAN. Shipped: enabled for `Standard`/`Throughput`/`Latency`, disabled for `IoT`/`Hotspot`.
 - New `band_steering` profile field controlling whether dual-band clients are steered away from 2.4 GHz. Shipped defaults: enabled for `Standard`/`Throughput`/`Latency`, disabled for `IoT`/`Hotspot`.
 - Advisory when a WLAN's 2.4 GHz minimum data rate is below 12 Mbps, since lower rates keep legacy 802.11b protection overhead active.
 - Advisory when 802.11r Fast Transition is enabled on an `IoT`-profile WLAN, since it is known to break specific IoT client classes.
-- Advisory when a WLAN has MLO enabled but doesn't meet its WPA3 + PMF Required security requirement.
+- Advisory when a WLAN has MLO enabled without a WPA3-only protocol (Personal or Enterprise, no WPA2 transition — a transition mode runs PMF optional and cannot satisfy MLO) and PMF Required.
 - Advisory when 802.11r Fast Transition is enabled but 802.11v (BSS Transition) is disabled, since 802.11r's fast handoff depends on it.
 - Security Protocol recognition for `Enhanced Open (OWE)` and `Enhanced Open with Transition` — previously any open-security WLAN was reported as plain `Open` regardless of its actual OWE encryption state.
 - A line under every ✗ compliance check and TX/roaming/channel recommendation naming exactly where in the UniFi UI to make the change.
@@ -44,6 +50,11 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - Coverage-gap warnings are now shown for every neighbor still below the target signal corridor, instead of only when TX power itself hit its hardware limit — a real coverage problem could previously be understated.
 
 ### Changed
+- **Breaking:** the shipped profiles are recommendations, not controller-default snapshots. `Standard` now expects WPA2/WPA3 (transition) with PMF Optional, 802.11r, 802.11v, Roaming Assistant on and a 3600 s group rekey; `Hotspot` expects Enhanced Open (OWE, transition preferred) with plain Open still accepted, the mDNS proxy off and a 3600 s group rekey; `IoT` accepts WPA2 or WPA2/WPA3 with PMF off or optional (no longer WPA2-only with PMF off); `Throughput` and `Latency` expect 802.11b support off. A WLAN that matched the old `Standard`/`Hotspot` baseline will show these deviations.
+- **Breaking:** `profiles.yaml` ships inside the package; the file next to the executable is no longer read. Local adjustments move to a `profiles.yaml` next to the configuration file in use (never the legacy data directory, where the 0.4.x installer's copy stays unread), or `--profiles-file`.
+- **Breaking:** `security_protocols` and `pmf` are lists of accepted values; `group_rekey` became `group_rekey_s`.
+- The 802.11r-on-IoT advisory is judged on the WLAN's bands (2.4 GHz only) rather than on the profile's name; the 2.4 GHz minimum-rate advisory speaks only for a fixed (`manual`) rate on a WLAN that broadcasts on 2.4 GHz with 802.11b support known to be on — never under `auto`, where the stored value is inert.
+- A 6 GHz DTIM value in a profile is reported as not evaluable (6 GHz is detect-only); a WLAN on 6 GHz shows its `roaming_assistant_6e_enabled` switch as a separate, not evaluable result for the same reason.
 - Roaming Assistant migrated from a per-AP RF-tuning recommendation to a per-WLAN compliance check next to Fast Roaming, matching UniFi's move of the setting from radio level (`radio_table`) to WLAN level (`wlanconf.roaming_assistant_na_*`). The target threshold is still computed from the same site-aware corridor as before, aggregated (as a conservative minimum) across the APs that broadcast each WLAN, restricted to each AP's configured RF neighbors that also broadcast that SSID.
 - WLANs whose broadcasting APs have incomplete data (a broadcasting AP with no SSID-relevant RF neighbor, or a missing neighbor sighting) are reported `Incomplete` with the specific reason, instead of a ✓/✗ verdict computed from a partial data set.
 - On older controllers where no WLAN exposes the new field, the tool falls back site-wide to the previous per-AP behavior.

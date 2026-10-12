@@ -16,8 +16,32 @@ SHELL_SUITES = sorted(TESTS_DIR.glob("*_test.sh"))
 
 TX = "unit/rf/test_txpower.py::"
 ROAMING = "unit/rf/test_roaming.py::"
+NORMALIZE = "unit/compliance/test_normalize.py::"
+ADVISORIES = "unit/compliance/test_advisories.py::"
 # Bash test → pytest node (module::function) or the ticket that ports it.
 PORTED: dict[str, str] = {
+    "security_test.sh::test_state_wpa3_enterprise": NORMALIZE + "test_state_wpa3_enterprise",
+    "security_test.sh::test_state_wpa2_wpa3_enterprise": NORMALIZE + "test_state_wpa2_wpa3_enterprise",
+    "security_test.sh::test_state_wpa3_personal": NORMALIZE + "test_state_wpa3_personal",
+    "security_test.sh::test_state_wpa2_wpa3_personal": NORMALIZE + "test_state_wpa2_wpa3_personal",
+    "security_test.sh::test_state_owe": NORMALIZE + "test_state_owe",
+    "security_test.sh::test_state_owe_transition": NORMALIZE + "test_state_owe_transition",
+    "security_test.sh::test_sae_matches_wpa3_personal": NORMALIZE + "test_sae_matches_wpa3_personal",
+    "security_test.sh::test_sae_matches_wpa2_wpa3_personal": NORMALIZE + "test_sae_matches_wpa2_wpa3_personal",
+    "security_test.sh::test_sae_rejects_wpa3_enterprise": NORMALIZE + "test_sae_rejects_wpa3_enterprise",
+    "security_test.sh::test_sae_rejects_wpa2_wpa3_enterprise": NORMALIZE + "test_sae_rejects_wpa2_wpa3_enterprise",
+    "security_test.sh::test_sae_rejects_owe": NORMALIZE + "test_sae_rejects_owe",
+    "security_test.sh::test_wpa3_matches_all_four_variants": NORMALIZE + "test_wpa3_matches_all_four_variants",
+    "security_test.sh::test_wpa3_rejects_wpa2_and_owe": NORMALIZE + "test_wpa3_rejects_wpa2_and_owe",
+    "security_test.sh::test_mlo_advisory_silent_when_compliant": ADVISORIES + "test_mlo_advisory_silent_when_compliant",
+    "security_test.sh::test_mlo_advisory_silent_when_wpa3_enterprise_and_required": ADVISORIES
+    + "test_mlo_advisory_silent_when_wpa3_enterprise_and_required",
+    "security_test.sh::test_mlo_advisory_fires_on_wpa2_only": ADVISORIES + "test_mlo_advisory_fires_on_wpa2_only",
+    "security_test.sh::test_mlo_advisory_fires_on_pmf_optional": ADVISORIES + "test_mlo_advisory_fires_on_pmf_optional",
+    "security_test.sh::test_mlo_advisory_silent_when_mlo_disabled": ADVISORIES
+    + "test_mlo_advisory_silent_when_mlo_disabled",
+    "security_test.sh::test_mlo_advisory_silent_for_6ghz_default_config": ADVISORIES
+    + "test_mlo_advisory_silent_for_6ghz_default_config",
     "tx_test.sh::test_in_corridor_unchanged": TX + "test_in_corridor_unchanged",
     "roaming_test.sh::test_calculate_roaming_recommendation_default": ROAMING
     + "test_calculate_roaming_recommendation_default",
@@ -65,25 +89,6 @@ DEFERRED: dict[str, str] = {
     "roaming_test.sh::test_field_present_but_apgroups_empty_still_produces_row": "OP#2881 analysis",
     "roaming_test.sh::test_incomplete_all_group_ids_unknown": "OP#2881 analysis",
     "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response": "OP#2878 controller adapter",
-    "security_test.sh::test_state_wpa3_enterprise": "OP#2880 compliance",
-    "security_test.sh::test_state_wpa2_wpa3_enterprise": "OP#2880 compliance",
-    "security_test.sh::test_state_wpa3_personal": "OP#2880 compliance",
-    "security_test.sh::test_state_wpa2_wpa3_personal": "OP#2880 compliance",
-    "security_test.sh::test_state_owe": "OP#2880 compliance",
-    "security_test.sh::test_state_owe_transition": "OP#2880 compliance",
-    "security_test.sh::test_sae_matches_wpa3_personal": "OP#2880 compliance",
-    "security_test.sh::test_sae_matches_wpa2_wpa3_personal": "OP#2880 compliance",
-    "security_test.sh::test_sae_rejects_wpa3_enterprise": "OP#2880 compliance",
-    "security_test.sh::test_sae_rejects_wpa2_wpa3_enterprise": "OP#2880 compliance",
-    "security_test.sh::test_sae_rejects_owe": "OP#2880 compliance",
-    "security_test.sh::test_wpa3_matches_all_four_variants": "OP#2880 compliance",
-    "security_test.sh::test_wpa3_rejects_wpa2_and_owe": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_silent_when_compliant": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_silent_when_wpa3_enterprise_and_required": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_fires_on_wpa2_only": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_fires_on_pmf_optional": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_silent_when_mlo_disabled": "OP#2880 compliance",
-    "security_test.sh::test_mlo_advisory_silent_for_6ghz_default_config": "OP#2880 compliance",
 }
 
 SHELL_TEST = re.compile(r"^(?:function\s+)?(test_[a-z0-9_]+)\s*(?:\(\))?\s*\{", re.MULTILINE)

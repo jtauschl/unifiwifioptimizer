@@ -182,7 +182,7 @@ This is a distinct question from *whether Roaming Assistant should be enabled at
 
 ## 7. Roaming Assistant
 
-> **Terminology note:** since UniFi Network Application 10.4.57, the controller UI labels this setting "Handoff Suggestions (802.11v)" instead of "Roaming Assistant". The underlying API field name (`roaming_assistant_na_*`) and this tool's terminology are unchanged — "Roaming Assistant" is used throughout this document and the tool's output. Release notes for that version also advertise expanded 6 GHz support, but a live-verified WLAN with 6 GHz disabled returned only the `_na` (5 GHz) field — whether a `_6e` counterpart exists once 6 GHz is enabled is unconfirmed (out of scope for 6 GHz handling here; see [UWO-13](https://op.nutrilytics.de/projects/unifi-wifi-optimizer) for 6 GHz band support in general).
+> **Terminology note:** since UniFi Network Application 10.4.57, the controller UI labels this setting "Handoff Suggestions (802.11v)" instead of "Roaming Assistant". The underlying API field name (`roaming_assistant_na_*`) and this tool's terminology are unchanged — "Roaming Assistant" is used throughout this document and the tool's output. The controller also sends a `roaming_assistant_6e_enabled` counterpart (live-verified on 10.6.106, present even with 6 GHz disabled); the compliance check shows it for a WLAN on 6 GHz as a separate, not evaluable result, because 6 GHz is detect-only (see [UWO-13](https://op.nutrilytics.de/projects/unifi-wifi-optimizer) for 6 GHz band support in general).
 
 ### Data source and site scope
 

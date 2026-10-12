@@ -240,6 +240,34 @@ def read_private_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
         raise ConfigError(str(path), "not UTF-8") from None
 
 
+def read_text_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
+    """A non-secret file's text: a regular file (symlinks followed — dotfile managers link such files),
+    bounded in size. No ownership or mode demands — the profiles file is meant to be shared and copied."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+    except FileNotFoundError:
+        raise ConfigError(str(path), "not found") from None
+    except OSError as exc:
+        raise ConfigError(str(path), f"cannot open ({exc.strerror})") from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ConfigError(str(path), "not a regular file")
+        if st.st_size > max_bytes:
+            raise ConfigError(str(path), f"larger than {max_bytes} bytes")
+    except ConfigError:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "rb") as handle:
+        data = handle.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ConfigError(str(path), f"larger than {max_bytes} bytes")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ConfigError(str(path), "not UTF-8") from None
+
+
 def write_new_private_file(path: Path, text: str) -> None:
     """Create `path` with mode 0600 (its directory 0700 if new); an existing file is never overwritten."""
     try:
