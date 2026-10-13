@@ -29,6 +29,16 @@ def test_pyyaml_is_the_only_runtime_dependency(pyproject: dict[str, Any]) -> Non
     assert [req.split(">=")[0] for req in pyproject["project"]["dependencies"]] == ["pyyaml"]
 
 
+def test_the_version_is_derived_from_the_tag_and_nowhere_committed(pyproject: dict[str, Any]) -> None:
+    # One version source: the git tag. A committed version field would drift from the tag the build stamps.
+    assert pyproject["project"]["dynamic"] == ["version"]
+    assert "version" not in pyproject["project"]
+    assert pyproject["tool"]["hatch"]["version"] == {"source": "vcs"}
+    sources = (PYPROJECT.parent / "src").rglob("*.py")
+    hardcoded = [p.name for p in sources if '__version__ = "' in p.read_text(encoding="utf-8")]
+    assert hardcoded == []
+
+
 def test_python_version_file_is_the_declared_floor(pyproject: dict[str, Any]) -> None:
     floor = pyproject["project"]["requires-python"].removeprefix(">=")
     assert (PYPROJECT.parent / ".python-version").read_text(encoding="utf-8").strip() == floor

@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Jürgen Tauschl", email = "juergen.tauschl@gmail.com" }]
-# 3.11 floor: the design relies on StrEnum, typing.Self and ExceptionGroup without compatibility shims.
+# 3.11 floor: the code relies on StrEnum without compatibility shims.
 requires-python = ">=3.11"
 # The only runtime dependency. 6.0 is the first release with CPython 3.11 wheels.
 dependencies = ["pyyaml>=6.0"]
