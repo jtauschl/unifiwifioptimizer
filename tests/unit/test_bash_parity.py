@@ -111,23 +111,23 @@ PORTED: dict[str, str] = {
     ),
     "roaming_test.sh::test_incomplete_all_group_ids_unknown": (TARGETS + "test_incomplete_all_group_ids_unknown"),
 }
-# Behaviour the standards-grounded model (ADR-002 D8) or the Python design replaced; the shell test documents
-# the old rule.
+# Behaviour the standards-grounded RF model or the Python design replaced; the shell test documents the old
+# rule, the value names the rule that replaced it.
 SUPERSEDED: dict[str, str] = {
     "tx_test.sh::test_partial_missing_peer_nudge_preserved": "ADR-002 D8: weakest-neighbour statistic, no nudge",
     "tx_test.sh::test_tx_pending_note_absent_on_normal_verdict": (
-        "OP#2881: the note appears whenever a 5 GHz TX change is pending, because the uplink threshold follows "
+        "the note appears whenever a 5 GHz TX change is pending, because the uplink threshold follows "
         "the effective power; an OK verdict is stale then too"
     ),
     "roaming_test.sh::test_site_wide_fallback_flag_set_when_any_wlan_has_field": (
-        "OP#2881: the per-radio Roaming Assistant fallback is gone; a WLAN without the field is INCOMPLETE"
+        "the per-radio Roaming Assistant fallback is gone; a WLAN without the field is INCOMPLETE"
     ),
     "roaming_test.sh::test_fetch_site_apgroups_survives_unreachable_endpoint": (
-        "OP#2881: a controller endpoint that fails is a ControllerError and aborts the run (exit 1); the client "
+        "a controller endpoint that fails is a ControllerError and aborts the run (exit 1); the client "
         "retries 502-504, and skipping one endpoint would hide a controller problem behind an INCOMPLETE check"
     ),
     "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response": (
-        "OP#2881: a malformed endpoint body is a SchemaError and aborts the run (exit 1), as above"
+        "a malformed endpoint body is a SchemaError and aborts the run (exit 1), as above"
     ),
 }
 # Tests of report rendering, site aggregation and controller fetch paths follow their layers' tickets.

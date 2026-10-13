@@ -1,4 +1,4 @@
-"""Transmit power per radio: one outcome from an ordered decision table (plan OP#2881 §2.2).
+"""Transmit power per radio: one outcome from an ordered decision table (docs/ALGORITHM.md §4).
 
 The weakest evaluable neighbour reading is an upper bound of the true weakest, so an increase is safe
 while a neighbour is unevaluated, but a reduction, a confirmation or a "too strong" claim is not; a peer

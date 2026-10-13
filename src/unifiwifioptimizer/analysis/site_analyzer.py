@@ -1,8 +1,8 @@
-"""One site, analysed: the snapshot and the scans become a `SiteReport` (plan OP#2881 §2.2 site_analyzer).
+"""One site, analysed: the snapshot and the scans become a `SiteReport`.
 
 Pure orchestration over the other analysis modules. Access points come in the operator's configuration
 order (every name of a neighbour pair, then the rest of the site); an offline access point gets one line
-and no bands; the scan-status findings of §2.4 and the partial reasons of §2.5 are derived here.
+and no bands; the scan-status findings per band and the reasons a report is partial are derived here.
 """
 
 from collections import Counter
@@ -154,7 +154,7 @@ def _rows(cells: tuple[PeerReading, ...], markers: Mapping[str, NeighbourMarker]
 def _band_scan_findings(
     ap: AccessPoint, band: Band, scan: SiteScan | None, configured: bool, partial: list[PartialReason]
 ) -> tuple[Finding, ...]:
-    """§2.4: what the access point's own scan said about this band."""
+    """What the access point's own scan said about this band."""
     if scan is None or not configured or ap.offline:
         return ()
     ap_scan = scan.scan_of(ap.mac)
