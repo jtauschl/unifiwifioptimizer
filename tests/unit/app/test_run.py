@@ -165,6 +165,7 @@ def test_sites_are_selected_by_configured_id_and_nothing_else() -> None:
         select_sites(loaded({}), None)
 
 
+@pytest.mark.security("T19")
 def test_the_environment_is_checked_before_the_passwords_and_only_when_a_site_scans() -> None:
     cfg = loaded({"default": scanning_site(ssh={"auth": "password", "user": "u"})})
     order: list[str] = []
@@ -306,6 +307,7 @@ def test_the_verdict_is_independent_of_the_site_order(outcomes: list[SiteOutcome
     assert RunResult(reports=(), outcomes=tuple(outcomes)).verdict is RunVerdict.NO_VERIFIABLE_AP
 
 
+@pytest.mark.security("T7")
 def test_host_key_failures_everywhere_give_no_verifiable_access_point_and_timeouts_give_partial() -> None:
     cfg = loaded({"default": scanning_site()})
     unknown = {name: HostKeyUnknownError(f"{name}: no key") for name in ("AP-1", "AP-2", "AP-3", "AP-4")}

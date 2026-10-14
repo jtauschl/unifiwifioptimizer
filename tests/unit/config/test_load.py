@@ -16,6 +16,7 @@ from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.secrets import Secret
 
 
+@pytest.mark.security("T9")
 def test_take_env_secret_reads_once_and_removes_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UWO_TEST_SECRET", "value")
     assert take_env_secret("UWO_TEST_SECRET") == "value"
@@ -24,6 +25,7 @@ def test_take_env_secret_reads_once_and_removes_the_variable(monkeypatch: pytest
     assert take_env_secret("UWO_TEST_EMPTY") is None
 
 
+@pytest.mark.security("T9")
 def test_load_config_reads_the_resolved_file_and_consumes_environment_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(API_KEY_ENV, "env-key")
     monkeypatch.setenv(SSH_PASSWORD_ENV, "env-pw")

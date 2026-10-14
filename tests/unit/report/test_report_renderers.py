@@ -40,6 +40,7 @@ def test_the_json_report_matches_the_golden_file_and_pins_the_schema_version() -
     assert site["aps"][0]["bands"][0]["outcome"] == "in_corridor" and site["scan"]["passes"] == 3
 
 
+@pytest.mark.security("T12")
 def test_external_names_are_sanitised_per_token_not_truncated_as_a_line() -> None:
     inp = golden_input()
     hostile = "AP-" + RLO + "2\x1b[31m" + "x" * 40
@@ -57,6 +58,7 @@ def test_external_names_are_sanitised_per_token_not_truncated_as_a_line() -> Non
     assert any(f"[{safe}" in line and line.endswith("]") for line in offset_lines)
 
 
+@pytest.mark.security("T11")
 def test_json_keeps_non_ascii_escaped_and_refuses_secrets() -> None:
     inp = golden_input()
     renamed = with_ap(inp.snapshot, replace(ap_named(inp.snapshot, "AP-2"), name="AP-" + RLO + "2"))
@@ -66,6 +68,7 @@ def test_json_keeps_non_ascii_escaped_and_refuses_secrets() -> None:
         plain(Secret("hunter2"))
 
 
+@pytest.mark.security("T11")
 def test_no_secret_plaintext_reaches_either_output() -> None:
     inp = golden_input()
     mgmt = MgmtSettings(

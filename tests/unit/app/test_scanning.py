@@ -118,6 +118,7 @@ def test_scan_members_are_every_name_in_a_pair_in_configuration_order() -> None:
     assert scan_members(site) == ("AP-1", "AP-2", "AP-3", "Ghost", "AP-4")
 
 
+@pytest.mark.security("T15")
 def test_targets_carry_alias_address_credentials_and_report_unknown_names() -> None:
     cfg = loaded({"ssh": {"scan_attempts": 3, "scan_interface_toggle": True}, "neighbors": NEIGHBOURS})
     targets, unknown = build_targets(snapshot(), cfg.config.sites["default"], cfg)
@@ -284,6 +285,7 @@ def test_errors_that_are_not_scan_errors_propagate() -> None:
         scan(ScanOrchestrator(Broken(), lambda s: None), cfg)
 
 
+@pytest.mark.security("T7")
 def test_every_scan_error_maps_onto_a_failure_kind() -> None:
     assert failure_kind(HostKeyUnknownError("x")) is ScanFailureKind.HOST_KEY_UNKNOWN
     from unifiwifioptimizer.domain import errors

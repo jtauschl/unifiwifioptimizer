@@ -2,12 +2,15 @@
 
 import io
 
+import pytest
+
 from unifiwifioptimizer.cli.progress import StderrProgress
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind
 
 RLO = chr(0x202E)
 
 
+@pytest.mark.security("T12")
 def test_stderr_progress_sanitises_names_and_names_the_failure_kind() -> None:
     out = io.StringIO()
     progress = StderrProgress(out)

@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -17,7 +18,12 @@ import pytest
 
 from unifiwifioptimizer.adapters.unifi.client import ClientOptions, UnifiClient
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
-from unifiwifioptimizer.adapters.unifi.tls import AbortableHTTPSConnection, TlsPolicy, observe_fingerprint
+from unifiwifioptimizer.adapters.unifi.tls import (
+    AbortableHTTPSConnection,
+    PinnedHTTPSConnection,
+    TlsPolicy,
+    observe_fingerprint,
+)
 from unifiwifioptimizer.config.schema import ControllerConfig
 from unifiwifioptimizer.domain.errors import ControllerError, ResponseTooLargeError, TlsError, TlsPinMismatchError
 from unifiwifioptimizer.domain.secrets import Secret
@@ -130,10 +136,12 @@ def routes() -> Iterator[None]:
     yield
 
 
+@pytest.mark.security("T3")
 def test_observe_fingerprint_returns_the_certificate_sha256(server: tuple[str, int], certificate: Certificate) -> None:
     assert observe_fingerprint(*server) == certificate.fingerprint
 
 
+@pytest.mark.security("T3")
 def test_pin_mode_accepts_the_right_certificate_and_sends_the_api_key(
     server: tuple[str, int], certificate: Certificate
 ) -> None:
@@ -144,6 +152,7 @@ def test_pin_mode_accepts_the_right_certificate_and_sends_the_api_key(
     assert Handler.seen_headers[-1]["X-API-KEY"] == "k" and Handler.seen_headers[-1]["Accept-Encoding"] == "identity"
 
 
+@pytest.mark.security("T3")
 def test_pin_mismatch_closes_before_any_request(server: tuple[str, int]) -> None:
     policy = TlsPolicy.from_options(None, bytes(32))
     client = UnifiClient(controller(server[1]), policy)
@@ -152,6 +161,7 @@ def test_pin_mismatch_closes_before_any_request(server: tuple[str, int]) -> None
     assert Handler.seen_headers == []
 
 
+@pytest.mark.security("T1")
 def test_system_roots_reject_the_self_signed_certificate(server: tuple[str, int]) -> None:
     client = UnifiClient(controller(server[1]), TlsPolicy.from_options(None, None))
     with pytest.raises(TlsError, match="certificate verification failed"):
@@ -159,6 +169,7 @@ def test_system_roots_reject_the_self_signed_certificate(server: tuple[str, int]
     assert Handler.seen_headers == []
 
 
+@pytest.mark.security("T2")
 def test_ca_file_mode_verifies_chain_and_hostname(server: tuple[str, int], certificate: Certificate) -> None:
     policy = TlsPolicy.from_options(certificate.cert, None)
     client = UnifiClient(controller(server[1]), policy)
@@ -169,6 +180,7 @@ def test_ca_file_mode_verifies_chain_and_hostname(server: tuple[str, int], certi
         observe_fingerprint("127.0.0.1", 1)
 
 
+@pytest.mark.security("T2")
 def test_ca_file_mode_rejects_a_certificate_that_does_not_name_the_host(
     dns_only_server: tuple[str, int], dns_only_certificate: Certificate
 ) -> None:
@@ -180,6 +192,7 @@ def test_ca_file_mode_rejects_a_certificate_that_does_not_name_the_host(
     assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy).sites().items) == 2
 
 
+@pytest.mark.security("T4", "T5")
 def test_redirect_encoding_and_body_cap_over_the_wire(server: tuple[str, int], certificate: Certificate) -> None:
     policy = TlsPolicy.from_options(None, certificate.fingerprint)
     Handler.routes["/redirect"] = (302, {"Location": "https://evil.example/"}, b"")
@@ -341,6 +354,7 @@ def test_a_stalled_handshake_ends_at_the_deadline_without_a_retry(certificate: C
     assert sleeps == []
 
 
+@pytest.mark.security("T10")
 def test_dump_writer_writes_masked_models_and_unknown_counts(
     server: tuple[str, int], certificate: Certificate, tmp_path: Path
 ) -> None:
@@ -359,3 +373,145 @@ def test_dump_writer_writes_masked_models_and_unknown_counts(
     again = json.loads(dump.write("s/default/empty", result).read_text())
     assert again["unknown_field_count"] == {}
     assert (written.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.security("T1")
+def test_system_roots_accept_a_chain_the_platform_store_trusts_and_still_check_the_hostname(
+    server: tuple[str, int],
+    dns_only_server: tuple[str, int],
+    certificate: Certificate,
+    dns_only_certificate: Certificate,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # System-roots mode is OpenSSL's default store; SSL_CERT_FILE is how that store is pointed at a test CA
+    # without touching the machine. The macOS Keychain is not consulted on this path either way.
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    policy = TlsPolicy.from_options(None, None)
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate.cert))
+    assert len(UnifiClient(controller(server[1]), policy).sites().items) == 2
+    # Trusted chain, wrong name: the hostname check is what rejects, not the chain.
+    monkeypatch.setenv("SSL_CERT_FILE", str(dns_only_certificate.cert))
+    with pytest.raises(
+        TlsError, match=r"verification failed for 127\.0\.0\.1: .*(IP address mismatch|Hostname mismatch)"
+    ):
+        UnifiClient(controller(dns_only_server[1]), policy).sites()
+    assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy).sites().items) == 2
+    # Right name, untrusted chain: the chain check rejects.
+    with pytest.raises(TlsError, match=r"verification failed for localhost: .*self.signed"):
+        UnifiClient(controller(server[1], host="localhost"), policy).sites()
+
+
+@pytest.mark.security("T3")
+def test_a_pin_mismatch_in_connect_leaves_no_socket_behind(server: tuple[str, int]) -> None:
+    connection = PinnedHTTPSConnection(server[0], server[1], bytes(32))
+    try:
+        with pytest.raises(TlsPinMismatchError):
+            connection.connect()
+        assert connection.sock is None
+    finally:
+        # The abort descriptor duplicates the socket; the client releases it with the connection.
+        connection.dispose()
+
+
+@contextmanager
+def eof_recording_server(
+    certificate: Certificate,
+) -> Iterator[tuple[tuple[str, int], list[tuple[bytes, float]], threading.Event]]:
+    """Accept one TLS connection, then wait for the client's first bytes: records what arrived (EOF = b"") and
+    how long it took. No session tickets, so the only thing the client can send after the handshake is a
+    request or a close."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(str(certificate.cert), str(certificate.key))
+    context.num_tickets = 0
+    seen: list[tuple[bytes, float]] = []
+    done = threading.Event()
+
+    def serve() -> None:
+        try:
+            conn, _ = listener.accept()
+        except OSError:
+            return
+        started = time.monotonic()
+        try:
+            with context.wrap_socket(conn, server_side=True) as tls:
+                tls.settimeout(5.0)
+                seen.append((tls.recv(16), time.monotonic() - started))
+        except OSError as exc:
+            seen.append((repr(exc).encode(), time.monotonic() - started))
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield ("127.0.0.1", listener.getsockname()[1]), seen, done
+    finally:
+        listener.close()
+        thread.join(timeout=5)
+
+
+@pytest.mark.security("T3")
+def test_a_pin_mismatch_closes_the_connection_at_once_with_zero_request_bytes(certificate: Certificate) -> None:
+    with eof_recording_server(certificate) as ((_host, port), seen, done):
+        client = UnifiClient(controller(port), TlsPolicy.from_options(None, bytes(32)))
+        with pytest.raises(TlsPinMismatchError):
+            client.sites()
+        assert done.wait(1.0), "the server never saw the client close"
+        assert len(seen) == 1 and seen[0][0] == b"" and seen[0][1] < 1.0
+
+
+@contextmanager
+def endless_body_server(certificate: Certificate) -> Iterator[tuple[tuple[str, int], list[str]]]:
+    """A response without Content-Length whose body never ends: the only way for a client to stop is to
+    give up while streaming. Records how the client went away."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(str(certificate.cert), str(certificate.key))
+    outcome: list[str] = []
+
+    def serve() -> None:
+        try:
+            conn, _ = listener.accept()
+        except OSError:
+            return
+        started = time.monotonic()
+        try:
+            with context.wrap_socket(conn, server_side=True) as tls:
+                tls.settimeout(1.0)
+                tls.recv(4096)
+                tls.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                while time.monotonic() - started < GIVE_UP_S:
+                    tls.sendall(b"[" + b"1," * 32768)
+                outcome.append("gave up")
+        except OSError as exc:
+            outcome.append(f"client gone ({type(exc).__name__})")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield ("127.0.0.1", listener.getsockname()[1]), outcome
+    finally:
+        listener.close()
+        thread.join(timeout=GIVE_UP_S + 5)
+
+
+@pytest.mark.security("T5")
+def test_the_streamed_cap_stops_a_body_that_never_ends(certificate: Certificate) -> None:
+    with endless_body_server(certificate) as ((_host, port), outcome):
+        policy = TlsPolicy.from_options(None, certificate.fingerprint)
+        options = ClientOptions(max_body_bytes=200_000, read_timeout_s=2.0)
+        client = UnifiClient(controller(port), policy, options)
+        started = time.monotonic()
+        with pytest.raises(ResponseTooLargeError, match="exceeds 200000 bytes"):
+            client.get("/endless")
+        # Stopped by the cap, not by the deadline: a client that read to EOF would hit the deadline instead.
+        assert time.monotonic() - started < 2.0
+        deadline = time.monotonic() + GIVE_UP_S + 2
+        while not outcome and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert outcome and outcome[0].startswith("client gone")

@@ -60,6 +60,7 @@ def test_a_missing_directory_is_created_private(tmp_path: Path) -> None:
     assert '"ssh_password": "***"' in text and "pw" not in json.loads(text)["models"].values()
 
 
+@pytest.mark.security("T10")
 def test_the_cli_dump_never_contains_the_controller_managed_ssh_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -78,6 +79,7 @@ def test_the_cli_dump_never_contains_the_controller_managed_ssh_password(
     ]
 
 
+@pytest.mark.security("T10")
 def test_the_cli_run_dump_writes_the_site_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
     monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
@@ -96,3 +98,22 @@ def test_a_symlinked_dump_directory_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match=r"--dump-api: cannot open directory"):
         DumpWriter(link).write("x", {"a": 1})
     assert list(real.iterdir()) == []
+
+
+@pytest.mark.security("T10")
+def test_the_sites_and_site_dumps_never_pull_in_the_settings_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The settings model (`mgmt`) is the only one that carries a secret; `config` is the one command that
+    # reads it. The other dumps stay free of it by construction, and this pins that construction: a site
+    # dump that started to include the settings would show up here before any redaction question arises.
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
+    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    directory = tmp_path / "dump"
+    assert cli.main(["--dump-api", str(directory), "sites"]) == ExitCode.OK
+    assert cli.main(["--dump-api", str(directory), "site", "default"]) == ExitCode.OK
+    sites = json.loads((directory / "self_sites.json").read_text())
+    site = json.loads((directory / "s_default.json").read_text())
+    assert "mgmt" not in sites["models"] and site["models"]["mgmt"] is None
+    for text in ((directory / "self_sites.json").read_text(), (directory / "s_default.json").read_text()):
+        assert "fixture-ssh-password" not in text and "ssh_password" not in text

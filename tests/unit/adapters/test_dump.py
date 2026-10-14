@@ -34,6 +34,7 @@ def test_plain_projection_masks_secrets_and_flattens_models() -> None:
     assert _plain(ip_address("192.0.2.1")) == "192.0.2.1"
 
 
+@pytest.mark.security("T10")
 def test_redact_masks_every_secret_looking_key_at_any_depth() -> None:
     document = {"x_passphrase": "a", "nested": [{"server_certificate_key": "b", "name": "c"}], "name": "d"}
     assert redact(document) == {
@@ -43,6 +44,7 @@ def test_redact_masks_every_secret_looking_key_at_any_depth() -> None:
     }
 
 
+@pytest.mark.security("T11")
 def test_the_run_dump_of_a_site_report_is_json_with_the_capture_time_in_iso_8601() -> None:
     assert _plain(datetime(2026, 10, 12, 15, 11, 32, tzinfo=UTC)) == "2026-10-12T15:11:32+00:00"
     report = analyze_site(golden_input(skip_scan=True))

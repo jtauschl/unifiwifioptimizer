@@ -2,10 +2,12 @@
 
 import os
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from tests.integration.local.race import swap_outcomes
 from unifiwifioptimizer.cli.init_command import initial_config_text, run_init
 from unifiwifioptimizer.config.loader import MAX_FILE_BYTES, read_private_file, write_new_private_file
 from unifiwifioptimizer.config.locations import resolve_config_location
@@ -32,6 +34,7 @@ def test_private_file_is_read(private_dir: Path) -> None:
 
 
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o660, 0o604, 0o620])
+@pytest.mark.security("T13")
 def test_group_or_world_access_on_the_file_is_an_error(private_dir: Path, mode: int) -> None:
     path = write(private_dir / "config.yaml", "a: 1\n", mode)
     with pytest.raises(ConfigError, match="accessible to other users"):
@@ -39,6 +42,7 @@ def test_group_or_world_access_on_the_file_is_an_error(private_dir: Path, mode: 
 
 
 @pytest.mark.parametrize("mode", [0o722, 0o702, 0o720, 0o777])
+@pytest.mark.security("T13")
 def test_group_or_world_writable_directory_is_an_error(private_dir: Path, mode: int) -> None:
     path = write(private_dir / "config.yaml", "a: 1\n")
     private_dir.chmod(mode)
@@ -49,6 +53,7 @@ def test_group_or_world_writable_directory_is_an_error(private_dir: Path, mode: 
         private_dir.chmod(0o700)
 
 
+@pytest.mark.security("T13")
 def test_symlinked_file_and_symlinked_directory_are_refused(private_dir: Path, tmp_path: Path) -> None:
     real = write(private_dir / "real.yaml", "a: 1\n")
     link = private_dir / "config.yaml"
@@ -61,6 +66,7 @@ def test_symlinked_file_and_symlinked_directory_are_refused(private_dir: Path, t
         read_private_file(dir_link / "real.yaml")
 
 
+@pytest.mark.security("T13")
 def test_fifo_and_directory_are_not_regular_files(private_dir: Path) -> None:
     fifo = private_dir / "fifo.yaml"
     os.mkfifo(fifo, 0o600)
@@ -72,6 +78,7 @@ def test_fifo_and_directory_are_not_regular_files(private_dir: Path) -> None:
         read_private_file(sub)
 
 
+@pytest.mark.security("T13")
 def test_missing_file_size_cap_and_encoding(private_dir: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         read_private_file(private_dir / "missing.yaml")
@@ -87,6 +94,7 @@ def test_missing_file_size_cap_and_encoding(private_dir: Path) -> None:
         read_private_file(binary)
 
 
+@pytest.mark.security("T13")
 def test_write_new_private_file_creates_0600_in_a_0700_directory_and_never_overwrites(tmp_path: Path) -> None:
     path = tmp_path / "new" / "deeper" / "config.yaml"
     write_new_private_file(path, "a: 1\n")
@@ -99,6 +107,7 @@ def test_write_new_private_file_creates_0600_in_a_0700_directory_and_never_overw
     assert read_private_file(path) == "a: 1\n"
 
 
+@pytest.mark.security("T13")
 def test_write_new_private_file_refuses_a_symlink_target(tmp_path: Path) -> None:
     target = tmp_path / "elsewhere.yaml"
     link = tmp_path / "config.yaml"
@@ -108,6 +117,7 @@ def test_write_new_private_file_refuses_a_symlink_target(tmp_path: Path) -> None
     assert not target.exists()
 
 
+@pytest.mark.security("T13")
 def test_init_prompts_validates_and_writes(tmp_path: Path) -> None:
     answers = iter(["https://unifi.example:8443", "SHA256:" + "A" * 43])
     secrets = iter(["my-api-key"])
@@ -120,6 +130,7 @@ def test_init_prompts_validates_and_writes(tmp_path: Path) -> None:
         run_init(path, prompt=lambda _p: "x", secret_prompt=lambda _p: "y")
 
 
+@pytest.mark.security("T13")
 def test_init_rejects_an_invalid_answer_before_writing(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     answers = iter(["http://plain.example", ""])
@@ -146,3 +157,70 @@ def test_default_is_chosen_unless_only_the_legacy_file_exists(tmp_path: Path) ->
     default.parent.mkdir(parents=True)
     default.write_text("x")
     assert resolve_config_location(None, env).path == default
+
+
+@pytest.mark.parametrize("mode", [0o610, 0o601])
+@pytest.mark.security("T13")
+def test_execute_bits_for_others_are_an_error_too(private_dir: Path, mode: int) -> None:
+    path = write(private_dir / "config.yaml", "a: 1\n", mode)
+    with pytest.raises(ConfigError, match="accessible to other users"):
+        read_private_file(path)
+
+
+@pytest.mark.security("T13")
+def test_a_file_or_directory_owned_by_someone_else_is_refused(
+    private_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write(private_dir / "config.yaml", "a: 1\n")
+    # The loader compares the descriptor's owner with the process owner; pretend to be another user.
+    someone_else = os.getuid() + 1
+    monkeypatch.setattr(os, "getuid", lambda: someone_else)
+    with pytest.raises(ConfigError, match="not owned by the current user"):
+        read_private_file(path)
+
+
+ORIGINAL = "original: true\n"
+ATTACKER = "attacker: true\n"
+
+
+def _swap_file(private_dir: Path, tmp_path: Path) -> Callable[[], None]:
+    attacker = tmp_path / "attacker.yaml"
+    attacker.write_text(ATTACKER)
+    attacker.chmod(0o644)
+
+    def swap() -> None:
+        attacker.replace(private_dir / "config.yaml")
+
+    return swap
+
+
+def _swap_directory(private_dir: Path, tmp_path: Path) -> Callable[[], None]:
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir(mode=0o700)
+    (attacker_dir / "config.yaml").write_text(ATTACKER)
+    (attacker_dir / "config.yaml").chmod(0o600)
+    parked = tmp_path / "parked"
+
+    def swap() -> None:
+        private_dir.rename(parked)
+        private_dir.symlink_to(attacker_dir)
+
+    return swap
+
+
+@pytest.mark.parametrize("case", ["file", "directory"])
+@pytest.mark.security("T13")
+def test_a_swap_between_check_and_read_never_yields_the_attackers_bytes(
+    case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fresh() -> tuple[Path, Callable[[], None]]:
+        base = tmp_path / f"run-{os.urandom(4).hex()}"
+        base.mkdir(mode=0o700)
+        private_dir = base / "cfg"
+        private_dir.mkdir(mode=0o700)
+        write(private_dir / "config.yaml", ORIGINAL)
+        swap = _swap_file(private_dir, base) if case == "file" else _swap_directory(private_dir, base)
+        return private_dir / "config.yaml", swap
+
+    for k, outcome in enumerate(swap_outcomes(monkeypatch, fresh, read_private_file, ORIGINAL), start=1):
+        assert outcome != ATTACKER, f"swap after call {k} ({case}) handed over the attacker's bytes"

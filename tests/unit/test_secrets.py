@@ -33,6 +33,7 @@ from unifiwifioptimizer.domain.secrets import Secret, is_secret_key
         "wan_credential",
     ],
 )
+@pytest.mark.security("T10")
 def test_secret_keys_are_recognised(key: str) -> None:
     assert is_secret_key(key)
 
@@ -42,6 +43,7 @@ def test_ordinary_keys_are_not_secret(key: str) -> None:
     assert not is_secret_key(key)
 
 
+@pytest.mark.security("T11")
 def test_secret_hides_its_value_from_repr_str_and_format() -> None:
     secret = Secret("hunter2")
     assert repr(secret) == "Secret(***)"
@@ -60,6 +62,7 @@ def test_secret_equality_and_truthiness_follow_the_value() -> None:
     assert not Secret("")
 
 
+@pytest.mark.security("T11")
 def test_secret_survives_model_projection_and_copy_as_an_opaque_object() -> None:
     mgmt = MgmtSettings(ssh_enabled=True, ssh_password_auth_enabled=True, ssh_user="u", ssh_password=Secret("hunter2"))
     projected = asdict(mgmt)

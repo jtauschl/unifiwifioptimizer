@@ -1,6 +1,9 @@
+import pytest
+
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 
 
+@pytest.mark.security("T19")
 def test_exit_code_values_are_the_documented_contract() -> None:
     assert {code.name: int(code) for code in ExitCode} == {
         "OK": 0,

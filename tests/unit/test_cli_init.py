@@ -36,6 +36,7 @@ def test_init_text_plus_config_skeleton_round_trips_through_the_loader() -> None
     assert site.neighbors == {"AP-1": frozenset(), "AP-2": frozenset(), "AP-3": frozenset(), "AP-4": frozenset()}
 
 
+@pytest.mark.security("T13")
 def test_run_init_validates_before_writing(monkeypatch: pytest.MonkeyPatch) -> None:
     written: list[tuple[Path, str]] = []
     monkeypatch.setattr(init_command, "write_new_private_file", lambda path, text: written.append((path, text)))
@@ -49,6 +50,7 @@ def test_run_init_validates_before_writing(monkeypatch: pytest.MonkeyPatch) -> N
     assert len(written) == 1
 
 
+@pytest.mark.security("T13")
 def test_run_init_refuses_an_existing_file(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Path, "exists", lambda self: True)
     with pytest.raises(ConfigError, match="already exists"):

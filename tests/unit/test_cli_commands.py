@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
@@ -128,6 +129,7 @@ def test_legacy_location_is_announced_on_stderr(
         (UwoError("other"), ExitCode.UNEXPECTED_ERROR),
     ],
 )
+@pytest.mark.security("T19")
 def test_exit_codes_follow_the_error_class(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], error: UwoError, code: ExitCode
 ) -> None:
@@ -205,6 +207,7 @@ def test_controller_fingerprint_rejects_malformed_urls_without_connecting(
     assert message in err and "TOPSECRET" not in err
 
 
+@pytest.mark.security("T12")
 def test_error_output_never_carries_terminal_escapes_from_a_pasted_skeleton(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -224,6 +227,7 @@ def test_error_output_never_carries_terminal_escapes_from_a_pasted_skeleton(
     assert "\x1b" not in err and "\x07" not in err and "expected a list of AP names" in err
 
 
+@pytest.mark.security("T12")
 def test_the_error_printer_itself_strips_escapes_that_arrive_through_a_path(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -280,6 +284,7 @@ def test_config_profiles_prints_the_shipped_profiles_without_a_configuration(
     assert "overrides from" not in out
 
 
+@pytest.mark.security("T12")
 def test_config_profiles_appends_the_override_file_and_sanitises_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -375,7 +380,7 @@ def run_faked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
     monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
     # Not reached under --no-scan; a loud failure proves it.
-    monkeypatch.setattr(cli, "check_openssh_version", lambda: (_ for _ in ()).throw(AssertionError("ssh -V ran")))
+    monkeypatch.setattr(cli, "check_openssh_version", lambda **kw: (_ for _ in ()).throw(AssertionError("ssh -V ran")))
 
 
 def test_run_without_scan_prints_the_text_report(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
@@ -422,3 +427,23 @@ def test_run_exit_codes_follow_the_verdict() -> None:
         cli.exit_code_for_run(result(verifiable_ap_count=0, partial_reasons=(PartialReason.SCAN_FAILED,)))
         == ExitCode.PARTIAL
     )
+
+
+@pytest.mark.security("T19")
+def test_run_exits_7_on_an_old_openssh_before_touching_the_controller_or_the_passwords(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Untouchable:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"the controller was contacted ({name}) before the environment check")
+
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (Untouchable(), None))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, stdout="", stderr="OpenSSH_8.3p1 Ubuntu\n"),
+    )
+    assert cli.main(["run"]) == ExitCode.ENVIRONMENT
+    assert "OpenSSH 8.3 found; 8.4 or newer is required" in capsys.readouterr().err

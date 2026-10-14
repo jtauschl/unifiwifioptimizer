@@ -171,20 +171,53 @@ cmd_test() {
   ok "pytest — unit tests passed"
 }
 
+# Each test tier records its own coverage data file; `coverage-layers` combines them. A tier that fails or
+# cannot start leaves no file behind (removed before any precondition and on the failure path), so the
+# combined report can never read stale data from an earlier run.
+UNIT_COVERAGE_FILE=.coverage.unit
+INTEGRATION_COVERAGE_FILE=.coverage.integration
+COMBINED_COVERAGE_FILE=.coverage.combined
+COVERAGE_FLOOR_PERCENT=85
+
 cmd_test_integration() {
+  rm -f "$INTEGRATION_COVERAGE_FILE"
   step "pytest — integration tests (Docker harness)"
   require_uv
   require_docker_daemon
-  uv run --locked --no-sync pytest -m integration tests/integration || fail "pytest: integration tests failed"
+  COVERAGE_FILE="$INTEGRATION_COVERAGE_FILE" uv run --locked --no-sync pytest -m integration tests/integration --cov --cov-report= || {
+    rm -f "$INTEGRATION_COVERAGE_FILE"
+    fail "pytest: integration tests failed"
+  }
   ok "pytest — integration tests passed"
 }
 
-# Unit tests under coverage; the hard floor lives in pyproject.toml ([tool.coverage.report] fail_under).
+# The hard floor of the two-tier coverage pattern, on the unit tier only; the soft per-layer targets are
+# `coverage-layers`. The floor is this command's own option, not a pyproject setting, so no other coverage
+# invocation (the integration tier, the combined report) inherits it.
 cmd_coverage() {
+  rm -f "$UNIT_COVERAGE_FILE"
   step "pytest — unit tests with coverage gate"
   require_uv
-  uv run --locked --no-sync pytest --cov --cov-report=term-missing || fail "pytest: tests failed or coverage below the floor"
+  COVERAGE_FILE="$UNIT_COVERAGE_FILE" uv run --locked --no-sync pytest --cov --cov-report=term-missing \
+    --cov-fail-under="$COVERAGE_FLOOR_PERCENT" || {
+    rm -f "$UNIT_COVERAGE_FILE"
+    fail "pytest: tests failed or coverage below the floor"
+  }
   ok "coverage — floor met"
+}
+
+# Soft tier: unit and integration data combined, one line per layer against its target plus the files
+# below it. A layer below target only prints; a missing tier fails, because that is an unmeasured tier.
+cmd_coverage_layers() {
+  step "coverage — per-layer soft targets over unit + integration"
+  require_uv
+  rm -f "$COMBINED_COVERAGE_FILE"
+  uv run --locked --no-sync coverage combine --keep --data-file="$COMBINED_COVERAGE_FILE" \
+    "$UNIT_COVERAGE_FILE" "$INTEGRATION_COVERAGE_FILE" ||
+    fail "coverage combine failed — run ./dev coverage and ./dev test-integration first"
+  uv run --locked --no-sync python -m tests.tools.coverage_layers --data-file "$COMBINED_COVERAGE_FILE" ||
+    fail "coverage-layers: a tier is unmeasured"
+  ok "coverage-layers — reported"
 }
 
 # Resolves the direct runtime dependency at its declared floor on a throwaway copy, so the committed
@@ -458,6 +491,7 @@ cmd_ci() {
   run_check "lint" cmd_lint
   run_check "coverage" cmd_coverage
   run_check "test-integration" cmd_test_integration
+  run_check "coverage-layers" cmd_coverage_layers
   run_check "lower-bound" cmd_lower_bound
   run_check "lock-check" cmd_lock_check
   run_check "licenses" cmd_licenses
@@ -524,6 +558,7 @@ cmd_help() {
   printf "  %-20s %s\n" "test" "pytest, unit tests"
   printf "  %-20s %s\n" "test-integration" "pytest -m integration against the Docker harness"
   printf "  %-20s %s\n" "coverage" "unit tests with the hard coverage floor"
+  printf "  %-20s %s\n" "coverage-layers" "per-layer soft targets over the unit + integration data"
   printf "  %-20s %s\n" "lower-bound" "resolve direct dependencies at their floor on a throwaway copy"
   printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt are current"
   printf "  %-20s %s\n" "lock-refresh" "recompile build-constraints.txt with hashes"
@@ -563,6 +598,7 @@ bandit) cmd_bandit ;;
 test) cmd_test ;;
 test-integration) cmd_test_integration ;;
 coverage) cmd_coverage ;;
+coverage-layers) cmd_coverage_layers ;;
 lower-bound) cmd_lower_bound ;;
 lock-check) cmd_lock_check ;;
 lock-refresh) cmd_lock_refresh ;;

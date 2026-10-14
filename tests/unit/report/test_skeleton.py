@@ -68,6 +68,7 @@ ODD_NAMES = [
 
 
 @pytest.mark.parametrize("name", ODD_NAMES)
+@pytest.mark.security("T12")
 def test_every_controller_name_round_trips_and_prints_without_raw_unsafe_characters(name: str) -> None:
     import dataclasses
     import unicodedata

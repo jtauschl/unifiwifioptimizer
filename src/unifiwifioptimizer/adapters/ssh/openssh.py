@@ -20,11 +20,12 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from importlib import resources
 from ipaddress import IPv4Address, IPv6Address
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import IO, Any, Protocol
 
-from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsReader
 from unifiwifioptimizer.adapters.ssh.iw_parser import parse_scan_output
+from unifiwifioptimizer.adapters.ssh.spawn_env import base_child_env
 from unifiwifioptimizer.domain.errors import (
     AddressRefusedError,
     HostKeyMismatchError,
@@ -96,10 +97,17 @@ def spawn(argv: Sequence[str], env: Mapping[str, str]) -> Process:
     )
 
 
-def check_openssh_version(run: Callable[[Sequence[str]], str] | None = None) -> tuple[int, int]:
-    """`ssh -V` must announce OpenSSH ≥ 8.4 (`SSH_ASKPASS_REQUIRE`); anything else is an environment error."""
+VersionRunner = Callable[[Sequence[str], Mapping[str, str]], str]
+
+
+def check_openssh_version(environ: Mapping[str, str], run: VersionRunner | None = None) -> tuple[int, int]:
+    """`ssh -V` must announce OpenSSH ≥ 8.4 (`SSH_ASKPASS_REQUIRE`); anything else is an environment error.
+
+    `environ` is the environment the scan itself will spawn `ssh` from, so the version checked is the one
+    that will run; a caller cannot leave it out."""
+    env = base_child_env(environ)
     try:
-        banner = (run or _ssh_version_banner)(["ssh", "-V"])
+        banner = (run or _ssh_version_banner)(["ssh", "-V"], env)
     except FileNotFoundError:
         raise ToolEnvironmentError("ssh not found on PATH; OpenSSH 8.4 or newer is required") from None
     match = _VERSION_RE.search(banner)
@@ -112,9 +120,9 @@ def check_openssh_version(run: Callable[[Sequence[str]], str] | None = None) -> 
     return version
 
 
-def _ssh_version_banner(argv: Sequence[str]) -> str:
+def _ssh_version_banner(argv: Sequence[str], env: Mapping[str, str]) -> str:
     completed = subprocess.run(  # noqa: S603 # nosec B603 — `ssh -V`, a fixed argv
-        list(argv), capture_output=True, text=True, timeout=10, check=False
+        list(argv), capture_output=True, text=True, timeout=10, check=False, env=dict(env)
     )
     return completed.stderr + completed.stdout
 
@@ -129,10 +137,10 @@ def locate_askpass() -> Path:
     return candidate.resolve()
 
 
-def option_path(path: Path) -> str:
+def option_path(path: PurePath) -> str:
     """A path as an `-o` option value: absolute, double-quoted (unquoted whitespace splits into two files),
     `%` doubled (OpenSSH expands `%` tokens in path options); a `"` cannot be quoted and is refused."""
-    text = str(path.resolve()) if not path.is_absolute() else str(path)
+    text = str(path) if path.is_absolute() else str(Path(path).resolve())
     if '"' in text or "\x00" in text:
         raise ToolEnvironmentError('a path handed to ssh must not contain `"` or NUL')
     return '"' + text.replace("%", "%%") + '"'
@@ -184,7 +192,7 @@ class SshInvocation:
 
 def build_invocation(
     target: ScanTarget,
-    known_hosts: Path,
+    known_hosts: PurePath,
     askpass: Path,
     script: bytes,
     environ: Mapping[str, str],
@@ -217,7 +225,7 @@ def build_invocation(
         "-o", "NumberOfPasswordPrompts=1",
         "-p", str(target.port),
     ]  # fmt: skip
-    env: dict[str, str] = {"PATH": environ.get("PATH", "/usr/bin:/bin"), "LC_ALL": "C"}
+    env = base_child_env(environ)
     if "HOME" in environ:
         env["HOME"] = environ["HOME"]
     if credentials.method is SshAuthMethod.PASSWORD:
@@ -372,7 +380,7 @@ class OpenSshScanner:
 
     def __init__(
         self,
-        known_hosts: KnownHostsStore,
+        known_hosts: KnownHostsReader,
         address_gate: AddressGate | None = None,
         *,
         process_factory: ProcessFactory = spawn,
@@ -380,7 +388,7 @@ class OpenSshScanner:
         script: bytes | None = None,
         environ: Mapping[str, str] | None = None,
         call_timeout_s: float = CALL_TIMEOUT_S,
-        version_check: Callable[[], Any] = check_openssh_version,
+        version_check: Callable[[], Any] | None = None,
     ) -> None:
         self._known_hosts = known_hosts
         # None: the gate follows each target's `allow_public_address`; a callable overrides it (harness).
@@ -390,7 +398,10 @@ class OpenSshScanner:
         self._script = script
         self._environ = dict(os.environ if environ is None else environ)
         self._call_timeout_s = call_timeout_s
-        self._version_check = version_check
+        # The default check spawns `ssh -V` from the same environment the scan spawns `ssh` from.
+        self._version_check: Callable[[], Any] = (
+            version_check if version_check is not None else lambda: check_openssh_version(self._environ)
+        )
         self._version_checked = False
 
     def scan(self, target: ScanTarget) -> ScanPass:

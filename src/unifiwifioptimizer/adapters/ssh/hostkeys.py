@@ -19,8 +19,10 @@ from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
-from pathlib import Path
+from pathlib import Path, PurePath
+from typing import Protocol
 
+from unifiwifioptimizer.adapters.ssh.spawn_env import base_child_env
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError, ToolEnvironmentError
 from unifiwifioptimizer.domain.hostkeys import FingerprintAlgorithm, HostKeyFingerprint, key_fingerprints
 
@@ -99,6 +101,17 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[written:]
 
 
+class KnownHostsReader(Protocol):
+    """What a scan may know about the store: where it is (ssh reads it by path) and whether an alias is in
+    it. Adding a key is not part of this view, and the location is a pure path, so by type the view offers
+    neither a way to widen the trust set nor any filesystem operation on the store."""
+
+    @property
+    def path(self) -> PurePath: ...
+
+    def has_alias(self, alias: str) -> bool: ...
+
+
 class KnownHostsStore:
     """`$XDG_STATE_HOME/unifiwifioptimizer/known_hosts`, or any path handed in; created 0600 in a 0700
     directory on the first write."""
@@ -128,7 +141,10 @@ class KnownHostsStore:
     def add(self, entry: KnownHostEntry) -> None:
         """Append one entry under a lock; an existing different key under the same alias is a conflict
         the caller has to resolve by hand (the tool never silently rotates a host key)."""
-        self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConfigError("known_hosts", f"cannot create directory {self._path.parent} ({exc.strerror})") from None
         dir_fd = self._open_directory()
         try:
             lock_fd = self._open_lock(dir_fd)
@@ -165,9 +181,14 @@ class KnownHostsStore:
         # Darwin's openat(O_CREAT) races against a concurrent creator and reports ENOENT; creating with
         # O_EXCL and falling back to a plain open is race-free on every platform.
         try:
-            fd = os.open(LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
-        except FileExistsError:
-            fd = os.open(LOCK_NAME, os.O_RDWR | os.O_NOFOLLOW, dir_fd=dir_fd)
+            try:
+                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
+            except FileExistsError:
+                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_NOFOLLOW, dir_fd=dir_fd)
+        except OSError as exc:
+            raise ConfigError(
+                "known_hosts", f"cannot open lock {self._path.parent / LOCK_NAME} ({exc.strerror})"
+            ) from None
         try:
             st = os.fstat(fd)
             if not stat.S_ISREG(st.st_mode):
@@ -251,7 +272,7 @@ def _run_keyscan(argv: Sequence[str]) -> str:
             capture_output=True,
             timeout=KEYSCAN_TOTAL_TIMEOUT_S,
             check=False,
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LC_ALL": "C"},
+            env=base_child_env(os.environ),
         )
     except FileNotFoundError:
         raise ToolEnvironmentError("ssh-keyscan not found on PATH (part of OpenSSH)") from None

@@ -268,6 +268,7 @@ def test_name_caps_admit_exactly_128_characters() -> None:
     Config.from_mapping(with_site({"ssh": {"password": "p" * 256, "user": "u"}}))
 
 
+@pytest.mark.security("T9")
 def test_error_messages_never_echo_the_value() -> None:
     with pytest.raises(ConfigError) as exc:
         Config.from_mapping(minimal(cert_fingerprint="TOPSECRET-looking-value"))

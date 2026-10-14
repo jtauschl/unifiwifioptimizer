@@ -182,6 +182,7 @@ def test_get_sends_the_api_key_identity_encoding_and_closes_the_connection() -> 
     assert log == ["arm", "connect", "cancel", "dispose"] and sleeps == []
 
 
+@pytest.mark.security("T11")
 def test_api_key_never_appears_in_the_client_repr() -> None:
     client, *_ = make_client()
     assert "k3y" not in repr(client) and "k3y" not in repr(vars(client))
@@ -190,12 +191,20 @@ def test_api_key_never_appears_in_the_client_repr() -> None:
 @pytest.mark.parametrize(
     ("code", "message"),
     [
+        (299, "unexpected status"),
+        (300, "redirect refused"),
         (301, "redirect refused"),
         (302, "redirect refused"),
+        (303, "redirect refused"),
+        (307, "redirect refused"),
+        (308, "redirect refused"),
+        (399, "redirect refused"),
+        (400, "unexpected status"),
         (401, "unexpected status 401"),
         (500, "unexpected status 500"),
     ],
 )
+@pytest.mark.security("T4")
 def test_redirects_and_other_statuses_are_errors_without_retry(code: int, message: str) -> None:
     client, log, sleeps, _ = make_client(status(code))
     with pytest.raises(ControllerError, match=message) as exc:
@@ -257,6 +266,7 @@ def test_other_os_errors_at_connect_are_controller_errors() -> None:
         client.get("/x")
 
 
+@pytest.mark.security("T5")
 def test_content_encoding_other_than_identity_is_refused_and_the_response_is_closed() -> None:
     client, _, _, connections = make_client(ok({"data": []}, **{"Content-Encoding": "gzip"}))
     with pytest.raises(ControllerError, match="Content-Encoding"):
@@ -266,6 +276,7 @@ def test_content_encoding_other_than_identity_is_refused_and_the_response_is_clo
     assert client.get("/x") == {"data": []}
 
 
+@pytest.mark.security("T5")
 def test_body_cap_is_enforced_on_the_declared_length_and_while_streaming() -> None:
     options = ClientOptions(max_body_bytes=100)
     client, *_ = make_client(lambda: FakeResponse(200, b"[]", {"Content-Length": "101"}), options=options)
@@ -287,6 +298,7 @@ def test_body_cap_is_enforced_on_the_declared_length_and_while_streaming() -> No
 
 
 @pytest.mark.parametrize("declared", ["x", "\u00b2", "2, 2", "-1", "1" * 21, "", " 2", "0x10"])
+@pytest.mark.security("T5")
 def test_malformed_content_length_is_refused_before_any_body_byte_is_read(declared: str) -> None:
     body = b"[1]"
     client, _, _, connections = make_client(lambda: FakeResponse(200, body, {"Content-Length": declared}))
@@ -405,6 +417,7 @@ def test_the_read_timeout_option_is_the_watchdog_budget() -> None:
     assert client.get("/x") == {"data": []} and watchdog.armed == [2.5]
 
 
+@pytest.mark.security("T5")
 def test_a_body_shorter_than_its_declared_length_is_refused() -> None:
     client, *_ = make_client(lambda: FakeResponse(200, b"[1]", {"Content-Length": "4"}))
     with pytest.raises(ControllerError, match="body shorter than Content-Length"):
@@ -428,11 +441,13 @@ def test_a_body_shorter_than_its_declared_length_is_refused() -> None:
         b'["\\ud83d"]',
     ],
 )
+@pytest.mark.security("T5")
 def test_decoding_rejects_bad_json_constants_and_deep_nesting(body: bytes) -> None:
     with pytest.raises(SchemaError):
         decode_json(body, "/x")
 
 
+@pytest.mark.security("T5")
 def test_decode_json_never_echoes_the_body() -> None:
     with pytest.raises(SchemaError) as exc:
         decode_json(b'{"TOPSECRET": ', "/x")

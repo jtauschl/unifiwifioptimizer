@@ -80,6 +80,7 @@ def test_require_ip_accepts_both_families() -> None:
         require_ip("192.0.2.256", "$")
 
 
+@pytest.mark.security("T5")
 def test_require_list_admits_exactly_the_cap() -> None:
     assert require_list([1, 2, 3], "$", 3) == [1, 2, 3]
     walk_depth({"data": [0] * MAX_LIST_ITEMS})
@@ -110,6 +111,7 @@ def test_require_mapping_and_list_name_the_path() -> None:
         require_list([1, 2], "$", 1)
 
 
+@pytest.mark.security("T5")
 def test_walk_depth_rejects_deep_nesting_without_recursing() -> None:
     nested: object = []
     for _ in range(5000):

@@ -858,6 +858,7 @@ CAP_CASES: list[tuple[str, Parser, Callable[[int], object], str, int]] = [
 
 
 @pytest.mark.parametrize(("name", "parser", "build", "path", "cap"), CAP_CASES, ids=[c[0] for c in CAP_CASES])
+@pytest.mark.security("T5")
 def test_item_caps_admit_exactly_the_cap(
     name: str, parser: Parser, build: Callable[[int], object], path: str, cap: int
 ) -> None:
@@ -1066,6 +1067,7 @@ def deep(kind: str, depth: int) -> object:
         parse.parse_sites,
     ],
 )
+@pytest.mark.security("T5")
 def test_every_parser_rejects_deep_nesting_before_reading(parser: Parser, kind: str) -> None:
     with pytest.raises(SchemaError, match=f"nesting deeper than {MAX_DEPTH}"):
         parser(

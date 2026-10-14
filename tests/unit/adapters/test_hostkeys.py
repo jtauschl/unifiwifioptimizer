@@ -38,6 +38,7 @@ def candidate(seed: int, key_type: str = "ssh-ed25519") -> HostKeyCandidate:
     return HostKeyCandidate(key_type, b64, sha256, md5)
 
 
+@pytest.mark.security("T14")
 def test_known_hosts_format_round_trips_and_refuses_foreign_lines() -> None:
     b64 = key(1)[0]
     text = f"{ALIAS} ssh-ed25519 {b64}\n"
@@ -65,6 +66,7 @@ def test_default_store_path_follows_xdg_state_home() -> None:
     assert default_store_path({}).as_posix().endswith("/.local/state/unifiwifioptimizer/known_hosts")
 
 
+@pytest.mark.security("T8")
 def test_expected_fingerprint_precedence_config_then_controller_then_tofu() -> None:
     pin = bytes(range(32))
     controller = HostKeyFingerprint(FingerprintAlgorithm.SHA256, pin)
@@ -80,6 +82,7 @@ def test_expected_fingerprint_precedence_config_then_controller_then_tofu() -> N
     assert expected_fingerprint(pin, md5) == Expectation((controller, md5), TrustBasis.CONFIG_PIN)
 
 
+@pytest.mark.security("T8")
 def test_select_candidate_wants_exactly_one_match_that_also_satisfies_the_controller() -> None:
     first, second = candidate(1), candidate(2, "ssh-rsa")
     assert select_candidate([first, second], Expectation((first.sha256,), TrustBasis.CONTROLLER)) is first
@@ -108,6 +111,7 @@ def test_trust_on_first_use_picks_the_key_openssh_negotiates_first() -> None:
         select_candidate([candidate(1, "ssh-dss")], unverified)
 
 
+@pytest.mark.security("T9", "T19")
 def test_keyscan_runner_failures_become_domain_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     import subprocess
 

@@ -14,6 +14,7 @@ from unifiwifioptimizer.domain.fingerprints import format_fingerprint
 PIN = bytes(range(32))
 
 
+@pytest.mark.security("T1")
 def test_policy_from_options_picks_exactly_one_mode() -> None:
     assert TlsPolicy.from_options(None, None).mode is TlsMode.SYSTEM_ROOTS
     assert TlsPolicy.from_options(Path("/ca.pem"), None) == TlsPolicy(mode=TlsMode.CA_FILE, ca_file=Path("/ca.pem"))
@@ -24,6 +25,7 @@ def test_policy_from_options_picks_exactly_one_mode() -> None:
         TlsPolicy.from_options(None, b"short")
 
 
+@pytest.mark.security("T3")
 def test_pinned_connection_requires_a_32_byte_pin_or_none() -> None:
     with pytest.raises(ValueError, match="32-byte"):
         PinnedHTTPSConnection("unifi.example", 443, pin=b"abc")
@@ -31,6 +33,7 @@ def test_pinned_connection_requires_a_32_byte_pin_or_none() -> None:
     assert connection.peer_fingerprint is None and connection.host == "unifi.example" and connection.port == 443
 
 
+@pytest.mark.security("T3")
 def test_observation_connection_refuses_to_carry_requests() -> None:
     connection = PinnedHTTPSConnection("unifi.example", 443, pin=None)
     with pytest.raises(TlsError, match="cannot carry requests"):
@@ -39,17 +42,20 @@ def test_observation_connection_refuses_to_carry_requests() -> None:
         open_connection(TlsPolicy(mode=TlsMode.PIN, pin=None), "h", 443)
 
 
+@pytest.mark.security("T1")
 def test_open_connection_returns_the_pinned_class_only_for_a_pin() -> None:
     assert isinstance(open_connection(TlsPolicy.from_options(None, PIN), "h", 443), PinnedHTTPSConnection)
     plain = open_connection(TlsPolicy.from_options(None, None), "h", 8443, timeout=3.0)
     assert not isinstance(plain, PinnedHTTPSConnection) and plain.port == 8443 and plain.timeout == 3.0
 
 
+@pytest.mark.security("T2")
 def test_ca_file_that_does_not_exist_is_a_configuration_error() -> None:
     with pytest.raises(ConfigError, match=r"controller\.ca_cert: cannot load the CA bundle"):
         open_connection(TlsPolicy.from_options(Path("/nonexistent/ca.pem"), None), "h", 443)
 
 
+@pytest.mark.security("T3")
 def test_observation_connection_refuses_every_write_path() -> None:
     connection = PinnedHTTPSConnection("unifi.example", 443, pin=None)
     with pytest.raises(TlsError, match="cannot carry requests"):
@@ -59,6 +65,7 @@ def test_observation_connection_refuses_every_write_path() -> None:
         connection.endheaders()
 
 
+@pytest.mark.security("T3")
 def test_pin_mismatch_shows_both_digests_in_the_form_the_configuration_takes() -> None:
     error = TlsPinMismatchError(bytes(32), bytes(range(32)))
     assert str(error) == (

@@ -133,6 +133,71 @@ SUPERSEDED: dict[str, str] = {
 # Tests of report rendering, site aggregation and controller fetch paths follow their layers' tickets.
 DEFERRED: dict[str, str] = {}
 
+# The shell suites' test ids, frozen: the suites leave the repo at the cut-over, and the inventory above
+# must keep proving every one of them afterwards. While the suites exist, the literal is compared with them.
+SHELL_TESTS: frozenset[str] = frozenset(
+    {
+        "roaming_test.sh::test_2g_only_site_no_fallback_trigger",
+        "roaming_test.sh::test_asymmetric_direction",
+        "roaming_test.sh::test_calculate_roaming_recommendation_default",
+        "roaming_test.sh::test_calculate_roaming_recommendation_margin_cap",
+        "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response",
+        "roaming_test.sh::test_fetch_site_apgroups_survives_unreachable_endpoint",
+        "roaming_test.sh::test_field_present_but_apgroups_empty_still_produces_row",
+        "roaming_test.sh::test_incomplete_all_group_ids_unknown",
+        "roaming_test.sh::test_incomplete_missing_sighting",
+        "roaming_test.sh::test_incomplete_no_relevant_neighbor",
+        "roaming_test.sh::test_incomplete_partial_missing_sighting",
+        "roaming_test.sh::test_incomplete_unconfigured_broadcasting_ap",
+        "roaming_test.sh::test_incomplete_unknown_group_id",
+        "roaming_test.sh::test_missing_new_field_no_row",
+        "roaming_test.sh::test_multi_site_tx_lo_isolation",
+        "roaming_test.sh::test_na_2g_only_wlan",
+        "roaming_test.sh::test_na_single_ap_wlan",
+        "roaming_test.sh::test_overlapping_groups_deduplicated",
+        "roaming_test.sh::test_site_wide_fallback_flag_set_when_any_wlan_has_field",
+        "roaming_test.sh::test_ssid_peer_filtering",
+        "roaming_test.sh::test_tie_handling_floor_clamp",
+        "security_test.sh::test_mlo_advisory_fires_on_pmf_optional",
+        "security_test.sh::test_mlo_advisory_fires_on_wpa2_only",
+        "security_test.sh::test_mlo_advisory_silent_for_6ghz_default_config",
+        "security_test.sh::test_mlo_advisory_silent_when_compliant",
+        "security_test.sh::test_mlo_advisory_silent_when_mlo_disabled",
+        "security_test.sh::test_mlo_advisory_silent_when_wpa3_enterprise_and_required",
+        "security_test.sh::test_sae_matches_wpa2_wpa3_personal",
+        "security_test.sh::test_sae_matches_wpa3_personal",
+        "security_test.sh::test_sae_rejects_owe",
+        "security_test.sh::test_sae_rejects_wpa2_wpa3_enterprise",
+        "security_test.sh::test_sae_rejects_wpa3_enterprise",
+        "security_test.sh::test_state_owe",
+        "security_test.sh::test_state_owe_transition",
+        "security_test.sh::test_state_wpa2_wpa3_enterprise",
+        "security_test.sh::test_state_wpa2_wpa3_personal",
+        "security_test.sh::test_state_wpa3_enterprise",
+        "security_test.sh::test_state_wpa3_personal",
+        "security_test.sh::test_wpa3_matches_all_four_variants",
+        "security_test.sh::test_wpa3_rejects_wpa2_and_owe",
+        "tx_test.sh::test_expected_disabled_and_actually_disabled_is_ok",
+        "tx_test.sh::test_expected_disabled_but_actually_enabled_is_flagged",
+        "tx_test.sh::test_expected_disabled_ignores_incomplete_aggregation",
+        "tx_test.sh::test_in_corridor_unchanged",
+        "tx_test.sh::test_na_band_not_broadcast_ignores_expected_false",
+        "tx_test.sh::test_na_band_not_broadcast_ignores_expected_true",
+        "tx_test.sh::test_na_older_api_ignores_expected_false",
+        "tx_test.sh::test_na_older_api_ignores_expected_true",
+        "tx_test.sh::test_partial_missing_peer_nudge_preserved",
+        "tx_test.sh::test_prepare_site_tx_checks_counts_zero_sightings",
+        "tx_test.sh::test_prepare_site_tx_checks_zero_when_all_ok",
+        "tx_test.sh::test_print_rec_tx_zero_sightings_flags_real_change",
+        "tx_test.sh::test_print_rec_tx_zero_sightings_no_flag_when_already_at_max",
+        "tx_test.sh::test_tx_pending_note_absent_on_normal_verdict",
+        "tx_test.sh::test_tx_pending_note_absent_when_no_pending",
+        "tx_test.sh::test_tx_pending_note_appears_when_incomplete_and_pending",
+        "tx_test.sh::test_zero_sightings_no_peer_unchanged",
+        "tx_test.sh::test_zero_sightings_with_peer_goes_to_max",
+    }
+)
+
 SHELL_TEST = re.compile(r"^(?:function\s+)?(test_[a-z0-9_]+)\s*(?:\(\))?\s*\{", re.MULTILINE)
 PYTEST_TEST = re.compile(r"^def (test_[a-z0-9_]+)\(", re.MULTILINE)
 
@@ -157,15 +222,19 @@ def test_shell_suites_are_present_until_the_cut_over() -> None:
     assert [s.name for s in SHELL_SUITES] == ["roaming_test.sh", "security_test.sh", "tx_test.sh"]
 
 
+def test_the_frozen_ids_are_exactly_the_shell_suites_tests() -> None:
+    assert shell_tests() == SHELL_TESTS
+
+
 def test_every_shell_test_is_ported_or_assigned_to_a_ticket() -> None:
     inventory = set(PORTED) | set(DEFERRED) | set(SUPERSEDED)
     assert len(inventory) == len(PORTED) + len(DEFERRED) + len(SUPERSEDED)
-    unaccounted = shell_tests() - inventory
+    unaccounted = SHELL_TESTS - inventory
     assert unaccounted == set()
 
 
-def test_every_inventory_entry_names_an_existing_shell_test() -> None:
-    assert (set(PORTED) | set(DEFERRED) | set(SUPERSEDED)) - shell_tests() == set()
+def test_every_inventory_entry_names_a_frozen_shell_test() -> None:
+    assert (set(PORTED) | set(DEFERRED) | set(SUPERSEDED)) - SHELL_TESTS == set()
 
 
 @pytest.mark.parametrize("target", sorted(set(PORTED.values())))

@@ -138,6 +138,7 @@ testpaths = ["tests"]
 addopts = "--strict-markers --strict-config -ra -m 'not integration'"
 markers = [
   "integration: needs the local Docker harness; excluded from the default run, run via ./dev test-integration",
+  "security(id, ...): proves one of the security topics T1-T19 listed in tests/unit/test_security_inventory.py",
 ]
 xfail_strict = true
 filterwarnings = ["error"]
@@ -147,8 +148,10 @@ source = ["unifiwifioptimizer"]
 branch = true
 
 [tool.coverage.report]
-# Hard floor for the whole package; per-layer soft targets live in CONTRIBUTING.md.
-fail_under = 85
+# No fail_under here: it would apply to every coverage invocation, including the integration tier and the
+# combined per-layer report (tests/tools/coverage_layers.py). The hard floor is `./dev coverage`'s own
+# --cov-fail-under on the unit tier; one decimal so the floor is 85.0, not a rounded 84.5.
+precision = 1
 show_missing = true
 skip_covered = false
 exclude_also = ["if TYPE_CHECKING:", "^\\s*\\.\\.\\.$"]

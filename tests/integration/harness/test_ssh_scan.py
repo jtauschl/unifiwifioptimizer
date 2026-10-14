@@ -1,6 +1,7 @@
 """The scanner against the harness access point: dropbear and OpenSSH servers, the real remote script, the
 stubbed radios, and every failure path the plan names."""
 
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -70,9 +71,14 @@ def test_askpass_helper_is_installed_as_a_console_script() -> None:
 
 
 @pytest.mark.parametrize("server", ["dropbear", "sshd"])
+@pytest.mark.security("T18")
 def test_a_full_scan_over_each_server_kind(fresh_ap: Harness, tmp_path: Path, server: str) -> None:
     port = fresh_ap.dropbear_port if server == "dropbear" else fresh_ap.sshd_port
-    result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port, attempts=2))
+    store = trusted_store(tmp_path, fresh_ap, port)
+    store_bytes, store_dir = store.path.read_bytes(), sorted(p.name for p in store.path.parent.iterdir())
+    result = scanner(store).scan(target(fresh_ap, port, attempts=2))
+    # A scan reads the store and never touches it: no entry, no lock, no temporary file.
+    assert store.path.read_bytes() == store_bytes and sorted(p.name for p in store.path.parent.iterdir()) == store_dir
     two = result.band(Band.GHZ_2)
     five = result.band(Band.GHZ_5)
     assert two is not None and five is not None
@@ -89,6 +95,7 @@ def test_a_full_scan_over_each_server_kind(fresh_ap: Harness, tmp_path: Path, se
     assert fresh_ap.toggles() == []
 
 
+@pytest.mark.security("T18")
 def test_the_interface_toggle_brings_the_scan_interface_up_and_restores_it(fresh_ap: Harness, tmp_path: Path) -> None:
     port = fresh_ap.dropbear_port
     result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port, toggle=True))
@@ -105,6 +112,7 @@ def test_a_wrong_password_is_an_authentication_failure(fresh_ap: Harness, tmp_pa
         scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port, password="wrong"))
 
 
+@pytest.mark.security("T6", "T7")
 def test_an_unknown_alias_never_connects_and_a_wrong_stored_key_is_refused_before_authentication(
     fresh_ap: Harness, tmp_path: Path
 ) -> None:
@@ -120,6 +128,7 @@ def test_an_unknown_alias_never_connects_and_a_wrong_stored_key_is_refused_befor
         scanner(wrong).scan(target(fresh_ap, port))
 
 
+@pytest.mark.security("T18")
 def test_a_hanging_scan_is_killed_at_the_call_budget_with_no_ssh_left_behind(fresh_ap: Harness, tmp_path: Path) -> None:
     port = fresh_ap.dropbear_port
     fresh_ap.set_knob("hang", True)
@@ -139,11 +148,22 @@ def test_a_hanging_scan_is_killed_at_the_call_budget_with_no_ssh_left_behind(fre
 
 
 @pytest.mark.parametrize("knob", ["flood", "longline"])
+@pytest.mark.security("T18")
 def test_output_caps_cut_the_connection(fresh_ap: Harness, tmp_path: Path, knob: str) -> None:
     port = fresh_ap.dropbear_port
     fresh_ap.set_knob(knob, True)
     with pytest.raises(ScanOutputTooLargeError):
         scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port))
+    # The breach kills the process group: no ssh is left behind locally, and the flooding scan on the access
+    # point meets the closed channel and ends.
+    alias = host_key_alias(ORIGIN, "default", MAC)
+    leftovers = subprocess.run(["pgrep", "-f", f"HostKeyAlias={alias}"], capture_output=True, text=True)
+    assert leftovers.stdout.strip() == ""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and fresh_ap.exec_ap("sh", "-c", "pgrep -x iw || true").stdout.strip():
+        time.sleep(0.5)
+    assert fresh_ap.exec_ap("sh", "-c", "pgrep -x iw || true").stdout.strip() == b""
+    assert fresh_ap.exec_ap("sh", "-c", "pgrep -f '^sleep 600' || true").stdout.strip() == b""
 
 
 @pytest.mark.parametrize(("knob", "status"), [("fail", BandScanStatus.FAILED), ("empty", BandScanStatus.EMPTY)])
@@ -206,6 +226,7 @@ def test_a_band_whose_ap_interface_is_down_has_no_radio(fresh_ap: Harness, tmp_p
         fresh_ap.exec_ap("sh", "-c", ": >/run/ifstate/ra0.up")
 
 
+@pytest.mark.security("T8")
 def test_trust_on_first_use_against_dropbear_then_a_scan(fresh_ap: Harness, tmp_path: Path) -> None:
     from unifiwifioptimizer.adapters.ssh.hostkeys import Expectation, TrustBasis, select_candidate
 
@@ -233,6 +254,7 @@ def _run_script_over_ssh(harness: Harness, tmp_path: Path, header: bytes) -> byt
     return completed.stdout
 
 
+@pytest.mark.security("T18")
 def test_the_remote_watchdog_ends_a_stuck_iw_scan_busybox_timeout(fresh_ap: Harness, tmp_path: Path) -> None:
     fresh_ap.set_knob("hang", True)
     started = time.monotonic()
@@ -243,6 +265,7 @@ def test_the_remote_watchdog_ends_a_stuck_iw_scan_busybox_timeout(fresh_ap: Harn
     assert fresh_ap.exec_ap("sh", "-c", "pgrep -f '^sleep 600' || true").stdout.strip() == b""
 
 
+@pytest.mark.security("T18")
 def test_the_remote_watchdog_falls_back_to_a_background_watcher_without_the_timeout_applet(fresh_ap: Harness) -> None:
     fresh_ap.set_knob("hang", True)
     started = time.monotonic()
@@ -262,6 +285,7 @@ def test_the_remote_watchdog_falls_back_to_a_background_watcher_without_the_time
     assert fresh_ap.exec_ap("sh", "-c", "pgrep -f '^sleep 2$' || true").stdout.strip() == b""
 
 
+@pytest.mark.security("T18")
 def test_an_old_busybox_timeout_syntax_is_detected_and_the_watcher_takes_over(fresh_ap: Harness) -> None:
     # /opt/oldtimeout/bin has a `timeout` that only knows `-t SECS`; `timeout 1 true` fails there, so the
     # script must not trust the applet's presence alone.
@@ -280,6 +304,7 @@ def test_an_old_busybox_timeout_syntax_is_detected_and_the_watcher_takes_over(fr
 
 
 @pytest.mark.parametrize("path", ["/opt/notimeout/bin", "/opt/oldtimeout/bin"])
+@pytest.mark.security("T18")
 def test_the_watcher_lets_a_healthy_scan_finish_and_leaves_no_sleep_behind(fresh_ap: Harness, path: str) -> None:
     completed = fresh_ap.exec_ap(
         "env", f"PATH={path}", "sh", "-s", stdin=b"SCAN_ATTEMPTS=1\nIFACE_TOGGLE=0\nSCAN_TIMEOUT_S=30\n" + load_script()
@@ -294,6 +319,7 @@ def test_the_watcher_lets_a_healthy_scan_finish_and_leaves_no_sleep_behind(fresh
     assert fresh_ap.exec_ap("sh", "-c", "pgrep -f '^sleep 30$' || true").stdout.strip() == b""
 
 
+@pytest.mark.security("T18")
 def test_the_watcher_keeps_the_scan_status_apart_from_its_own_kill(fresh_ap: Harness) -> None:
     fresh_ap.set_knob("empty", True)
     completed = fresh_ap.exec_ap(
@@ -307,21 +333,37 @@ def test_the_watcher_keeps_the_scan_status_apart_from_its_own_kill(fresh_ap: Har
     assert result.meta.watchdog == "watcher" and result.band(Band.GHZ_2).status is BandScanStatus.EMPTY  # type: ignore[union-attr]
 
 
-def test_the_remote_script_is_valid_busybox_ash_and_restores_toggled_interfaces_on_a_signal(fresh_ap: Harness) -> None:
+TRAPPED_SIGNALS = dict(re.findall(rb"^trap 'on_signal (\d+)' ([A-Z]+)$", load_script(), re.MULTILINE))
+MINIMUM_TRAPS = {b"HUP", b"INT", b"PIPE", b"TERM"}
+
+
+@pytest.mark.security("T18")
+def test_the_remote_script_traps_at_least_the_signals_a_dropped_session_can_deliver() -> None:
+    assert set(TRAPPED_SIGNALS.values()) >= MINIMUM_TRAPS
+
+
+@pytest.mark.security("T18")
+@pytest.mark.parametrize("signal_name", sorted(name.decode() for name in TRAPPED_SIGNALS.values() if name != b"PIPE"))
+def test_the_remote_script_is_valid_busybox_ash_and_restores_toggled_interfaces_on_a_signal(
+    fresh_ap: Harness, signal_name: str
+) -> None:
     assert fresh_ap.exec_ap("busybox", "sh", "-n", stdin=load_script()).returncode == 0
     # Toggle on, the 5 GHz scan interface down and its scan hanging: the script brings the interface up,
-    # sticks in `iw scan`, receives SIGTERM from the side, and the trap puts the interface down again.
+    # sticks in `iw scan`, receives the signal from the side, and the trap puts the interface down again.
+    # Every trapped signal is driven, derived from the script's own trap lines (PIPE has its own test).
+    number = int(next(n for n, name in TRAPPED_SIGNALS.items() if name == signal_name.encode()))
     fresh_ap.set_knob("hang-apclii0", True)
     completed = fresh_ap.exec_ap(
-        "sh", "-c", "( sleep 3; pkill -TERM -x sh ) >/dev/null 2>&1 & exec sh -s",
+        "sh", "-c", f"( sleep 3; pkill -{signal_name} -x sh ) >/dev/null 2>&1 & exec sh -s",
         stdin=b"SCAN_ATTEMPTS=1\nIFACE_TOGGLE=1\nSCAN_TIMEOUT_S=30\n" + load_script(),
         check=False,
     )  # fmt: skip
-    assert completed.returncode == 143, completed.stderr
+    assert completed.returncode == 128 + number, completed.stderr
     assert fresh_ap.toggles() == ["apclii0 up", "apclii0 down"]
     assert fresh_ap.exec_ap("sh", "-c", "test -e /run/ifstate/apclii0.up", check=False).returncode == 1
 
 
+@pytest.mark.security("T18")
 def test_a_vanished_ssh_client_lets_the_pipe_trap_restore_a_toggled_interface(
     fresh_ap: Harness, tmp_path: Path
 ) -> None:

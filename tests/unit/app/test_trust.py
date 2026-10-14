@@ -99,6 +99,7 @@ def test_fixture_access_points_cover_sha256_md5_and_unknown_controller_fingerpri
     assert sorted(kinds.values(), key=str) == [None, "md5", "sha256", "sha256"]
 
 
+@pytest.mark.security("T8")
 def test_verified_keys_are_stored_under_the_alias_and_the_basis_is_reported() -> None:
     aps = access_points()
     by_name = {ap.name: ap for ap in aps}
@@ -137,6 +138,7 @@ def test_verified_keys_are_stored_under_the_alias_and_the_basis_is_reported() ->
     assert report.failed is False
 
 
+@pytest.mark.security("T8")
 def test_config_pin_wins_and_a_conflict_with_the_controller_aborts_that_access_point() -> None:
     aps = access_points()
     with_controller = next(
@@ -173,6 +175,7 @@ def test_config_pin_wins_and_a_conflict_with_the_controller_aborts_that_access_p
     )
 
 
+@pytest.mark.security("T8")
 def test_unverified_keys_need_the_flag_or_a_yes_and_yes_alone_is_not_enough() -> None:
     aps = access_points()
     unverified = next(ap for ap in aps if not ap.ssh_host_key_fingerprint)
@@ -232,6 +235,7 @@ def test_ambiguity_a_stored_different_key_and_unknown_names_are_reported_not_fat
     )
 
 
+@pytest.mark.security("T8")
 def test_trust_on_first_use_takes_the_preferred_key_type_from_a_multi_key_server() -> None:
     aps = access_points()
     unverified = next(ap for ap in aps if not ap.ssh_host_key_fingerprint)
@@ -248,6 +252,7 @@ def test_trust_on_first_use_takes_the_preferred_key_type_from_a_multi_key_server
     assert store.rows[0].key_type == "ssh-ed25519"
 
 
+@pytest.mark.security("T15")
 def test_a_public_address_is_refused_before_any_keyscan_unless_the_site_opts_in() -> None:
     import dataclasses
     from ipaddress import ip_address

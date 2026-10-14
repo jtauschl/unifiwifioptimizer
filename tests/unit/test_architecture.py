@@ -406,11 +406,36 @@ def check_tls_bypass_confinement(tree: ast.Module, relpath: str) -> list[str]:
     return found
 
 
+SPAWN_ENV_REQUIRED = frozenset(
+    {"subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output"}
+)
+
+
+def check_spawn_env(tree: ast.Module, relpath: str) -> list[str]:
+    """Every process the SSH adapters start gets an explicit environment: `env=` absent (the parent's
+    environment, credentials included, would be inherited), `env=None` (the same) or hidden behind `**kwargs`
+    are all violations."""
+    if not relpath.startswith("adapters/ssh/"):
+        return []
+    aliases = aliases_of(tree, relpath)
+    found = []
+    for call, names in calls(tree, aliases):
+        if not names & SPAWN_ENV_REQUIRED:
+            continue
+        env = next((k for k in call.keywords if k.arg == "env"), None)
+        if env is None:
+            found.append("spawns a process without an explicit env=")
+        elif isinstance(env.value, ast.Constant) and env.value.value is None:
+            found.append("spawns a process with env=None, which inherits the parent's environment")
+    return found
+
+
 CHECKERS: dict[str, Checker] = {
     "core-imports": check_core_imports,
     "dynamic-imports": check_dynamic_imports,
     "layer-imports": check_layer_imports,
     "process-spawn-location": check_process_spawn_location,
+    "spawn-env-required": check_spawn_env,
     "shell-execution": check_shell_execution,
     "json-parse-location": check_json_parse_location,
     "ssl-location": check_ssl_location,
@@ -424,6 +449,7 @@ def test_the_core_has_source_files() -> None:
 
 @pytest.mark.parametrize("path", source_files(), ids=relative)
 @pytest.mark.parametrize("checker", CHECKERS.values(), ids=list(CHECKERS))
+@pytest.mark.security("T1", "T9", "T16")
 def test_source_file_passes_every_gate(path: Path, checker: Checker) -> None:
     assert checker(parse(path), relative(path)) == []
 
@@ -492,6 +518,10 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run('ls', shell=flag)\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ls'], **opts)\n"),
     ("shell-execution", "adapters/ssh/openssh.py", "import subprocess as sp\nsp.Popen(['ls'], **{'shell': True})\n"),
+    ("spawn-env-required", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ssh', '-V'])\n"),
+    ("spawn-env-required", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.run(['ssh', '-V'], env=None)\n"),
+    ("spawn-env-required", "adapters/ssh/hostkeys.py", "import subprocess as sp\nsp.Popen(['ssh'], **opts)\n"),
+    ("spawn-env-required", "adapters/ssh/hostkeys.py", "from subprocess import check_output\ncheck_output(['ssh'])\n"),
     ("shell-execution", "cli/x.py", "import os\nos.system('ls')\n"),
     ("shell-execution", "cli/x.py", "from os import system\nsystem('ls')\n"),
     ("shell-execution", "cli/x.py", "import os as o\no.popen('ls')\n"),
@@ -622,6 +652,13 @@ def test_checker_rejects_known_bad_snippet(checker_name: str, relpath: str, snip
 
 
 GOOD_SNIPPETS: list[tuple[str, str, str]] = [
+    (
+        "spawn-env-required",
+        "adapters/ssh/openssh.py",
+        "import subprocess\nsubprocess.run(['ssh', '-V'], env=dict(e))\n",
+    ),
+    ("spawn-env-required", "adapters/ssh/openssh.py", "import subprocess\nsubprocess.CompletedProcess(['ssh'], 0)\n"),
+    ("spawn-env-required", "cli/x.py", "import subprocess\nsubprocess.run(['ls'])\n"),
     (
         "core-imports",
         "rf/x.py",

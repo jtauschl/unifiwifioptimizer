@@ -6,6 +6,7 @@ tool did not foresee is 1.
 """
 
 import argparse
+import os
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -258,18 +259,20 @@ def _run(args: argparse.Namespace) -> ExitCode:
     _warn_legacy(loaded)
     profiles = load_profiles(args.profiles_file, loaded.location).profiles
     client, dump = _client(loaded, args)
+    # One environment for the version check and the scans, so `ssh -V` judges the `ssh` the scan will run.
+    environ = dict(os.environ)
     result = run_analysis(
         loaded,
         profiles,
         client,
-        lambda: OpenSshScanner(KnownHostsStore(default_store_path())),
+        lambda: OpenSshScanner(KnownHostsStore(default_store_path()), environ=environ),
         SystemClock(),
         time.sleep,
         StderrProgress(),
         sites=args.site or None,
         with_clients=args.clients,
         skip_scan=args.no_scan,
-        environment_check=check_openssh_version,
+        environment_check=lambda: check_openssh_version(environ),
     )
     if dump is not None:
         for report in result.reports:

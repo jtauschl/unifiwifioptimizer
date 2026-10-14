@@ -79,11 +79,13 @@ def invocation(ap_address: IPv4Address, password: str = SCAN_PASSWORD) -> tuple[
     return built.argv, dict(built.env), built.stdin
 
 
+@pytest.mark.security("T17")
 def test_the_container_runs_openssh_8_4(harness: Harness) -> None:
     banner = ssh84("ssh", "-V").stderr.decode() + ssh84("ssh", "-V").stdout.decode()
     assert "OpenSSH_8.4" in banner
 
 
+@pytest.mark.security("T17")
 def test_the_exact_argv_scans_through_openssh_8_4_with_askpass_and_a_quoted_store_path(
     fresh_ap: Harness, ap_address: IPv4Address, known_hosts: Path
 ) -> None:
@@ -95,6 +97,7 @@ def test_the_exact_argv_scans_through_openssh_8_4_with_askpass_and_a_quoted_stor
     assert two is not None and two.status is BandScanStatus.OK and len(two.readings) == 3
 
 
+@pytest.mark.security("T17")
 def test_a_file_named_none_in_the_working_directory_changes_nothing(
     fresh_ap: Harness, ap_address: IPv4Address, known_hosts: Path
 ) -> None:
@@ -110,6 +113,7 @@ def test_a_file_named_none_in_the_working_directory_changes_nothing(
     assert parse_scan_output(result.stdout).band(Band.GHZ_2).status is BandScanStatus.OK  # type: ignore[union-attr]
 
 
+@pytest.mark.security("T9", "T17")
 def test_a_wrong_password_through_askpass_is_permission_denied_not_a_prompt(
     fresh_ap: Harness, ap_address: IPv4Address, known_hosts: Path
 ) -> None:
@@ -119,6 +123,7 @@ def test_a_wrong_password_through_askpass_is_permission_denied_not_a_prompt(
     assert b"Permission denied" in result.stderr and b"password:" not in result.stdout
 
 
+@pytest.mark.security("T6")
 def test_an_unknown_alias_is_refused_by_strict_host_key_checking(
     fresh_ap: Harness, ap_address: IPv4Address, known_hosts: Path
 ) -> None:

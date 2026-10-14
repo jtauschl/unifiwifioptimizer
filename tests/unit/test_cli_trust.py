@@ -1,11 +1,12 @@
 """`trust-host-keys` through `main`: arguments, confirmation wiring, exit codes, no raw strings on the terminal."""
 
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from tests.unit.test_cli_commands import FixtureApi, loaded
+from tests.unit.test_cli_commands import SCANNING_SITE, FixtureApi, configured, loaded
 from unifiwifioptimizer.adapters.ssh.hostkeys import TrustBasis
 from unifiwifioptimizer.app.trust import TrustOutcome, TrustReport, TrustResult
 from unifiwifioptimizer.cli import main as cli
@@ -37,6 +38,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, object]]:
     yield seen
 
 
+@pytest.mark.security("T8", "T12")
 def test_trust_host_keys_wires_arguments_prints_each_result_and_exits_5_on_a_failure(
     wired: dict[str, object], capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
@@ -64,6 +66,7 @@ def test_trust_host_keys_wires_arguments_prints_each_result_and_exits_5_on_a_fai
     assert "\x1b" not in out and "failed 2 host keys offered" in out
 
 
+@pytest.mark.security("T8")
 def test_trust_host_keys_defaults_to_the_xdg_store_and_asks_through_the_terminal(
     wired: dict[str, object], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -102,3 +105,23 @@ def test_a_trust_error_exits_5(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
 
 def test_exit_code_mapping_covers_the_host_key_class() -> None:
     assert cli._exit_code_for(HostKeyTrustError("x")) is ExitCode.HOST_KEY
+
+
+@pytest.mark.security("T19")
+def test_trust_host_keys_exits_7_when_ssh_keyscan_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Through the real trust flow and the real keyscan runner: only the spawn is replaced, so the mapping of a
+    # missing binary onto the environment exit code is what this test exercises.
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+
+    def missing(argv: list[str], **kwargs: object) -> None:
+        raise FileNotFoundError(argv[0])
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    assert (
+        cli.main(["trust-host-keys", "--site", "default", "--known-hosts", str(tmp_path / "known_hosts"), "--yes"])
+        == ExitCode.ENVIRONMENT
+    )
+    assert "ssh-keyscan not found" in capsys.readouterr().err
