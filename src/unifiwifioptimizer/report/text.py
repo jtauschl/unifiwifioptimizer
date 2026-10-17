@@ -1,6 +1,8 @@
 """Plain-text renderers: the read-only subcommands and the analysis report. No colour codes — the report is
 read in terminals and pasted into tickets alike; `--json` exists for machines."""
 
+import re
+import textwrap
 from collections.abc import Mapping
 
 from unifiwifioptimizer.app.use_cases import SiteOverview, SitesOverview
@@ -30,7 +32,7 @@ from unifiwifioptimizer.domain.report import (
     SiteReport,
     WlanRoamingSummary,
 )
-from unifiwifioptimizer.report.safe_text import safe_text
+from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
 from unifiwifioptimizer.report.ui_paths import ui_path
 
 
@@ -115,6 +117,9 @@ RULE = "━" * 64
 LABEL = 34
 NAME = 24
 LINE_MAX = 160
+# The report is read in terminals and pasted into tickets; a sentence longer than this is folded with a
+# hanging indent so that a value column or a bullet stays recognisable as the start of its line.
+WIDTH = 100
 SETTING_LABEL: Mapping[str, str] = {TX_POWER: "Transmit Power", MIN_RSSI: "Minimum RSSI"}
 CHECK_LABELS: Mapping[str, str] = {
     "wlan_enabled": "WLAN Enabled",
@@ -132,7 +137,9 @@ SCOPE_NOTE = (
 
 
 def name(value: str) -> str:
-    return safe_text(value, NAME)
+    """An access point or WLAN name wherever the report prints one; names open lines, so they may not start
+    with one of the report's own marks."""
+    return safe_line_start(value, NAME)
 
 
 def check_label(code: str) -> str:
@@ -223,21 +230,23 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
         if detail.cap is RoamingCap.NONE:
             continue
         where = f"weakest neighbour {name(detail.weakest_peer)} at {detail.weakest_rssi_dbm} dBm"
+        # Plain detail lines under the check, like the incomplete reasons and the notes: a bullet glyph
+        # here would read as a severity.
         if detail.cap is RoamingCap.FLOOR:
             lines.append(
-                f"        * {name(detail.ap)}: {where} would give {detail.raw_cap_dbm} dBm at the client, below the "
+                f"        {name(detail.ap)}: {where} would give {detail.raw_cap_dbm} dBm at the client, below the "
                 f"floor {report.rf.roam_floor_dbm} dBm; clamped to the floor ({detail.uplink_dbm} dBm on the "
                 "uplink) — no reachable roaming neighbour, fix placement"
             )
         else:
             lines.append(
-                f"        * {name(detail.ap)}: lowered to {detail.uplink_dbm} dBm on the uplink; {where} is below "
+                f"        {name(detail.ap)}: lowered to {detail.uplink_dbm} dBm on the uplink; {where} is below "
                 "the corridor"
             )
     if summary.limiting and summary.status is WlanRoamingStatus.OK:
         lines.append(f"        limiting access point(s): {', '.join(name(a) for a in summary.limiting)}")
     if summary.status is WlanRoamingStatus.INCOMPLETE:
-        lines += [f"        {safe_text(reason, LINE_MAX)}" for reason in summary.reasons]
+        lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons]
     if summary.tx_change_pending:
         lines.append(
             f"        Note: {report.pending_tx_changes} pending transmit-power change(s) on this site; apply those "
@@ -431,7 +440,8 @@ def _footer(report: SiteReport) -> list[str]:
     return lines
 
 
-def render_report(report: SiteReport) -> str:
+def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
+    """The text report; `width` folds longer lines (None keeps every line whole)."""
     lines: list[str] = [""]
     lines += _header(
         "Site",
@@ -452,8 +462,64 @@ def render_report(report: SiteReport) -> str:
             label = safe_text(device.name) if device.name is not None else (device.mac or "unknown device")
             lines.append(f"  ✗ {label}: not usable ({safe_text(device.reason, 120)})")
         lines.append("")
-    lines.append(render_problems(report.field_problems).rstrip("\n"))
+    # One problem per line: the block is split before folding, or the fold would run it into a paragraph.
+    lines += render_problems(report.field_problems).rstrip("\n").splitlines()
     if report.field_problems:
         lines.append("")
     lines += _footer(report)
-    return "\n".join(lines) + "\n"
+    if width is None:
+        return "\n".join(lines) + "\n"
+    return "\n".join(_fold(line, width) for line in lines) + "\n"
+
+
+_VALUE_COLUMN = re.compile(r"  +(?=\S)")
+
+
+def _glue_marks(line: str) -> tuple[str, list[str]]:
+    """Folding must never break before a report mark: a name like `x ✗ Minimum RSSI` would otherwise open a
+    continuation line exactly like a check line. Every blank run whose first visible character (blanks,
+    invisible leaders and combining marks skipped, as in `safe_line_start`) is a mark becomes NUL for the
+    wrap — NUL never survives `safe_text` — and `_unglue` restores the original blanks afterwards."""
+    glued: list[str] = []
+    blanks: list[str] = []
+    index = 0
+    while index < len(line):
+        if not line[index].isspace():
+            glued.append(line[index])
+            index += 1
+            continue
+        end = index
+        while end < len(line) and hides_nothing(line[end]):
+            end += 1
+        run = line[index:end]
+        if end < len(line) and line[end] in REPORT_MARKS:
+            blanks.extend(char for char in run if char.isspace())
+            run = "".join("\x00" if char.isspace() else char for char in run)
+        glued.append(run)
+        index = end
+    return "".join(glued), blanks
+
+
+def _unglue(folded: str, blanks: list[str]) -> str:
+    restored = iter(blanks)
+    return "".join(next(restored) if char == "\x00" else char for char in folded)
+
+
+def _fold(line: str, width: int) -> str:
+    """A line longer than `width` continues on the next line under its value column (a label or mark
+    padded to a column, as in the check, recommendation and environment lines) or, without one, two
+    columns past its leading whitespace, i.e. past a one-character bullet — so the continuation can never
+    be mistaken for a new item. Width counts code points, not terminal cells: a line overruns the width on
+    screen by up to one column for every East Asian wide character on it. A double space inside a name is taken
+    for the value column; the `width // 2` guard keeps such a continuation in the left half."""
+    if len(line) <= width:
+        return line
+    indent = len(line) - len(line.lstrip(" "))
+    mark = line[indent:].split(" ", 1)[0]
+    column = _VALUE_COLUMN.search(line, indent + len(mark))
+    hanging = " " * (column.end() if column is not None and column.end() < width // 2 else indent + 2)
+    glued, blanks = _glue_marks(line)
+    folded = textwrap.fill(
+        glued, width=width, subsequent_indent=hanging, break_long_words=False, break_on_hyphens=False
+    )
+    return _unglue(folded, blanks)

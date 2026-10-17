@@ -86,7 +86,11 @@ def resolve_credentials(
                 f"{path}.auth", "controller mode, but the controller's SSH user was rejected (not a user name)"
             )
         if mgmt.ssh_user is None or mgmt.ssh_password is None:
-            raise ConfigError(f"{path}.auth", "controller mode, but the controller reports no SSH user or password")
+            raise ConfigError(
+                f"{path}.auth",
+                "controller mode, but the controller reports no SSH user or password (the API key needs the "
+                "full Administrator role; a View Only key cannot read device secrets)",
+            )
         if ssh.user is not None and ssh.user != mgmt.ssh_user:
             raise ConfigError(f"{path}.user", "differs from the SSH user the controller manages")
         return SshCredentials(

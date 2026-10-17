@@ -68,7 +68,8 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - A 6 GHz DTIM value in a profile is reported as not evaluable (6 GHz is detect-only); a WLAN on 6 GHz shows its `roaming_assistant_6e_enabled` switch as a separate, not evaluable result for the same reason.
 - Roaming Assistant migrated from a per-AP RF-tuning recommendation to a per-WLAN compliance check next to Fast Roaming, matching UniFi's move of the setting from radio level (`radio_table`) to WLAN level (`wlanconf.roaming_assistant_na_*`). The target threshold is still computed from the same site-aware corridor as before, aggregated (as a conservative minimum) across the APs that broadcast each WLAN, restricted to each AP's configured RF neighbors that also broadcast that SSID.
 - WLANs whose broadcasting APs have incomplete data (a broadcasting AP with no SSID-relevant RF neighbor, or a missing neighbor sighting) are reported `Incomplete` with the specific reason, instead of a ✓/✗ verdict computed from a partial data set.
-- On older controllers where no WLAN exposes the new field, the tool falls back site-wide to the previous per-AP behavior.
+- The text report folds lines longer than 100 columns; a continuation starts under the line's value column or past its bullet, never where a new item would.
+- `ssh.auth: controller` (the default) reads the controller-managed SSH password through the API key, so the key must belong to a full Administrator; a View Only key cannot see device secrets, and the error says so.
 
 ## [0.4.0] - 2026-05-06
 

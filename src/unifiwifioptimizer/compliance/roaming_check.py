@@ -67,14 +67,16 @@ def roaming_assistant_check(profile: Profile, wlan: WlanConfig, threshold_dbm: i
         if not enabled:
             return _result(wlan, CheckStatus.PASSED, "disabled per profile", "Disabled", actual)
         return _result(wlan, CheckStatus.FAILED, "enabled, but the profile expects it disabled", "Disabled", actual)
+    # The derived threshold is the value to set, so it is part of the expectation whenever the analysis
+    # produced one — also when the assistant is off or the controller reports no value.
+    expected = "Enabled" if threshold_dbm is None else f"Enabled, {threshold_dbm} dBm"
     if not enabled:
-        return _result(wlan, CheckStatus.FAILED, "the profile expects it enabled", "Enabled", actual)
+        return _result(wlan, CheckStatus.FAILED, "the profile expects it enabled", expected, actual)
     if wlan.roaming_assistant_na_rssi is None:
-        return _result(wlan, CheckStatus.FAILED, RSSI_NOT_SENT, "Enabled", actual)
+        return _result(wlan, CheckStatus.FAILED, RSSI_NOT_SENT, expected, actual)
     if threshold_dbm is None:
         return _result(
             wlan, CheckStatus.INCOMPLETE, "threshold not available without neighbour data", "Enabled", actual
         )
-    expected = f"Enabled, {threshold_dbm} dBm"
     status = CheckStatus.PASSED if wlan.roaming_assistant_na_rssi == threshold_dbm else CheckStatus.FAILED
     return _result(wlan, status, "", expected, actual)

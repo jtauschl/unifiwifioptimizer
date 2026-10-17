@@ -50,6 +50,10 @@ def test_profile_expecting_it_on_with_a_threshold() -> None:
     assert off_by_one.status is CheckStatus.FAILED and off_by_one.actual == "Enabled, -71 dBm"
     disabled = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=False), -70)
     assert disabled.status is CheckStatus.FAILED and disabled.actual == "Disabled"
+    # The derived threshold is the value to set once switched on, so the expectation carries it.
+    assert disabled.expected == "Enabled, -70 dBm"
+    no_rssi = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=True), -70)
+    assert no_rssi.status is CheckStatus.FAILED and no_rssi.expected == "Enabled, -70 dBm"
 
 
 def test_a_switched_on_assistant_without_a_reported_rssi_is_its_own_deviation_never_a_number() -> None:

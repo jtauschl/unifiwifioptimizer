@@ -10,7 +10,7 @@ from hypothesis import strategies as st
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.app.use_cases import SiteOverview, SitesOverview, SiteSummary
 from unifiwifioptimizer.domain.models import FieldProblem, Site, UnparsableDevice
-from unifiwifioptimizer.report.safe_text import UNSAFE_CATEGORIES, safe_text
+from unifiwifioptimizer.report.safe_text import UNSAFE_CATEGORIES, safe_line_start, safe_text
 from unifiwifioptimizer.report.text import render_problems, render_site, render_sites
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -19,6 +19,17 @@ FIXTURES = Path(__file__).parents[2] / "fixtures"
 @pytest.mark.security("T12")
 def test_safe_text_strips_escapes_controls_and_bidi_and_truncates() -> None:
     assert safe_text("plain name") == "plain name"
+    # A string that opens a report line may not start with one of the report's own marks: an access point
+    # named `→ AP settings → …` would read as a UI path. Elsewhere (error texts) `--url` stays as it is.
+    assert safe_line_start("→ AP settings → Radios") == "� AP settings → Radios"
+    assert safe_line_start("✗ not a check") == "� not a check" and safe_line_start("a → b") == "a → b"
+    # Leading blanks of any kind do not hide the mark; lookalike glyphs are not the report's marks.
+    assert safe_line_start(" → x") == " � x" and safe_line_start("\u00a0\u3000→ x") == "\u00a0\u3000� x"
+    assert safe_line_start("➔ x") == "➔ x" and safe_line_start("   ") == "   "
+    # Invisible leaders (a combining mark with no base, a Hangul filler, the braille blank) do not hide it either.
+    assert safe_line_start("\u034f→ x") == "\u034f� x" and safe_line_start("\u3164→ x") == "\u3164� x"
+    assert safe_line_start("\u2800\ufe0f✗ x") == "\u2800\ufe0f� x"
+    assert safe_text("→ AP settings") == "→ AP settings" and safe_text("--url: expected") == "--url: expected"
     assert safe_text("\x1b[31mred\x1b[0m") == "red"
     assert safe_text("a\x00b\x7fc\nd") == "a�b�c�d"
     assert safe_text("x\u202ey\u2066z\u200f") == "x�y�z�"

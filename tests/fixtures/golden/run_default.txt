@@ -15,9 +15,12 @@
   Roaming trigger bounds:            -75 dBm .. -65 dBm (margin 5 dB)
   Scan passes:                       3
 
-  ! AP-1: lists AP-2 as a neighbour, which does not list it back; both directions are evaluated [AP-2]
-  ! AP-2: lists AP-3 as a neighbour, which does not list it back; both directions are evaluated [AP-3]
-  ! AP-3: lists AP-4 as a neighbour, which does not list it back; both directions are evaluated [AP-4]
+  ! AP-1: lists AP-2 as a neighbour, which does not list it back; both directions are evaluated
+    [AP-2]
+  ! AP-2: lists AP-3 as a neighbour, which does not list it back; both directions are evaluated
+    [AP-3]
+  ! AP-3: lists AP-4 as a neighbour, which does not list it back; both directions are evaluated
+    [AP-4]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-1  (profile Throughput)
@@ -48,11 +51,16 @@
     ✓ Show Access Point Name in Beacon   Disabled
     ✓ 802.11b Support                    Disabled
     ? Roaming Assistant                  threshold not available without neighbour data
-        * AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the floor -75 dBm; clamped to the floor (-80 dBm on the uplink) — no reachable roaming neighbour, fix placement
-        * AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the floor -75 dBm; clamped to the floor (-78 dBm on the uplink) — no reachable roaming neighbour, fix placement
+        AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the
+          floor -75 dBm; clamped to the floor (-80 dBm on the uplink) — no reachable roaming
+          neighbour, fix placement
+        AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the
+          floor -75 dBm; clamped to the floor (-78 dBm on the uplink) — no reachable roaming
+          neighbour, fix placement
         AP-3: no reading of neighbour AP-4 (not sighted)
         AP-4: no reading of neighbour AP-3 (not sighted)
-        Note: 4 pending transmit-power change(s) on this site; apply those first and re-run; the threshold follows the effective power
+        Note: 4 pending transmit-power change(s) on this site; apply those first and re-run; the
+          threshold follows the effective power
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Standard)
@@ -75,12 +83,14 @@
   MAC        02:00:00:00:00:04
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm (unverified))
+  2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm
+           (unverified))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -70 dBm n=3 offset -12 dB
 
-  · AP-1 and AP-2 disagree by -12 dB after the power difference; one receiver reads the other's beacons systematically off [AP-2]
+  · AP-1 and AP-2 disagree by -12 dB after the power difference; one receiver reads the other's
+    beacons systematically off [AP-2]
 
   Recommendations:
     ✓ Transmit Power           17 dBm (mode auto)
@@ -89,7 +99,8 @@
   · airtime: utilisation 0 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
 
-  5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm (unverified))
+  5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm
+         (unverified))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -72 dBm n=3 offset -3 dB *
@@ -97,7 +108,8 @@
   · the radio has not demonstrated power above 20 dBm on this channel
 
   Recommendations:
-    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above the demonstrated power is unverified
+    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
+                               the demonstrated power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -77 dBm on the uplink)
 
@@ -115,24 +127,29 @@
   AP-1                      -69 dBm n=3 offset +12 dB
   AP-3                      -74 dBm n=3 offset +6 dB °
 
-  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off [AP-3]
+  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's
+    beacons systematically off [AP-3]
 
   Recommendations:
-    ✗ Transmit Power           10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated power is unverified
+    ✗ Transmit Power           10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated
+                               power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -69 dBm on the uplink)
 
   · airtime: utilisation 12 %, self rx/tx 1/1 %, retries 10.9 %, 3 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
 
-  5 GHz  (channel 60, DFS (CAC 60 s), width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap); max 18 dBm)
+  5 GHz  (channel 60, DFS (CAC 60 s), width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap);
+         max 18 dBm)
 
   Neighbour AP:             RSSI @ neighbour:
   AP-1                      -71 dBm n=3 offset +3 dB *
   AP-3                      -68 dBm n=3 offset +6 dB *
 
-  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept [AP-1, AP-3]
-  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's beacons systematically off [AP-3]
+  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective
+    maximum 18 dBm): add an access point or accept [AP-1, AP-3]
+  · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's
+    beacons systematically off [AP-3]
 
   Recommendations:
     - Transmit Power           18 dBm, no change: at the effective maximum
@@ -153,7 +170,8 @@
   AP-4                      -76 dBm ~ °
 
   Recommendations:
-    ✗ Transmit Power           17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated power is unverified
+    ✗ Transmit Power           17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated
+                               power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
 
@@ -166,7 +184,8 @@
   AP-2                      -69 dBm n=3 offset -6 dB
   AP-4                      — (not sighted)
 
-  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point [AP-4]
+  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an
+    access point [AP-4]
 
   Recommendations:
     - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
@@ -185,10 +204,12 @@
   Neighbour AP:             RSSI @ neighbour:
   AP-3                      -77 dBm n=3 °
 
-  * the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion
+  * the scan saw nothing on this band; restart the radio or the access point before trusting any
+    conclusion
 
   Recommendations:
-    ✗ Transmit Power           17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated power is unverified
+    ✗ Transmit Power           17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated
+                               power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -73 dBm on the uplink)
 
@@ -199,7 +220,8 @@
   Neighbour AP:             RSSI @ neighbour:
   AP-3                      — (not sighted)
 
-  * at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point [AP-3]
+  * at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an
+    access point [AP-3]
 
   Recommendations:
     - Transmit Power           18 dBm, no change: at the effective maximum, neighbour unsighted
@@ -215,9 +237,15 @@
   AP-1, AP-2, AP-3, AP-4
   ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
 
-
-  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes, run the tool again.
+  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes,
+    run the tool again.
   Partial result (band empty); the exit code says so.
 
-  Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It cannot see non-WiFi RF interference (BLE/Zigbee/microwave -- needs a spectrum analyzer), per-client MCS or retry statistics, real client roaming timing, or packet captures. Neighbour RSSI is an AP-to-AP beacon reading; client thresholds are converted to the uplink the controller evaluates with a typical client power (`rf.client_tx_dbm`), so a client with a weaker radio is still worse off than the corridor suggests. Recommendations are static-analysis heuristics, not runtime KPIs.
+  Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It
+    cannot see non-WiFi RF interference (BLE/Zigbee/microwave -- needs a spectrum analyzer),
+    per-client MCS or retry statistics, real client roaming timing, or packet captures. Neighbour
+    RSSI is an AP-to-AP beacon reading; client thresholds are converted to the uplink the controller
+    evaluates with a typical client power (`rf.client_tx_dbm`), so a client with a weaker radio is
+    still worse off than the corridor suggests. Recommendations are static-analysis heuristics, not
+    runtime KPIs.
 

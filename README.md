@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/jtauschl/unifiwifioptimizer/main/sc
 
 For a complete step-by-step example, see [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
-1. In the UniFi Network Application (web UI), enable `Device SSH Authentication` and create a UniFi Network API key.
+1. In the UniFi Network Application (web UI), enable `Device SSH Authentication` and create a UniFi Network API key for an account with the full Administrator role: `ssh.auth: controller` reads the controller-managed SSH password through that key, which a View Only account is not allowed to see.
 2. Copy `config.minimal.yaml` to `config.yaml` and fill only the controller connection:
 
 ```bash

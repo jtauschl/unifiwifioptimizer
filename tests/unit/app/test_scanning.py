@@ -158,7 +158,8 @@ def test_controller_mode_needs_the_controller_to_offer_ssh_credentials() -> None
         ),
         (
             MgmtSettings(ssh_enabled=True, ssh_password_auth_enabled=True, ssh_user="u", ssh_password=None),
-            "no SSH user or password",
+            # A View Only API key is the one realistic way to get here (Network 11 hides device secrets from it).
+            "no SSH user or password .*full Administrator role",
         ),
     ]:
         with pytest.raises(ConfigError, match=message):

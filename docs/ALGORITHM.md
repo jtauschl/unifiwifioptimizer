@@ -210,7 +210,9 @@ Whenever a 5 GHz transmit-power change is pending on a broadcasting AP, the repo
 follows the effective power — apply the power change first.
 
 The `roaming_assistant` profile field decides only whether the assistant is expected **enabled**; the
-threshold itself is never profile-driven. There is no per-radio fallback: a controller without the WLAN-level
+threshold itself is never profile-driven. The check's expectation carries the derived threshold whenever the
+analysis produced one (`Enabled, -78 dBm`), also when the assistant is off or the controller reports no value,
+so the report always shows the value to set. There is no per-radio fallback: a controller without the WLAN-level
 field gets an `Incomplete` check that says so.
 
 ## 8. Channel Checks
