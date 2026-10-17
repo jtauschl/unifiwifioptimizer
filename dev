@@ -264,7 +264,8 @@ cmd_lock_check() {
 cmd_lock_refresh() {
   step "lock-refresh — recompile the hashed build constraints"
   require_uv
-  uv pip compile build-constraints.in --generate-hashes --universal --python-version 3.11 --no-header -o build-constraints.txt ||
+  # Without --upgrade, uv keeps the pins already in the output file, so a refresh would never move.
+  uv pip compile build-constraints.in --upgrade --generate-hashes --universal --python-version 3.11 --no-header -o build-constraints.txt ||
     fail "could not recompile build-constraints.in"
   ok "lock-refresh — build-constraints.txt rewritten"
 }
