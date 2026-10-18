@@ -1,23 +1,62 @@
+# Release workflow: tag-driven, privilege-separated, resumable.
+#
+#   test -> build -> sbom, attest, preflight (parallel) -> publish -> pypi-verify -> github-release
+#
+# - Only `test`, `build` and `sbom` check out the repository. Every later job downloads the build's files and
+#   `scripts/release_guard.py` as artifacts, verifies the helper against a SHA-256 that `build` exposed as a job
+#   output, and lets the helper check that each downloaded directory holds exactly the hashed files, so a
+#   privileged job never acts on a file nobody hashed and never reads the repository.
+# - `id-token` exists only on `attest` and `publish`; `contents: write` only on `github-release`.
+# - A re-run after a late failure must neither fail on a file that already reached PyPI or GitHub nor replace it
+#   with different bytes. `publish` and `github-release` ask the remote what it holds at that moment, upload only
+#   what is missing and refuse when something differs (scripts/release_guard.py). The GitHub release is created
+#   as a draft, filled with every asset, checked and only then published, which is also the order an immutable
+#   release needs. After a file is on PyPI, re-run failed jobs only: a full re-run rebuilds, and the result is
+#   not guaranteed to be byte-identical across runner images.
+# - `cancel-in-progress` is false on purpose, unlike the other workflows: cancelling a publish halfway would
+#   leave a release in exactly the state the resume logic exists to repair.
+# - A push to a release branch that touches a file the release build depends on runs `test`, `build` and `sbom`
+#   as a dry run, because a workflow that only runs on a tag cannot be tried before the tag. The jobs that
+#   attest, publish or release run on a tag only.
 name: release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+    branches: ["release/**"]
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/actions/**"
+      - "scripts/release_guard.py"
+      - "scripts/dist_check.py"
+      - "scripts/sbom_set_root_version.py"
+      - "pyproject.toml"
+      - "build-constraints.txt"
+      - "dev"
+      - "CHANGELOG.md"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  UV_VERSION: "0.12.24"
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  test:
+    name: Gate (./dev ci)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dist_sha256: ${{ steps.hashes.outputs.dist_sha256 }}
     steps:
-      - name: Validate tag is exact SemVer (vX.Y.Z)
+      - name: Tag is exact SemVer (vX.Y.Z)
+        if: github.ref_type == 'tag'
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -28,40 +67,377 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Extract release notes for this tag from CHANGELOG.md
+          # hatch-vcs derives the version from the nearest tag, and the secret scan reads the whole history.
+          fetch-depth: 0
+      - uses: ./.github/actions/toolchain
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+      - run: ./dev bootstrap
+      - run: ./dev ci
+      - name: The gate left the tree as it found it
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "The gate changed or added files; the build would not match the commit:" >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+      - name: The version this checkout builds
+        id: version
+        run: |
+          derived="$(uv run --locked --no-sync python -m hatchling version)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$derived" != "${GITHUB_REF_NAME#v}" ]]; then
+            echo "The build derives version '$derived' but the tag is '$GITHUB_REF_NAME'." >&2
+            exit 1
+          fi
+          echo "version=$derived" >> "$GITHUB_OUTPUT"
+      - name: Hash the distributions the gate built and smoke-tested
+        id: hashes
+        run: |
+          delimiter="hashes-$RANDOM$RANDOM"
+          {
+            echo "dist_sha256<<$delimiter"
+            (cd dist && LC_ALL=C sha256sum -- unifiwifioptimizer-*)
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build sdist and wheel
+    needs: [test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      dist_sha256: ${{ steps.check.outputs.dist_sha256 }}
+      tools_sha256: ${{ steps.tools.outputs.tools_sha256 }}
+      notes_sha256: ${{ steps.notes.outputs.notes_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Build with the hashed build-backend closure
+        run: uv build --build-constraints build-constraints.txt --require-hashes
+      - name: Check version and content, record the hashes
+        id: check
+        env:
+          EXPECTED_VERSION: ${{ needs.test.outputs.version }}
+          TESTED_SHA256: ${{ needs.test.outputs.dist_sha256 }}
+        run: |
+          python3 -I scripts/dist_check.py --dist dist --version "$EXPECTED_VERSION" \
+            --pyproject pyproject.toml --hashes-out dist-sha256.txt
+          built="$(cd dist && LC_ALL=C sha256sum -- unifiwifioptimizer-*)"
+          if [[ "$built" != "$TESTED_SHA256" ]]; then
+            echo "The built files differ from the files the gate tested:" >&2
+            # diff exits 1 on a difference, which already fails the step; the explicit exit covers the rest.
+            diff <(printf '%s\n' "$TESTED_SHA256") <(printf '%s\n' "$built") >&2
+            exit 1
+          fi
+          delimiter="hashes-$RANDOM$RANDOM"
+          {
+            echo "version=$EXPECTED_VERSION"
+            echo "dist_sha256<<$delimiter"
+            cat dist-sha256.txt
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+      - name: Release notes for this version
         id: notes
         env:
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.test.outputs.version }}
         run: |
-          version="${TAG#v}"
-          notes_file="$(mktemp)"
-          awk -v ver="$version" '
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            notes_version="$VERSION"
+          elif [[ "$GITHUB_REF_NAME" == release/* ]]; then
+            notes_version="${GITHUB_REF_NAME#release/}"
+          else
+            echo "Release notes are checked on tags and release branches only."
+            exit 0
+          fi
+          mkdir release-notes
+          awk -v ver="$notes_version" '
             BEGIN { in_section = 0 }
             /^## \[/ {
               if (in_section) exit
               if (index($0, "[" ver "]") > 0) { in_section = 1; next }
             }
             in_section { print }
-          ' CHANGELOG.md > "$notes_file"
+          ' CHANGELOG.md > release-notes/notes.md
+          if [[ ! -s release-notes/notes.md ]]; then
+            echo "CHANGELOG.md has no section for $notes_version; refusing to release without notes." >&2
+            exit 1
+          fi
+          echo "notes_sha256=$(sha256sum release-notes/notes.md | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Hash the release helper
+        id: tools
+        run: echo "tools_sha256=$(sha256sum scripts/release_guard.py | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-tools
+          path: scripts/release_guard.py
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.ref_type == 'tag'
+        with:
+          name: release-notes
+          path: release-notes/notes.md
+          if-no-files-found: error
 
-          if [[ ! -s "$notes_file" ]]; then
-            echo "No CHANGELOG.md section for $TAG; falling back to auto-generated notes." >&2
-            echo "notes_file=" >> "$GITHUB_OUTPUT"
-          else
-            echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Create GitHub release
+  sbom:
+    name: SBOM (CycloneDX)
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sbom_sha256: ${{ steps.hash.outputs.sbom_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: The files are exactly the ones the build hashed
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
         run: |
-          if [[ -n "$NOTES_FILE" ]]; then
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes-file "$NOTES_FILE"
-          else
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --generate-notes
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          python3 -I scripts/release_guard.py verify-dir --dir dist --hashes dist-sha256.txt
+      - name: Generate the SBOM with the release version as root component
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          uv export --locked --no-dev --format cyclonedx1.5 --output-file sbom.cdx.json
+          python3 -I scripts/sbom_set_root_version.py sbom.cdx.json "$VERSION"
+      - name: Hash the SBOM
+        id: hash
+        run: echo "sbom_sha256=$(sha256sum sbom.cdx.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+
+  attest:
+    name: Build provenance attestation
+    if: github.ref_type == 'tag'
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tools
+          path: tools
+      - name: The helper is the file the build hashed, the files are exactly the hashed ones
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
+          TOOLS_SHA256: ${{ needs.build.outputs.tools_sha256 }}
+        run: |
+          echo "$TOOLS_SHA256  tools/release_guard.py" | sha256sum -c -
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          python3 -I tools/release_guard.py verify-dir --dir dist --hashes dist-sha256.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+  preflight:
+    name: What PyPI already holds
+    if: github.ref_type == 'tag'
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tools
+          path: tools
+      - name: The helper is the file the build hashed
+        env:
+          TOOLS_SHA256: ${{ needs.build.outputs.tools_sha256 }}
+        run: echo "$TOOLS_SHA256  tools/release_guard.py" | sha256sum -c -
+      - name: Compare PyPI with the build, before anyone has to approve a publish
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          python3 -I tools/release_guard.py pypi-state --project unifiwifioptimizer --version "$VERSION" \
+            --hashes dist-sha256.txt
+
+  publish:
+    name: Publish to PyPI
+    if: github.ref_type == 'tag'
+    needs: [build, attest, sbom, preflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tools
+          path: tools
+      - name: The helper is the file the build hashed, the files are exactly the hashed ones
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
+          TOOLS_SHA256: ${{ needs.build.outputs.tools_sha256 }}
+        run: |
+          echo "$TOOLS_SHA256  tools/release_guard.py" | sha256sum -c -
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          python3 -I tools/release_guard.py verify-dir --dir dist --hashes dist-sha256.txt
+      - name: Select the files PyPI lacks at this moment
+        id: select
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 -I tools/release_guard.py select-upload --dist dist --hashes dist-sha256.txt \
+            --project unifiwifioptimizer --version "$VERSION" --out upload >> "$GITHUB_OUTPUT"
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        if: steps.select.outputs.count != '0'
+        with:
+          packages-dir: upload
+
+  pypi-verify:
+    name: PyPI holds exactly the build
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.build.result == 'success' && needs.publish.result != 'skipped' }}
+    needs: [build, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tools
+          path: tools
+      - name: The helper is the file the build hashed
+        env:
+          TOOLS_SHA256: ${{ needs.build.outputs.tools_sha256 }}
+        run: echo "$TOOLS_SHA256  tools/release_guard.py" | sha256sum -c -
+      - name: Compare PyPI with the build until the index has caught up
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          python3 -I tools/release_guard.py pypi-verify --project unifiwifioptimizer --version "$VERSION" \
+            --hashes dist-sha256.txt
+
+  github-release:
+    name: GitHub Release
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.build.result == 'success' && needs.sbom.result == 'success' && needs.pypi-verify.result == 'success' }}
+    needs: [build, sbom, publish, pypi-verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: sbom
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tools
+          path: tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      - name: The helper is the file the build hashed, every directory holds exactly the hashed files
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.dist_sha256 }}
+          SBOM_SHA256: ${{ needs.sbom.outputs.sbom_sha256 }}
+          TOOLS_SHA256: ${{ needs.build.outputs.tools_sha256 }}
+          NOTES_SHA256: ${{ needs.build.outputs.notes_sha256 }}
+        run: |
+          echo "$TOOLS_SHA256  tools/release_guard.py" | sha256sum -c -
+          printf '%s\n' "$DIST_SHA256" > dist-sha256.txt
+          echo "$SBOM_SHA256  sbom.cdx.json" > sbom-sha256.txt
+          echo "$NOTES_SHA256  notes.md" > notes-sha256.txt
+          cat dist-sha256.txt sbom-sha256.txt > all-sha256.txt
+          python3 -I tools/release_guard.py verify-dir --dir dist --hashes dist-sha256.txt
+          python3 -I tools/release_guard.py verify-dir --dir sbom --hashes sbom-sha256.txt
+          python3 -I tools/release_guard.py verify-dir --dir notes --hashes notes-sha256.txt
+      - name: The tag is an annotated tag on the commit this run built
+        run: |
+          remote="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}^{}")"
+          if [[ "$(printf '%s\n' "$remote" | grep -c .)" -ne 1 ]]; then
+            echo "Expected one peeled ref for $TAG (an annotated tag); got: '$remote'" >&2
+            exit 1
           fi
+          if [[ "${remote%%[[:space:]]*}" != "$GITHUB_SHA" ]]; then
+            echo "The tag $TAG points at ${remote%%[[:space:]]*}, this run built $GITHUB_SHA." >&2
+            exit 1
+          fi
+      - name: What the release holds at this moment
+        id: state
+        run: python3 -I tools/release_guard.py release-state --repository "$GITHUB_REPOSITORY" --tag "$TAG" --hashes all-sha256.txt >> "$GITHUB_OUTPUT"
+      - name: Fill a draft with every asset, then publish it
+        env:
+          RELEASE: ${{ steps.state.outputs.release }}
+          STATE: ${{ steps.state.outputs.state }}
+          MISSING: ${{ steps.state.outputs.missing }}
+        run: |
+          if [[ "$RELEASE" == "published" ]]; then
+            if [[ "$STATE" != "complete" ]]; then
+              echo "The published release for $TAG lacks assets ($MISSING) and a published release cannot be completed." >&2
+              exit 1
+            fi
+            echo "The release for $TAG is published and holds exactly this build."
+            exit 0
+          fi
+          if [[ "$RELEASE" == "absent" ]]; then
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes/notes.md \
+              dist/*.whl dist/*.tar.gz sbom/sbom.cdx.json
+          elif [[ "$STATE" != "complete" ]]; then
+            files=()
+            for name in $MISSING; do
+              if [[ "$name" == "sbom.cdx.json" ]]; then files+=("sbom/$name"); else files+=("dist/$name"); fi
+            done
+            gh release upload "$TAG" "${files[@]}"
+          fi
+          python3 -I tools/release_guard.py release-state --repository "$GITHUB_REPOSITORY" --tag "$TAG" \
+            --hashes all-sha256.txt | grep -qx 'state=complete'
+          gh release edit "$TAG" --draft=false --verify-tag --title "$TAG" --notes-file notes/notes.md
+      - name: The published release holds exactly this build
+        run: |
+          python3 -I tools/release_guard.py release-state --repository "$GITHUB_REPOSITORY" --tag "$TAG" \
+            --hashes all-sha256.txt > final-state.txt
+          grep -qx 'release=published' final-state.txt
+          grep -qx 'state=complete' final-state.txt

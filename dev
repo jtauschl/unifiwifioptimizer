@@ -225,7 +225,9 @@ cmd_lower_bound() {
   require_uv
   local probe
   new_temp_dir probe
-  cp -R src tests pyproject.toml .python-version README.md LICENSE "$probe/" || fail "could not copy the project into the probe directory"
+  # The tests of the build helpers and of the release workflow read scripts/, .github/ and dev beside src/.
+  cp -R src tests scripts .github dev pyproject.toml .python-version README.md LICENSE "$probe/" ||
+    fail "could not copy the project into the probe directory"
   (
     cd "$probe" || exit 1
     export UV_RESOLUTION=lowest-direct
@@ -295,6 +297,13 @@ cmd_build() {
   require_uv
   rm -rf dist || fail "could not remove dist/"
   uv build --build-constraints build-constraints.txt --require-hashes || fail "uv build failed"
+  # A local build must fail on the same contract a release build does, not first in CI.
+  local version hashes
+  version="$(uv run --locked --no-sync python -m hatchling version)" || fail "could not determine the project version"
+  new_temp_file hashes
+  uv run --locked --no-sync python -I scripts/dist_check.py --dist dist --version "$version" \
+    --pyproject pyproject.toml --hashes-out "$hashes" ||
+    fail "dist_check: the built files violate the release contract"
   ok "build — artifacts in dist/"
   cmd_smoke
 }
