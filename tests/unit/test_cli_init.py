@@ -63,3 +63,22 @@ def test_init_subcommand_reports_the_written_path(
     monkeypatch.setattr(cli, "run_init", lambda path: path)
     assert cli.main(["--config-file", "/tmp/new.yaml", "init"]) == ExitCode.OK
     assert "wrote /tmp/new.yaml (mode 0600)" in capsys.readouterr().err
+
+
+def test_init_targets_the_default_location_even_when_only_a_legacy_file_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = tmp_path / "home" / ".local" / "share" / "unifiwifioptimizer" / "config.yaml"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("controller: {url: https://unifi.example, api_key: k}\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    seen: list[Path] = []
+
+    def record(path: Path) -> Path:
+        seen.append(path)
+        return path
+
+    monkeypatch.setattr(cli, "run_init", record)
+    assert cli.main(["init"]) == ExitCode.OK
+    assert seen == [tmp_path / "config" / "unifiwifioptimizer" / "config.yaml"]

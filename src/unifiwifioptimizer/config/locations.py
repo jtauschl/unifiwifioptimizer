@@ -20,13 +20,13 @@ def default_config_path(environ: dict[str, str] | os._Environ[str] = os.environ)
     return Path(base) / APP_DIR / FILE_NAME
 
 
-def legacy_config_path(environ: dict[str, str] | os._Environ[str] = os.environ) -> Path:
-    base = environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(base) / APP_DIR / FILE_NAME
+def legacy_config_path(home: Path | None = None) -> Path:
+    """Where the 0.4.x installer put the file: fixed under the home directory, whatever XDG_DATA_HOME says."""
+    return (home or Path.home()) / ".local" / "share" / APP_DIR / FILE_NAME
 
 
 def resolve_config_location(
-    explicit: Path | None, environ: dict[str, str] | os._Environ[str] = os.environ
+    explicit: Path | None, environ: dict[str, str] | os._Environ[str] = os.environ, home: Path | None = None
 ) -> ConfigLocation:
     """`--config-file` wins; otherwise the XDG path, or the legacy path when only that one exists.
 
@@ -35,7 +35,7 @@ def resolve_config_location(
     if explicit is not None:
         return ConfigLocation(explicit.expanduser(), legacy=False)
     default = default_config_path(environ)
-    legacy = legacy_config_path(environ)
+    legacy = legacy_config_path(home)
     if not default.exists() and legacy.exists():
         return ConfigLocation(legacy, legacy=True)
     return ConfigLocation(default, legacy=False)

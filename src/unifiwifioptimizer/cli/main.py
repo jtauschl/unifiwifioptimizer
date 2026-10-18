@@ -26,7 +26,7 @@ from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.cli.progress import StderrProgress
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
-from unifiwifioptimizer.config.locations import ConfigLocation, resolve_config_location
+from unifiwifioptimizer.config.locations import ConfigLocation, default_config_path, resolve_config_location
 from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
 from unifiwifioptimizer.config.schema import parse_controller_url
 from unifiwifioptimizer.domain.errors import (
@@ -201,8 +201,8 @@ def _print_lines(text: str) -> None:
 
 
 def _init(args: argparse.Namespace) -> ExitCode:
-    location = resolve_config_location(args.config_file)
-    path = run_init(location.path)
+    # Never the legacy file: `init` creates a configuration and must not point at, or invite deleting, an old one.
+    path = run_init(args.config_file.expanduser() if args.config_file is not None else default_config_path())
     print(f"{PROG}: wrote {path} (mode 0600)", file=sys.stderr)
     return ExitCode.OK
 
@@ -257,8 +257,9 @@ def _warn_legacy(loaded: LoadedConfig) -> None:
 def _warn_legacy_location(location: ConfigLocation) -> None:
     if location.legacy:
         print(
-            f"{PROG}: reading the legacy configuration at {location.path}; move it to "
-            "$XDG_CONFIG_HOME/unifiwifioptimizer/config.yaml (a profiles.yaml in the legacy directory is not read)",
+            f"{PROG}: reading the legacy configuration at {location.path}; move it to {default_config_path()} "
+            "and keep it private (chmod 600) before you uninstall 0.4.x, whose uninstaller deletes the old directory "
+            "(a profiles.yaml in the legacy directory is not read)",
             file=sys.stderr,
         )
 

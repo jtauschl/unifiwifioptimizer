@@ -145,18 +145,24 @@ def test_initial_config_text_quotes_awkward_values() -> None:
 
 
 def test_default_is_chosen_unless_only_the_legacy_file_exists(tmp_path: Path) -> None:
-    env = {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_DATA_HOME": str(tmp_path / "data")}
-    neither = resolve_config_location(None, env)
+    env = {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_DATA_HOME": str(tmp_path / "xdg-data")}
+    home = tmp_path / "home"
+    neither = resolve_config_location(None, env, home)
     assert neither.path == tmp_path / "cfg" / "unifiwifioptimizer" / "config.yaml" and neither.legacy is False
-    legacy = tmp_path / "data" / "unifiwifioptimizer" / "config.yaml"
+    # The 0.4.x installer ignored XDG_DATA_HOME, so a file there is not the legacy file.
+    decoy = tmp_path / "xdg-data" / "unifiwifioptimizer" / "config.yaml"
+    decoy.parent.mkdir(parents=True)
+    decoy.write_text("x")
+    assert resolve_config_location(None, env, home) == neither
+    legacy = home / ".local" / "share" / "unifiwifioptimizer" / "config.yaml"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("x")
-    assert resolve_config_location(None, env) == resolve_config_location(None, env)
-    assert resolve_config_location(None, env).path == legacy and resolve_config_location(None, env).legacy is True
+    assert resolve_config_location(None, env, home).path == legacy
+    assert resolve_config_location(None, env, home).legacy is True
     default = tmp_path / "cfg" / "unifiwifioptimizer" / "config.yaml"
     default.parent.mkdir(parents=True)
     default.write_text("x")
-    assert resolve_config_location(None, env).path == default
+    assert resolve_config_location(None, env, home).path == default
 
 
 @pytest.mark.parametrize("mode", [0o610, 0o601])

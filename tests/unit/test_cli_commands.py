@@ -113,8 +113,11 @@ def test_legacy_location_is_announced_on_stderr(
 ) -> None:
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded(legacy=True))
     monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/xdg-config")
     assert cli.main(["sites"]) == ExitCode.OK
-    assert "legacy configuration at /cfg/config.yaml" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "legacy configuration at /cfg/config.yaml" in err
+    assert "move it to /xdg-config/unifiwifioptimizer/config.yaml" in err and "chmod 600" in err
 
 
 @pytest.mark.parametrize(
@@ -313,8 +316,8 @@ def test_config_profiles_ignores_the_bash_installers_profiles_in_the_legacy_dire
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-    legacy = tmp_path / "data" / "unifiwifioptimizer"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    legacy = tmp_path / "home" / ".local" / "share" / "unifiwifioptimizer"
     legacy.mkdir(parents=True)
     (legacy / "config.yaml").write_text("controller: {url: https://unifi.example, api_key: k}\n")
     (legacy / "profiles.yaml").write_text("profiles:\n  Standard:\n    group_rekey: 0\n")

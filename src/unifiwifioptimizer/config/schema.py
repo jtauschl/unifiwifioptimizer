@@ -43,6 +43,22 @@ TIMEOUT_RANGE = range(1, 121)
 SCAN_PASSES_RANGE = range(1, 11)
 SCAN_ATTEMPTS_RANGE = range(1, 6)
 SCAN_CONCURRENCY_RANGE = range(1, 9)
+# The accepted keys of each mapping; anything else is an error. The README's key table is checked against these.
+ROOT_KEYS = frozenset({"controller", "sites", "rf"})
+CONTROLLER_KEYS = frozenset({"url", "api_key", "ca_cert", "cert_fingerprint", "timeout_s"})
+SSH_KEYS = frozenset(
+    {
+        "auth", "user", "password", "key_file", "host_keys", "scan_interface_toggle", "allow_public_ap_addresses",
+        "scan_concurrency", "scan_attempts",
+    }
+)  # fmt: skip
+SITE_KEYS = frozenset({"ssh", "environment", "scan_passes", "wlans", "neighbors"})
+RF_KEYS = frozenset(
+    {
+        "client_tx_dbm", "noise_floor_dbm", "required_snr_db", "min_rssi_offset_db", "roam_offset_db",
+        "roam_margin_db", "roam_floor_dbm", "roam_ceiling_dbm",
+    }
+)  # fmt: skip
 MAX_SITES = 64
 MAX_WLANS_PER_SITE = 64
 MAX_NEIGHBOUR_ENTRIES = 256
@@ -208,7 +224,7 @@ def _is_host(host: str) -> bool:
 def _controller(value: Value, env_api_key: str | None) -> ControllerConfig:
     path = "controller"
     mapping = _mapping(value, path)
-    _reject_unknown(mapping, path, frozenset({"url", "api_key", "ca_cert", "cert_fingerprint", "timeout_s"}))
+    _reject_unknown(mapping, path, CONTROLLER_KEYS)
     host, port = parse_controller_url(_text(mapping, path, "url", MAX_PATH_CHARS), f"{path}.url")
     api_key = _opt_text(mapping, path, "api_key", 512)
     if api_key is None:
@@ -274,13 +290,7 @@ def resolve_auth(
 
 def _ssh(value: Value, path: str) -> SshConfig:
     mapping = _mapping(value, path)
-    known = frozenset(
-        {
-            "auth", "user", "password", "key_file", "host_keys", "scan_interface_toggle", "allow_public_ap_addresses",
-            "scan_concurrency", "scan_attempts",
-        }
-    )  # fmt: skip
-    _reject_unknown(mapping, path, known)
+    _reject_unknown(mapping, path, SSH_KEYS)
     user = _opt_text(mapping, path, "user", 32)
     if user is not None and not SSH_USER_RE.fullmatch(user):
         raise ConfigError(f"{path}.user", "expected a user name (letters, digits, `_`, `.`, `-`)")
@@ -351,7 +361,7 @@ def _site(site_id: str, value: Value) -> SiteConfig:
     if not SITE_ID_RE.fullmatch(site_id):
         raise ConfigError("sites", "a site id may contain letters, digits, `_` and `-` only")
     mapping = _mapping(value, path)
-    _reject_unknown(mapping, path, frozenset({"ssh", "environment", "scan_passes", "wlans", "neighbors"}))
+    _reject_unknown(mapping, path, SITE_KEYS)
     wlans: dict[str, str] = {}
     raw_wlans = mapping.get("wlans")
     if raw_wlans is not None:
@@ -400,13 +410,7 @@ def _site(site_id: str, value: Value) -> SiteConfig:
 def _rf(value: Value) -> RfSettings:
     path = "rf"
     mapping = _mapping(value, path) if value is not None else {}
-    known = frozenset(
-        {
-            "client_tx_dbm", "noise_floor_dbm", "required_snr_db", "min_rssi_offset_db", "roam_offset_db",
-            "roam_margin_db", "roam_floor_dbm", "roam_ceiling_dbm",
-        }
-    )  # fmt: skip
-    _reject_unknown(mapping, path, known)
+    _reject_unknown(mapping, path, RF_KEYS)
     floor = _integer(mapping, path, "roam_floor_dbm", DBM_TUNABLE_RANGE, DEFAULT_ROAM_FLOOR_DBM)
     ceiling = _integer(mapping, path, "roam_ceiling_dbm", DBM_TUNABLE_RANGE, DEFAULT_ROAM_CEILING_DBM)
     try:
@@ -438,7 +442,7 @@ class Config:
     @classmethod
     def from_mapping(cls, document: Value, env_api_key: str | None = None) -> "Config":
         root = _mapping(document, "$")
-        _reject_unknown(root, "$", frozenset({"controller", "sites", "rf"}))
+        _reject_unknown(root, "$", ROOT_KEYS)
         if "controller" not in root:
             raise ConfigError("controller", "missing")
         sites: dict[str, SiteConfig] = {}
