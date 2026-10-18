@@ -1,4 +1,4 @@
-"""Aggregation of repeated neighbour sightings across scan passes (ADR-002 D8, docs/ALGORITHM.md §2).
+"""Aggregation of repeated neighbour sightings across scan passes (docs/ALGORITHM.md §2).
 
 Readings taken on different channels are not comparable (a channel move mid-run changes the path), so
 only readings on the peer's channel count. The estimator is the median: under Gaussian reading noise of

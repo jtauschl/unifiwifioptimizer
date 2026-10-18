@@ -91,7 +91,7 @@ def test_select_candidate_wants_exactly_one_match_that_also_satisfies_the_contro
         select_candidate([first, second], Expectation((candidate(3).sha256,), TrustBasis.CONTROLLER))
     with pytest.raises(HostKeyTrustError, match="2 of 2 offered host keys match"):
         select_candidate([first, first], Expectation((first.sha256,), TrustBasis.CONFIG_PIN))
-    # Pin and controller MD5 of the same key: fine; of different keys: the conflict the plan demands.
+    # Pin and controller MD5 of the same key: fine; of different keys: a conflict, never a guess.
     assert select_candidate([first, second], Expectation((first.sha256, first.md5), TrustBasis.CONFIG_PIN)) is first
     with pytest.raises(HostKeyTrustError, match="does not match the controller's MD5:"):
         select_candidate([first, second], Expectation((first.sha256, second.md5), TrustBasis.CONFIG_PIN))

@@ -247,7 +247,8 @@ class SshConfig:
 def resolve_auth(
     auth: str | None, user: str | None, password: Secret | None, key_file: Path | None, path: str
 ) -> SshAuth:
-    """The plan's decision table; every ambiguous combination is a `ConfigError`, never a guess."""
+    """Resolves `auth`, `user`, `password` and `key_file` to one SSH credential source; every ambiguous
+    combination is a `ConfigError`, never a guess."""
     if auth is None:
         if key_file is not None:
             raise ConfigError(f"{path}.auth", "set `auth: key` explicitly when key_file is given")

@@ -1,4 +1,4 @@
-"""Design constants of the RF model (ADR-002 D8, docs/ALGORITHM.md §5).
+"""Design constants of the RF model (docs/ALGORITHM.md §5).
 
 Every value is either derived from a standard or marked as a vendor figure exposed as a tunable.
 """
@@ -41,8 +41,8 @@ DEFAULT_ROAM_OFFSET_DB = 0
 DEFAULT_ROAM_MARGIN_DB = 5
 # Apple's published roam-scan threshold for macOS (iOS/iPadOS: -70 dBm); a client-side (downlink) value.
 DEFAULT_ROAM_FLOOR_DBM = -75
-# Design choice carried over from the shell tool, no standard behind it: a trigger above this would make
-# clients roam while still well inside a cell. Tunable.
+# Design choice, no standard behind it: a trigger above this would make clients roam while still well
+# inside a cell. Tunable.
 DEFAULT_ROAM_CEILING_DBM = -65
 # Vendor consensus margin between the soft-roam trigger and the hard disconnect (Cisco uses ~10 dB).
 DEFAULT_MIN_RSSI_OFFSET_DB = 5

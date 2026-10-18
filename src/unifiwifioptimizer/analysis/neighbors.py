@@ -2,7 +2,7 @@
 
 `A→B` is the RSSI of A's beacons measured at B, the only direction A's transmit power moves. It is the
 median over B's successful passes of every reading of one of A's BSSIDs on A's current primary frequency
-(ADR-002 D8: median, peer channel). A cell without a reading names why (`MissingReason`, most fundamental
+(docs/ALGORITHM.md §2: median, peer channel). A cell without a reading names why (`MissingReason`, most fundamental
 first) and, where B heard nothing of A but A heard B, carries the reverse reading predicted through
 reciprocity instead (same path loss both ways, only the powers differ) — the original reason stays beside
 it, because the partial flag of the run still follows the scan failure.
@@ -49,7 +49,7 @@ class PeerReading:
     # (A at B) - (B at A) - (tx_eff_A - tx_eff_B) when both directions were measured: the receivers' disagreement.
     receiver_offset_db: int | None = None
     # Why the reverse direction (peer at subject) has no reading, when it has none; a miss in both directions
-    # is a verdict of its own (ADR-002 D8), a one-way miss is not.
+    # is a verdict of its own (docs/ALGORITHM.md §4), a one-way miss is not.
     reverse_reason: MissingReason | None = None
 
     @property

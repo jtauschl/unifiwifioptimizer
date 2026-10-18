@@ -1,4 +1,4 @@
-"""TX power recommendation (ADR-002 D8, docs/ALGORITHM.md §4).
+"""TX power recommendation (docs/ALGORITHM.md §4).
 
 The coverage condition holds per neighbour pair, so the corridor is tested against the weakest
 configured neighbour's reading of this AP; a 1 dB change in transmit power moves that reading by 1 dB

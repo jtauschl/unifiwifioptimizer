@@ -9,7 +9,7 @@ import argparse
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from unifiwifioptimizer import __version__
@@ -99,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument(
                 "--clients", action="store_true", help="read the associated clients (signal only, no identities)"
             )
+            _add_known_hosts_option(sub)
         if name == "controller-fingerprint":
             sub.add_argument("--url", help="controller URL when no configuration file exists yet")
         if name == "trust-host-keys":
@@ -116,13 +117,21 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="store keys nothing can verify (trust on first use) without asking",
             )
-            sub.add_argument(
-                "--known-hosts",
-                type=Path,
-                metavar="PATH",
-                help="host-key store (default: $XDG_STATE_HOME/unifiwifioptimizer/known_hosts)",
-            )
+            _add_known_hosts_option(sub)
     return parser
+
+
+def _add_known_hosts_option(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument(
+        "--known-hosts",
+        type=Path,
+        metavar="PATH",
+        help="host-key store (default: $XDG_STATE_HOME/unifiwifioptimizer/known_hosts)",
+    )
+
+
+def _known_hosts_store(args: argparse.Namespace, environ: Mapping[str, str]) -> KnownHostsStore:
+    return KnownHostsStore(args.known_hosts if args.known_hosts is not None else default_store_path(environ))
 
 
 def _client(loaded: LoadedConfig, args: argparse.Namespace) -> tuple[UnifiClient, DumpWriter | None]:
@@ -218,7 +227,7 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
     loaded = load_config(args.config_file)
     _warn_legacy(loaded)
     client, _ = _client(loaded, args)
-    store = KnownHostsStore(args.known_hosts if args.known_hosts is not None else default_store_path())
+    store = _known_hosts_store(args, os.environ)
 
     def confirm(question: str) -> bool:
         if not sys.stdin.isatty():
@@ -265,7 +274,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
         loaded,
         profiles,
         client,
-        lambda: OpenSshScanner(KnownHostsStore(default_store_path()), environ=environ),
+        lambda: OpenSshScanner(_known_hosts_store(args, environ), environ=environ),
         SystemClock(),
         time.sleep,
         StderrProgress(),

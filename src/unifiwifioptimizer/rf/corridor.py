@@ -1,4 +1,4 @@
-"""Cell edge and TX corridor derivation (ADR-002 D8, docs/ALGORITHM.md §5).
+"""Cell edge and TX corridor derivation (docs/ALGORITHM.md §5).
 
 The corridor is the RSSI band a neighbouring AP should measure from this AP. On 5 GHz it starts at the
 cell edge itself: the secondary-coverage rule (every point served by two APs at or above the edge)

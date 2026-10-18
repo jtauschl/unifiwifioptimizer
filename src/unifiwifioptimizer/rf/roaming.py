@@ -1,4 +1,4 @@
-"""Per-AP Roaming Assistant (Handoff Suggestions) threshold (ADR-002 D8, docs/ALGORITHM.md §7).
+"""Per-AP Roaming Assistant (Handoff Suggestions) threshold (docs/ALGORITHM.md §7).
 
 The threshold is derived on the downlink, where the published client roaming triggers live, clamped
 there, and then converted to the uplink the controller evaluates it on.

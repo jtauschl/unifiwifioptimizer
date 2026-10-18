@@ -1,5 +1,5 @@
 """The scanner against the harness access point: dropbear and OpenSSH servers, the real remote script, the
-stubbed radios, and every failure path the plan names."""
+stubbed radios, and every failure path of the scanner."""
 
 import re
 import subprocess

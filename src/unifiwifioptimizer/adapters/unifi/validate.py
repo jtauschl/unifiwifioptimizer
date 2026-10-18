@@ -40,7 +40,7 @@ MAX_SSID_BYTES = 32
 MAX_PASSWORD_BYTES = 256
 MAX_LIST_ITEMS = 10_000
 
-# The plan's open interval -100 < x < 0.
+# Open interval -100 < x < 0.
 RSSI_RANGE = range(-99, 0)
 NOISE_RANGE = range(-120, 0)
 TX_POWER_RANGE = range(0, 41)

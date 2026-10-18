@@ -11,14 +11,6 @@ class UwoError(Exception):
     """Base class for every error the tool raises on purpose."""
 
 
-class NotImplementedPathError(UwoError):
-    """A code path that exists in the interface but has no implementation in this build."""
-
-    def __init__(self, path: str) -> None:
-        super().__init__(f"{path} is not implemented in this build")
-        self.path = path
-
-
 class SchemaError(UwoError):
     """Controller data violates the schema or a limit; `path` names the offending element."""
 

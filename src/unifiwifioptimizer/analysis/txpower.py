@@ -2,8 +2,8 @@
 
 The weakest evaluable neighbour reading is an upper bound of the true weakest, so an increase is safe
 while a neighbour is unevaluated, but a reduction, a confirmation or a "too strong" claim is not; a peer
-missed in both directions with working scans is a verdict of its own (ADR-002 D8: the maximum only after a
-miss in both directions). The effective maximum is derived from the configured power only in Custom mode —
+missed in both directions with working scans is a verdict of its own (docs/ALGORITHM.md §4, Zero
+sightings). The effective maximum is derived from the configured power only in Custom mode —
 outside it the configured value is stale.
 """
 

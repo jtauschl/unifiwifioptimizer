@@ -1,6 +1,6 @@
 """Adjacency groups: the connected components of the configured neighbour graph, each with the pairs that
 miss a sighting (one or both directions, with the reasons), the overlapping adjacent channels per band and
-the reuse verdict. The Bash tool's width budgets are gone (ADR-002 D8: colouring instead)."""
+the reuse verdict."""
 
 from unifiwifioptimizer.analysis.channels import ChannelAnalysis, components
 from unifiwifioptimizer.analysis.neighbors import EVALUATED_BANDS, NeighbourMatrix

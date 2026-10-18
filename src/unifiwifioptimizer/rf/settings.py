@@ -1,8 +1,8 @@
 """The RF tunables of a run as one value, built by the configuration layer and consumed by the analysis.
 
-Every member is a documented tunable of the RF model (ADR-002 D8): the cell edge (noise floor + required
-SNR), the typical client transmit power for the uplink conversion, the Min-RSSI margin below the roaming
-trigger, and the roaming threshold bounds.
+Every member is a documented tunable of the RF model (docs/ALGORITHM.md §5, §6, §7): the cell edge (noise
+floor + required SNR), the typical client transmit power for the uplink conversion, the Min-RSSI margin
+below the roaming trigger, and the roaming threshold bounds.
 """
 
 from dataclasses import dataclass

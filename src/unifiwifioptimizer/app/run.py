@@ -2,7 +2,7 @@
 
 Everything that can refuse the run happens before the first scan: the environment (OpenSSH) when a site
 scans, the scan passwords, every site's existence, every snapshot, every site's credentials and targets.
-Then the sites are scanned one after the other (access points serial within a site, ADR-002 D4) and
+Then the sites are scanned one after the other (access points serial within a site, docs/ALGORITHM.md §2) and
 analysed. The outcome per site is typed; the command line maps it onto exit codes.
 """
 

@@ -403,6 +403,54 @@ def test_run_refuses_an_unknown_site_selector(run_faked: None, capsys: pytest.Ca
     assert "not a configured site id" in capsys.readouterr().err
 
 
+@pytest.fixture
+def scanner_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Replaces the analysis with a recorder that builds the scanner the way `run` would."""
+    from unifiwifioptimizer.app.run import RunResult
+
+    seen: dict[str, object] = {}
+
+    class RecordingScanner:
+        def __init__(self, store: object, *, environ: object) -> None:
+            seen["store"] = store
+            seen["environ"] = environ
+
+    def record(*args: object, **kwargs: object) -> RunResult:
+        factory = args[3]
+        assert callable(factory)
+        # The scanner is built after the analysis has started; the process environment may have changed by then,
+        # the snapshot taken at the start of the run must not.
+        monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+        factory()
+        return RunResult(reports=(), outcomes=())
+
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "OpenSshScanner", RecordingScanner)
+    monkeypatch.setattr(cli, "run_analysis", record)
+    return seen
+
+
+@pytest.mark.security("T8")
+def test_run_reads_host_keys_from_the_store_given_on_the_command_line(
+    scanner_wiring: dict[str, object], tmp_path: Path
+) -> None:
+    store_path = tmp_path / "elsewhere" / "known_hosts"
+    assert cli.main(["run", "--known-hosts", str(store_path)]) == ExitCode.OK
+    assert getattr(scanner_wiring["store"], "path", None) == store_path
+
+
+@pytest.mark.security("T8")
+def test_run_defaults_to_the_state_directory_of_its_own_environment_snapshot(
+    scanner_wiring: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", "/xdg-state")
+    assert cli.main(["run"]) == ExitCode.OK
+    assert str(getattr(scanner_wiring["store"], "path", "")) == "/xdg-state/unifiwifioptimizer/known_hosts"
+    environ = scanner_wiring["environ"]
+    assert isinstance(environ, dict) and environ["XDG_STATE_HOME"] == "/xdg-state"
+
+
 def test_run_exit_codes_follow_the_verdict() -> None:
     from unifiwifioptimizer.app.run import RunResult, SiteOutcome
     from unifiwifioptimizer.domain.analysis import PartialReason

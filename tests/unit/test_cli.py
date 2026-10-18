@@ -8,7 +8,6 @@ import pytest
 from unifiwifioptimizer import __version__
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.main import HANDLERS, SUBCOMMAND_HELP, main
-from unifiwifioptimizer.domain.errors import NotImplementedPathError, UwoError
 
 registered_subcommands = sorted(SUBCOMMAND_HELP)
 
@@ -37,12 +36,6 @@ def test_every_planned_subcommand_is_registered() -> None:
     expected = ["config", "controller-fingerprint", "init", "run", "site", "sites", "trust-host-keys"]
     assert registered_subcommands == expected
     assert sorted(HANDLERS) == expected
-
-
-def test_not_implemented_error_records_the_path() -> None:
-    exc = NotImplementedPathError("subcommand 'run'")
-    assert isinstance(exc, UwoError)
-    assert exc.path == "subcommand 'run'"
 
 
 def test_keyboard_interrupt_maps_to_130(capsys: pytest.CaptureFixture[str]) -> None:

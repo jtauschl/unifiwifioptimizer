@@ -1,4 +1,4 @@
-"""Minimum RSSI recommendation (ADR-002 D8, docs/ALGORITHM.md §6).
+"""Minimum RSSI recommendation (docs/ALGORITHM.md §6).
 
 The controller evaluates Minimum RSSI on the client's uplink as received by the AP. A downlink target
 is converted by link reciprocity: RSSI_up - RSSI_down = P_client - P_AP.
