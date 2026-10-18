@@ -1,28 +1,71 @@
+# Complete example. Copy the parts you need into your own configuration file:
+#   $XDG_CONFIG_HOME/unifiwifioptimizer/config.yaml  (usually ~/.config/unifiwifioptimizer/config.yaml)
+# The file must be readable by you alone (chmod 600); `unifiwifioptimizer init` creates it that way.
 controller:
   url: https://unifi.example.com
+  # The API key of an account with the full Administrator role (needed to read the access points' SSH
+  # credentials with `ssh.auth: controller`). May also come from the UNIFI_API_KEY environment variable.
   api_key: YOUR_API_KEY
+  # How the controller's certificate is verified. Set at most one of the two; with neither, the system's
+  # root certificates apply.
+  #   cert_fingerprint: SHA-256 of the controller's certificate, from `unifiwifioptimizer controller-fingerprint`
+  #   ca_cert:          absolute path of a CA file that signed the controller's certificate
+  # cert_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  # ca_cert: /etc/ssl/private-ca.pem
+  # Seconds per controller request (1..120, default 15).
+  timeout_s: 15
 
 sites:
   YOUR_SITE_ID:
     ssh:
-      user: YOUR_SSH_USER
-      # Set a password or remove this line for SSH key-based login.
-      password: YOUR_SSH_PASSWORD
+      # controller (default): use the SSH credentials the controller manages for its access points.
+      # key:      your own key. Needs `user`; add `key_file` (absolute path) or rely on your ssh-agent.
+      # password: `user` plus `password` here or in the UNIFI_SSH_PASSWORD environment variable.
+      auth: controller
+      # user: YOUR_SSH_USER
+      # password: YOUR_SSH_PASSWORD
+      # key_file: /home/you/.ssh/id_ed25519   # absolute, or starting with ~
+
+      # Pin an access point's host key by MAC address. The pin is checked first; an access point whose
+      # controller-reported fingerprint differs from it is refused.
+      # host_keys:
+      #   "aa:bb:cc:dd:ee:01": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+      # Bring a scan interface that is down up for the scan and put it down again afterwards
+      # (default false). The U6 Lite keeps its scan interfaces down at rest and needs this.
+      scan_interface_toggle: false
+      # Allow access points with a public IP address (default false).
+      allow_public_ap_addresses: false
+      # Access points scanned at the same time (1..8, default 1). Scanning one at a time avoids
+      # under-counting neighbours that are off-channel while they scan.
+      scan_concurrency: 1
+      # Consecutive `iw scan` runs per band within one connection (1..5, default 2).
+      scan_attempts: 2
 
     # Open, Residential, Office, Obstructed, or a custom path-loss exponent
     environment: Residential
 
-    # Number of round-robin scan passes per run (default: 1).
-    # Use 3 or more to enable noise filtering via trimmed mean.
-    # Each additional pass repeats the full AP scan sequence and adds scan time.
+    # Round-robin scan passes per run (1..10, default 1). The readings are aggregated as the median, so 3 or
+    # more passes outvote a single outlier. Each additional pass repeats the full scan sequence and adds scan time.
     scan_passes: 3
 
-    # Standard, IoT, Hotspot, Throughput, or Latency
+    # WLAN name -> Standard, IoT, Hotspot, Throughput, or Latency
     wlans:
       YOUR_WIFI: Throughput
 
-    # Add neighbor AP names as a comma-separated list in brackets.
+    # Access point name -> the access points it can hear. Names must match the controller exactly.
     neighbors:
       YOUR_AP1: [YOUR_AP2]
       YOUR_AP2: [YOUR_AP1, YOUR_AP3]
       YOUR_AP3: [YOUR_AP2]
+
+# RF model tunables, shared by all sites. Every key is optional; the values shown are the defaults.
+# rf:
+#   noise_floor_dbm: -92      # receiver noise floor, -105..-80
+#   required_snr_db: 25       # SNR at the cell edge, 10..40
+#   client_tx_dbm: 15         # typical client transmit power, 0..30
+#   min_rssi_offset_db: 5     # Minimum RSSI sits this far below the roaming trigger, 0..30
+#   roam_offset_db: 0         # shift of the Roaming Assistant threshold, 0..30
+#   roam_margin_db: 5         # margin of the Roaming Assistant threshold, 0..30
+#   roam_floor_dbm: -75       # lowest roaming trigger, -95..-50, below the ceiling
+#   roam_ceiling_dbm: -65     # highest roaming trigger, -95..-50

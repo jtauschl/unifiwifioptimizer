@@ -1,3 +1,12 @@
+# The smallest working configuration. `unifiwifioptimizer init` writes this for you.
+#
+# A controller with its factory (self-signed) certificate needs its fingerprint:
+#   unifiwifioptimizer controller-fingerprint --url https://unifi.example.com
+# Compare the result with the certificate view in the controller, then uncomment the line below.
 controller:
-  url: https://unifi
+  url: https://unifi.example.com
   api_key: YOUR_API_KEY
+  # cert_fingerprint: "SHA256:..."
+
+# Add one entry per site with `unifiwifioptimizer config <site-id>` and paste the output under this key.
+sites:

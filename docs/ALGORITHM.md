@@ -31,7 +31,7 @@ readings of one pass are close in time. Within a site the access points are scan
 an access point in an off-channel scan sends no beacons, so two neighbours scanning at the same moment
 systematically miss each other. Per band, the remote script repeats `iw scan` (`scan_attempts`) and
 merges the attempts by the strongest reading per BSSID; the passes are then aggregated as the **median**
-of the readings taken on the peer's **current primary frequency** (ADR-002 D8): a reading on another
+of the readings taken on the peer's **current primary frequency**: a reading on another
 channel predates a channel move and is not comparable, and a maximum over 2–4 noisy samples is biased
 1–3 dB high while the median is unbiased. 6 GHz radios are detected and reported, not evaluated.
 
@@ -198,7 +198,7 @@ WLAN target = min(uplink over the broadcasting APs)
 
 Defaults: offset 0 (the trigger sits at the lower corridor edge, matching the published client triggers —
 Apple iPhone/iPad −70 dBm, Mac −75 dBm), margin 5 dB, floor −75 dBm (Apple's macOS trigger), ceiling −65
-dBm (a design choice carried over from the shell tool: higher would make clients roam while well inside a
+dBm (a design choice with no standard behind it: higher would make clients roam while well inside a
 cell). All four are tunables under `rf.*`. Every AP whose value equals the minimum is a limiting AP; ties are
 all reported.
 
@@ -242,13 +242,25 @@ level, so the check under-reports contention rather than inventing it.
   check is skipped with the wait time (60 s, 600 s on 120–128).
 - **Foreign networks** are counted per radio (strongest reading, how many overlap the channel in use); no
   foreign name leaves the scan.
+- **6 GHz** radios are detected and reported as their own band but not evaluated: no corridor, power or channel
+  rule applies to them until a 6 GHz scan model and test hardware exist.
 
 ## 9. Airtime and Clients
 
-Utilisation, self rx/tx share, retries, satisfaction and client count per radio are shown as values; no
-sourced threshold separates a busy radio from a troubled one. With `--clients` the associated clients are
-compared per radio against that radio's derived Minimum RSSI on the same uplink reference; identities are
-never read.
+**Airtime.** Per radio the report shows the channel utilisation, the access point's own receive and transmit
+share, the transmit retry rate, the satisfaction score and the client count, as values. No sourced threshold
+separates a busy radio from a troubled one, so nothing is judged and no recommendation rests on these figures. A
+value the controller marks as absent (satisfaction `-1`) is shown as absent, not as zero.
+
+**Clients** (`--clients`). The associated clients are read as signal strengths only; no MAC address, host name or
+IP address is read, kept or printed. Only wireless clients count, and only those whose signal is a plausible
+reading (strictly between −100 and 0 dBm) and whose access point and radio the snapshot knows. Per radio the
+report shows how many clients there are, the weakest signal, and how many sit below that radio's recommended
+Minimum RSSI. The comparison uses the same reference as the controller: the signal an access point measures from
+its client, the uplink. Client counts appear only for a radio that receives a Minimum RSSI recommendation: it has
+configured neighbours and a known effective power, was scanned, and is neither offline nor waiting for the DFS
+channel availability check; with `--no-scan` none appear. Sightings that cannot be placed on a radio (an unknown
+access point, no signal) are counted once per site and named as such.
 
 ## 10. Model Limits
 
@@ -278,6 +290,6 @@ never read.
 - **ITU-R P.1238-10**: [Propagation data and prediction methods for the planning of indoor radiocommunication systems and radio local area networks in the frequency range 300 MHz to 450 GHz](https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.1238-10-201908-S!!PDF-E.pdf), Table 2 and §3
 - **ETSI EN 301 893** (5 GHz EIRP limits, TPC, channel availability check durations) and the Linux
   `wireless-regdb` (`country DE`)
-- **Cisco**: [Site Survey Guidelines for WLAN Deployment](https://www.cisco.com/c/en/us/support/docs/wireless/5500-series-wireless-controllers/116057-site-survey-guidelines-wlan-00.html) — 25 dB SNR, −67 dBm edge, secondary coverage, co-channel separation
+- **Cisco**: [Site Survey Guidelines for WLAN Deployment](https://www.cisco.com/c/en/us/support/docs/wireless/5500-series-wireless-controllers/116057-site-survey-guidelines-wlan-00.html) — 25 dB SNR, −67 dBm edge, at least two access points heard at −67 dBm, 20 percent cell overlap
 - **Apple**: [Wi-Fi roaming for iPhone, iPad and Mac](https://support.apple.com/en-us/102002) — client roaming triggers
 - **Ubiquiti**: [Understanding and Implementing Minimum RSSI](https://help.ui.com/hc/en-us/articles/221321728-Understanding-and-Implementing-Minimum-RSSI), the U6 Lite and U7 Lite tech specs (transmit power, antenna gain)
