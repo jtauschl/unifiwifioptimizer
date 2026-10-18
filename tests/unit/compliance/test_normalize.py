@@ -1,4 +1,4 @@
-"""The controller-field → profile-vocabulary mapping, including the cases the legacy shell suite pinned."""
+"""The controller-field → profile-vocabulary mapping."""
 
 import pytest
 from hypothesis import given

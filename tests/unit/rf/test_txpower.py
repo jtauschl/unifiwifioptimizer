@@ -25,7 +25,7 @@ def tx_ranges() -> st.SearchStrategy[tuple[int, int, int]]:
     )
 
 
-# --- ported from tests/tx_test.sh --------------------------------------------------------------------
+# --- TX recommendation -------------------------------------------------------------------------------
 
 
 def test_in_corridor_unchanged() -> None:

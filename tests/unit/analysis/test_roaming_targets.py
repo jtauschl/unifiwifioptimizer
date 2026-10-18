@@ -1,7 +1,7 @@
-"""Roaming Assistant targets per WLAN: the 17 shell cases of tests/roaming_test.sh ported onto the matrix, plus
-the seam into the compliance check. Shell fixtures used TX_LO -73, margin 5, floor -78, ceiling -67 and equal
-AP/client power; the port keeps those numbers via a 2.4-GHz-like corridor on 5 GHz and `client_tx_dbm` equal
-to the radios' effective power, so the uplink values equal the shell's downlink values."""
+"""Roaming Assistant targets per WLAN, plus the seam into the compliance check. The fixtures use TX_LO -73,
+margin 5, floor -78, ceiling -67 and equal AP/client power: a 2.4-GHz-like corridor on 5 GHz and
+`client_tx_dbm` equal to the radios' effective power, so the uplink values equal the downlink values and
+every expected threshold can be derived by hand from those round numbers."""
 
 from collections.abc import Mapping
 from dataclasses import replace
@@ -32,7 +32,7 @@ TUNABLES = RoamingTunables(offset_db=0, margin_db=5, floor_dbm=-78, ceiling_dbm=
 EQUAL_POWER = 15
 RF = RfSettings(client_tx_dbm=EQUAL_POWER, roaming=TUNABLES)
 GROUP = "000000000000000000000011"
-# Every fixture radio at the same effective 5 GHz power, so uplink == downlink as in the shell suite.
+# Every fixture radio at the same effective 5 GHz power, so uplink == downlink.
 SNAP = fixture_snapshot()
 for _name in ("AP-1", "AP-2", "AP-3", "AP-4"):
     SNAP = with_ap(SNAP, with_stats(ap_named(SNAP, _name), Band.GHZ_5, observed_tx_dbm=EQUAL_POWER))
@@ -81,7 +81,7 @@ def target(
     return roaming_target(w, snapshot, matrix, CORRIDOR, RF)
 
 
-# --- ported from tests/roaming_test.sh --------------------------------------------------------------------
+# --- target derivation per WLAN ---------------------------------------------------------------------------
 
 
 def test_ssid_peer_filtering() -> None:

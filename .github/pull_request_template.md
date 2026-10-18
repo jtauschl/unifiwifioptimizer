@@ -18,5 +18,5 @@
 
 - [ ] Tested locally against a real UniFi controller
 - [ ] `./dev ci` passes locally
-- [ ] `profiles.yaml` changes are reflected in `docs/PROFILES.md` if applicable
+- [ ] Changes to `src/unifiwifioptimizer/resources/profiles.yaml` are reflected in `docs/PROFILES.md` if applicable
 - [ ] No credentials or personal config committed

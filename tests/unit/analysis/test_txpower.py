@@ -171,7 +171,7 @@ def test_row_5_no_peer_on_the_band_emits_nothing() -> None:
 
 
 def test_zero_sightings_with_peer_goes_to_max() -> None:
-    # Ported from tx_test.sh: no sighting of the configured peer in either direction, radio below its maximum.
+    # No sighting of the configured peer in either direction, radio below its maximum.
     result = run(custom("AP-3", Band.GHZ_5, 15, max_tx=23), [missing("AP-2", MissingReason.NOT_SIGHTED)])
     assert result.outcome is BandTxOutcome.NO_SIGHTING
     rec = result.recommendation
@@ -180,7 +180,7 @@ def test_zero_sightings_with_peer_goes_to_max() -> None:
 
 
 def test_zero_sightings_no_peer_unchanged() -> None:
-    # Ported from tx_test.sh: without a configured peer there is no target to reach.
+    # Without a configured peer there is no target to reach.
     assert run(custom("AP-3", Band.GHZ_5, 15), []).recommendation is None
 
 
@@ -229,7 +229,7 @@ def test_row_7_a_one_way_miss_without_reciprocity_is_not_evaluable_never_the_max
 
 
 def test_in_corridor_unchanged() -> None:
-    # Ported from tx_test.sh; CONFIRMED only when every peer on the band is evaluable.
+    # CONFIRMED only when every peer on the band is evaluable.
     result = run(custom("AP-3", Band.GHZ_5, 15), [measured("AP-2", -65), predicted("AP-4", -62)])
     assert result.outcome is BandTxOutcome.IN_CORRIDOR
     rec = result.recommendation

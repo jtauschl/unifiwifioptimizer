@@ -8,9 +8,6 @@ cd "$(dirname "$0")"
 #
 # Tool-availability policy: a missing required tool fails the run. Never downgrade a check to a silent
 # skip; an unchecked gate nobody notices is worse than a loud one.
-#
-# Two gates coexist until the Bash tool is removed: the Python package gate and the legacy shell gate
-# (`legacy-bash`), both bundled into `ci`.
 
 COMMAND=${1:-help}
 
@@ -325,12 +322,10 @@ cmd_smoke() {
 # ── Shell gate ───────────────────────────────────────────────────────────────
 
 # `dev` is always included so the wrapper's own shell code is checked. Everything else is discovered,
-# not hand-listed; a fixed list silently excludes whatever a later change adds. The legacy Bash tool and
-# its tests are part of the set until they are removed.
+# not hand-listed; a fixed list silently excludes whatever a later change adds.
 collect_shell_scripts() {
   local -a found=(dev)
   local f
-  [ -f unifiwifioptimizer ] && found+=(unifiwifioptimizer)
   # find's exit status does not survive a `while … < <(find …)` process substitution, so discovery goes
   # through a temp file whose write can be checked.
   local listing listing_error
@@ -339,7 +334,7 @@ collect_shell_scripts() {
   # The remote scan script is a package resource, piped to the access point's `sh -s`; it carries a
   # `shellcheck shell=sh` directive instead of a shebang.
   if ! find scripts tests src/unifiwifioptimizer/adapters/ssh -maxdepth 1 -name '*.sh' 2>"$listing_error" | sort >"$listing"; then
-    fail "find scripts/*.sh tests/*.sh src/…/adapters/ssh/*.sh discovery failed: $(cat "$listing_error")"
+    fail "shell script discovery failed: $(cat "$listing_error")"
   fi
   while IFS= read -r f; do
     found+=("$f")
@@ -387,20 +382,6 @@ cmd_shellcheck() {
   step "smoke test — ./dev help"
   ./dev help >/dev/null || fail "./dev help failed"
   ok "smoke test — passed"
-}
-
-# Legacy gate for the Bash tool; removed together with the tool.
-cmd_legacy_bash() {
-  step "legacy-bash — smoke test and shell test suite"
-  [ -x unifiwifioptimizer ] || fail "legacy Bash tool not found"
-  ./unifiwifioptimizer --help >/dev/null || fail "legacy Bash tool: --help failed"
-  local f ran=0
-  for f in tests/*_test.sh; do
-    [ -f "$f" ] || fail "legacy Bash tests: no tests/*_test.sh found"
-    bash "$f" || fail "legacy Bash tests: $f failed"
-    ran=$((ran + 1))
-  done
-  ok "legacy-bash — $ran test file(s) passed"
 }
 
 cmd_actionlint() {
@@ -488,7 +469,6 @@ cmd_ci() {
   run_check "shellcheck" cmd_shellcheck
   run_check "actionlint" cmd_actionlint
   run_check "gitleaks" cmd_gitleaks
-  run_check "legacy-bash" cmd_legacy_bash
   run_check "lint" cmd_lint
   run_check "coverage" cmd_coverage
   run_check "test-integration" cmd_test_integration
@@ -569,7 +549,6 @@ cmd_help() {
   echo ""
   echo "${BOLD}Shell:${RESET}"
   printf "  %-20s %s\n" "shellcheck" "shellcheck + shfmt + bash -n + smoke test (shell scripts)"
-  printf "  %-20s %s\n" "legacy-bash" "legacy Bash tool smoke test and shell test suite"
   printf "  %-20s %s\n" "actionlint" "actionlint (GitHub Actions workflows)"
   printf "  %-20s %s\n" "gitleaks" "secret scan, full history"
   echo ""
@@ -607,7 +586,6 @@ licenses) cmd_licenses ;;
 build) cmd_build ;;
 smoke) cmd_smoke ;;
 shellcheck) cmd_shellcheck ;;
-legacy-bash) cmd_legacy_bash ;;
 actionlint) cmd_actionlint ;;
 gitleaks) cmd_gitleaks ;;
 sast) cmd_sast ;;

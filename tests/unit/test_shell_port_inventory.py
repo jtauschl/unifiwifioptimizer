@@ -1,18 +1,18 @@
-"""Inventory gate between the legacy shell test suites and their pytest counterparts.
+"""Inventory gate between the Bash tool's shell test suites and their pytest counterparts.
 
-Every `test_*` function in tests/*_test.sh must be accounted for: ported to a named pytest test that
-exists, assigned to the ticket of the rewrite that owns its layer, or recorded as superseded by a design
-decision. Every pytest test named here must exist, so a rename or deletion on either side fails this
-gate rather than silently dropping coverage.
+The shell suites left the repository with the Bash tool; the last commit that has them is the tag
+`archive/bash-final`. Their test ids are frozen below. Every one is either ported to a named pytest test
+that must exist or recorded as superseded by a design decision, so a rename or deletion of a ported test
+fails this gate rather than silently dropping coverage.
 """
 
+import hashlib
 import re
 from pathlib import Path
 
 import pytest
 
 TESTS_DIR = Path(__file__).resolve().parents[1]
-SHELL_SUITES = sorted(TESTS_DIR.glob("*_test.sh"))
 
 TX = "unit/rf/test_txpower.py::"
 ROAMING = "unit/rf/test_roaming.py::"
@@ -24,7 +24,7 @@ REPORT = "unit/report/test_report_renderers.py::"
 ROAMING_CHECK = "unit/compliance/test_roaming_check.py::"
 TARGETS = "unit/analysis/test_roaming_targets.py::"
 RUN = "unit/app/test_run.py::"
-# Bash test → pytest node (module::function) or the ticket that ports it.
+# Shell test → pytest node (module::function).
 PORTED: dict[str, str] = {
     "security_test.sh::test_state_wpa3_enterprise": NORMALIZE + "test_state_wpa3_enterprise",
     "security_test.sh::test_state_wpa2_wpa3_enterprise": NORMALIZE + "test_state_wpa2_wpa3_enterprise",
@@ -114,7 +114,9 @@ PORTED: dict[str, str] = {
 # Behaviour the standards-grounded RF model or the Python design replaced; the shell test documents the old
 # rule, the value names the rule that replaced it.
 SUPERSEDED: dict[str, str] = {
-    "tx_test.sh::test_partial_missing_peer_nudge_preserved": "ADR-002 D8: weakest-neighbour statistic, no nudge",
+    "tx_test.sh::test_partial_missing_peer_nudge_preserved": (
+        "docs/ALGORITHM.md §3: weakest-neighbour statistic, no nudge"
+    ),
     "tx_test.sh::test_tx_pending_note_absent_on_normal_verdict": (
         "the note appears whenever a 5 GHz TX change is pending, because the uplink threshold follows "
         "the effective power; an OK verdict is stale then too"
@@ -130,11 +132,7 @@ SUPERSEDED: dict[str, str] = {
         "a malformed endpoint body is a SchemaError and aborts the run (exit 1), as above"
     ),
 }
-# Tests of report rendering, site aggregation and controller fetch paths follow their layers' tickets.
-DEFERRED: dict[str, str] = {}
-
-# The shell suites' test ids, frozen: the suites leave the repo at the cut-over, and the inventory above
-# must keep proving every one of them afterwards. While the suites exist, the literal is compared with them.
+# The shell suites' test ids as of `archive/bash-final`; the inventory above must account for every one.
 SHELL_TESTS: frozenset[str] = frozenset(
     {
         "roaming_test.sh::test_2g_only_site_no_fallback_trigger",
@@ -198,16 +196,7 @@ SHELL_TESTS: frozenset[str] = frozenset(
     }
 )
 
-SHELL_TEST = re.compile(r"^(?:function\s+)?(test_[a-z0-9_]+)\s*(?:\(\))?\s*\{", re.MULTILINE)
 PYTEST_TEST = re.compile(r"^def (test_[a-z0-9_]+)\(", re.MULTILINE)
-
-
-def shell_tests() -> set[str]:
-    return {
-        f"{suite.name}::{name}"
-        for suite in SHELL_SUITES
-        for name in SHELL_TEST.findall(suite.read_text(encoding="utf-8"))
-    }
 
 
 def pytest_tests() -> set[str]:
@@ -218,23 +207,25 @@ def pytest_tests() -> set[str]:
     return found
 
 
-def test_shell_suites_are_present_until_the_cut_over() -> None:
-    assert [s.name for s in SHELL_SUITES] == ["roaming_test.sh", "security_test.sh", "tx_test.sh"]
+def test_no_shell_script_is_back_under_tests() -> None:
+    assert sorted(path.relative_to(TESTS_DIR).as_posix() for path in TESTS_DIR.rglob("*.sh")) == []
 
 
-def test_the_frozen_ids_are_exactly_the_shell_suites_tests() -> None:
-    assert shell_tests() == SHELL_TESTS
+def test_the_frozen_set_of_shell_test_ids_is_unchanged() -> None:
+    # Removing an id from SHELL_TESTS and from the inventory together would otherwise pass every other test.
+    digest = hashlib.sha256("\n".join(sorted(SHELL_TESTS)).encode()).hexdigest()
+    assert digest == "ee2a579f506b81e7807a50b872b118561639dc49c30c0f01f35b4638cbc74ee8"
 
 
-def test_every_shell_test_is_ported_or_assigned_to_a_ticket() -> None:
-    inventory = set(PORTED) | set(DEFERRED) | set(SUPERSEDED)
-    assert len(inventory) == len(PORTED) + len(DEFERRED) + len(SUPERSEDED)
+def test_every_shell_test_is_ported_or_superseded() -> None:
+    inventory = set(PORTED) | set(SUPERSEDED)
+    assert len(inventory) == len(PORTED) + len(SUPERSEDED)
     unaccounted = SHELL_TESTS - inventory
     assert unaccounted == set()
 
 
 def test_every_inventory_entry_names_a_frozen_shell_test() -> None:
-    assert (set(PORTED) | set(DEFERRED) | set(SUPERSEDED)) - SHELL_TESTS == set()
+    assert (set(PORTED) | set(SUPERSEDED)) - SHELL_TESTS == set()
 
 
 @pytest.mark.parametrize("target", sorted(set(PORTED.values())))

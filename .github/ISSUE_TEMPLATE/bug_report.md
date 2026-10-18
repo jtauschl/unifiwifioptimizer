@@ -11,7 +11,7 @@ A clear description of what the bug is.
 ## Steps to reproduce
 
 1. Config used (redact credentials): 
-2. Command run: `./unifiwifioptimizer ...`
+2. Command run: `unifiwifioptimizer ...`
 3. Error output:
 
 ```
@@ -25,8 +25,8 @@ What should have happened?
 ## Environment
 
 - OS: 
-- Bash version: `bash --version`
+- unifiwifioptimizer version: `unifiwifioptimizer --version`
+- Python version: `python3 --version`
+- OpenSSH version: `ssh -V`
 - UniFi Network App version: 
 - AP firmware version: 
-- Python3 version: `python3 --version`
-- Ruby version: `ruby --version`

@@ -1,4 +1,4 @@
-"""Cross-setting advisories, including the MLO cases the legacy shell suite pinned."""
+"""Cross-setting advisories, including the MLO cases."""
 
 from unifiwifioptimizer.compliance.advisories import (
     ADVISORIES,

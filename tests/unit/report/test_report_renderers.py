@@ -91,19 +91,19 @@ def test_the_pending_tx_note_appears_on_a_roaming_check_when_a_5_ghz_change_is_p
 
 
 def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
-    # Ported from tx_test.sh: the incomplete roaming verdict is printed, and the note follows it.
+    # The incomplete roaming verdict is printed, and the note follows it.
     text = render_report(REPORT)
     assert "Roaming Assistant" in text and "threshold not available" in text and "pending transmit-power change" in text
 
 
 def test_tx_pending_note_absent_when_no_pending() -> None:
-    # Ported from tx_test.sh: without a pending 5 GHz change the note does not appear.
+    # Without a pending 5 GHz change the note does not appear.
     report = analyze_site(golden_input(skip_scan=True))
     assert report.pending_tx_changes == 0 and "pending transmit-power change" not in render_report(report)
 
 
 def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
-    # Ported from tx_test.sh: a radio below its maximum with a both-way miss is raised and flagged.
+    # A radio below its maximum with a both-way miss is raised and flagged.
     inp = golden_input()
     lowered = with_ap(
         inp.snapshot,
@@ -134,7 +134,7 @@ def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
 
 
 def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
-    # Ported from tx_test.sh: at the maximum with a both-way miss nothing is flagged as a change.
+    # At the maximum with a both-way miss nothing is flagged as a change.
     rec = next(
         r for r in REPORT.recommendations if r.subject == "AP-3" and r.band is Band.GHZ_5 and r.setting == "tx_power"
     )

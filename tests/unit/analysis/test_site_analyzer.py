@@ -419,7 +419,7 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
 
 
 def test_prepare_site_tx_checks_counts_zero_sightings() -> None:
-    # Ported from tx_test.sh: a radio below its maximum with a both-way miss is one pending TX change.
+    # A radio below its maximum with a both-way miss is one pending TX change.
     inp = golden_input()
     snap = inp.snapshot
     lowered = ap_named(snap, "AP-3")
@@ -435,7 +435,7 @@ def test_prepare_site_tx_checks_counts_zero_sightings() -> None:
 
 
 def test_prepare_site_tx_checks_zero_when_all_ok() -> None:
-    # Ported from tx_test.sh: every band in its corridor counts nothing. Every TX recommendation of the golden
+    # Every band in its corridor counts nothing. Every TX recommendation of the golden
     # site turned into a confirmation leaves eight TX recommendations and a pending count of zero.
     def confirmed(rec):  # type: ignore[no-untyped-def]
         if rec.setting != TX_POWER or rec.current is None:

@@ -8,7 +8,7 @@ from unifiwifioptimizer.rf.roaming import RoamingRecommendation, RoamingTunables
 
 RESIDENTIAL = Corridor(low=-73)
 TEST_TUNABLES = RoamingTunables(offset_db=0, margin_db=5, floor_dbm=-78, ceiling_dbm=-67)
-# Equal AP and client power: uplink == downlink, so the ported Bash values apply unchanged.
+# Equal AP and client power: uplink == downlink, so the expected values read directly as downlink values.
 EQUAL_POWER = 15
 
 
@@ -24,7 +24,7 @@ def tunables() -> st.SearchStrategy[RoamingTunables]:
     )
 
 
-# --- ported from tests/roaming_test.sh -----------------------------------------------------------------
+# --- Roaming Assistant threshold derivation ------------------------------------------------------------
 
 
 def test_calculate_roaming_recommendation_default() -> None:

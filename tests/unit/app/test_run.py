@@ -335,7 +335,7 @@ def test_offline_access_points_are_not_scanned_and_do_not_make_the_run_partial()
 
 
 def test_multi_site_tx_lo_isolation() -> None:
-    # Ported from roaming_test.sh: each site aggregates with its own corridor.
+    # Each site aggregates with its own corridor.
     cfg = loaded(
         {
             "default": scanning_site(environment="Open"),
