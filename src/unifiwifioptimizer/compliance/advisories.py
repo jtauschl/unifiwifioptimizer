@@ -8,7 +8,7 @@ from unifiwifioptimizer.compliance.normalize import Unrecognised, minrate_mode, 
 from unifiwifioptimizer.domain.models import Band, WlanConfig
 from unifiwifioptimizer.domain.profile import (
     DSSS_RATES_KBPS,
-    MIN_OFDM_RATE_KBPS,
+    RECOMMENDED_MIN_RATE_2G_KBPS,
     MinRateMode,
     PmfMode,
     Profile,
@@ -101,10 +101,10 @@ def fast_roaming_on_2g_only_wlan(profile: Profile, wlan: WlanConfig) -> Finding 
 
 
 def min_rate_2g(profile: Profile, wlan: WlanConfig) -> Finding | None:
-    """A fixed 2.4 GHz minimum below the lowest OFDM rate keeps 802.11b protection on every frame. Only a
-    WLAN that broadcasts on 2.4 GHz, fixes its rates (`manual`; under `auto` the stored value is inert)
-    and has 802.11b support switched on can be affected; an unknown `b_supported` is not assumed either
-    way."""
+    """A fixed 2.4 GHz minimum at an 802.11b DSSS rate admits 802.11b clients, and one below 12 Mbit/s keeps
+    broadcast frames on slow rates. Only a WLAN that broadcasts on 2.4 GHz, fixes its rates (`manual`; under
+    `auto` the stored value is inert) and has 802.11b support switched on can be affected; an unknown
+    `b_supported` is not assumed either way."""
     if (
         Band.GHZ_2 not in wlan.bands
         or minrate_mode(wlan) is not MinRateMode.MANUAL
@@ -118,16 +118,17 @@ def min_rate_2g(profile: Profile, wlan: WlanConfig) -> Finding | None:
         return _advisory(
             "min_rate_2g_dsss",
             wlan,
-            f"{rate_label(kbps)} is an 802.11b DSSS rate — raising to {rate_label(MIN_OFDM_RATE_KBPS)} (lowest OFDM "
-            "rate) ends 802.11b support and cuts broadcast airtime.",
+            f"{rate_label(kbps)} is an 802.11b DSSS rate — raising to "
+            f"{rate_label(RECOMMENDED_MIN_RATE_2G_KBPS)} (the usual starting point for a mandatory rate) ends "
+            "802.11b support and cuts broadcast airtime.",
             band=Band.GHZ_2,
         )
-    if kbps < MIN_OFDM_RATE_KBPS:
+    if kbps < RECOMMENDED_MIN_RATE_2G_KBPS:
         return _advisory(
-            "min_rate_2g_below_ofdm",
+            "min_rate_2g_below_recommended",
             wlan,
-            f"{rate_label(kbps)} is below the {rate_label(MIN_OFDM_RATE_KBPS)} recommendation — raising it cuts "
-            "broadcast airtime, though this rate does not itself admit 802.11b clients.",
+            f"{rate_label(kbps)} is below the {rate_label(RECOMMENDED_MIN_RATE_2G_KBPS)} recommendation — raising "
+            "it cuts broadcast airtime, though this rate does not itself admit 802.11b clients.",
             band=Band.GHZ_2,
         )
     return None

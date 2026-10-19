@@ -39,8 +39,9 @@ channel predates a channel move and is not comparable, and a maximum over 2–4 
 
 For a configured pair (A, B) and band the matrix holds **A at B**: the RSSI of A's beacons measured by
 B's scan. This is the only direction A's transmit power moves. The statistic per radio is the **weakest
-configured neighbour** — Cisco's radio resource management judges an order statistic of the neighbours,
-not their mean, and a mean hides one overlap next to one gap.
+configured neighbour** — a design choice, not Cisco's method: Cisco's TPC (version 1) judges the *third* loudest
+neighbour against a −70 dBm threshold, with 6 dB hysteresis for a decrease and 3 dB for an increase (Cisco RRM white
+paper). Like any order statistic the weakest neighbour avoids the mean, which hides one overlap next to one gap.
 
 A cell without a reading names why, most fundamental reason first: scan skipped, this AP offline, the peer
 offline, the peer unknown to the controller, this AP in its DFS channel-availability check, the peer in
@@ -63,10 +64,12 @@ receiver) the report says so, because every AP is then judged by the other chips
 
 The radio's **effective** power (`radio_table_stats.tx_power`) is the basis; the configured value is only
 read in Custom mode. A radio under Custom whose effective power lies below the configured one has hit a
-cap — the regulatory EIRP limit of the channel group minus the antenna gain (EN 301 893: 23 dBm EIRP on
-5150–5350 MHz, which is 18 dBm conducted on a U7 Lite with its 5 dBi antenna; live-verified) — and the
-effective power is then the **verified** maximum — as it is when the radio runs at the configured maximum
-itself. In every other case the configured radio maximum is the maximum, **unverified**: nobody has shown
+cap — the regulatory EIRP limit of the channel group minus the antenna gain (Germany, wireless-regdb and
+EN 301 893: 23 dBm EIRP on 5150–5250 MHz; on 5250–5350 MHz 23 dBm with TPC and 20 dBm without; on 5470–5725 MHz
+30 dBm with TPC and 27 dBm without; a U7 Lite with its 5 dBi antenna at 23 dBm EIRP is 18 dBm conducted,
+live-verified on channels 40 and 60) — and the effective power is then the **verified** maximum — as it is when the
+radio runs at the configured maximum itself. A maximum verified on one channel group does not carry over to
+another. In every other case the configured radio maximum is the maximum, **unverified**: nobody has shown
 the radio reaching it on this channel, and an increase above the demonstrated power is marked as unverified
 headroom.
 
@@ -111,11 +114,13 @@ reposition or add an access point, never "raise" again on every run.
 
 ## 5. Corridor Derivation
 
-The cell edge is derived, not quoted: `edge = noise_floor + required_snr`, by default −92 dBm + 25 dB =
-−67 dBm. Thermal noise over 20 MHz is kTB ≈ −101 dBm; a receiver noise figure of about 9 dB gives −92 dBm;
-IEEE 802.11-2020 Table 17-18 lists −65 dBm minimum sensitivity for 64-QAM 3/4 at an assumed 10 dB noise
-figure, i.e. about 26 dB SNR including the standard's 5 dB implementation margin — within 1 dB of
-Cisco's "25 dB SNR, −67 dBm at −92 dBm noise" (document 116057). Both inputs are tunables
+The cell edge is derived: `edge = noise_floor + required_snr`, by default −92 dBm + 25 dB = −67 dBm. These are
+Cisco's figures for **voice** deployments, measured at the client (document 116057: a minimum SNR of 25 dB, −67 dBm
+at a noise level of −92 dBm, and for voice "at least two APs heard at −67 dBm"), a design target and not a general
+standard. A cross-check: thermal noise over 20 MHz is kTB ≈ −101 dBm, a receiver noise figure of about 9 dB gives
+−92 dBm, and IEEE 802.11-2020 Table 17-18 lists −65 dBm minimum sensitivity for 64-QAM 3/4, about 26 dB SNR once a
+noise figure and an implementation margin are assumed — close to Cisco's 25 dB. Applying the figure to AP-to-AP
+beacon readings instead of client measurements is this tool's proxy (§10). Both inputs are tunables
 (`rf.noise_floor_dbm`, `rf.required_snr_db`).
 
 **5 GHz** (the roaming band): the secondary-coverage rule — every point served by two access points at or
@@ -140,16 +145,18 @@ TX_HI = TX_LO + 6
 | `Obstructed` | 4.0 | 8.87 | −76 … −70 | body text "about 40" |
 | `<number>` | x | — | — | custom n |
 
-The corridor width of 6 dB is a tolerance for normal variation; the presets are second-order (2.2 dB per
+The 60 % reading, the corridor width of 6 dB and the presets are this tool's design: ITU-R P.1238 supplies the
+table values for residential and office at 2.4 GHz, and the Open and Obstructed values come from its text. The corridor
+width of 6 dB is a tolerance for normal variation; the presets are second-order (2.2 dB per
 unit of n, at most 1.3 dB between bands), which is why one site-wide `environment` suffices.
 
 ## 6. Minimum RSSI
 
 The controller evaluates Minimum RSSI on the client's **uplink** as received by the AP. The target is
-derived on the downlink (the corridor floor minus `rf.min_rssi_offset_db`, default 5 dB: a vendor-consensus
-margin between the soft-roam trigger and the hard disconnect, Cisco uses about 10) and converted by link
+derived on the downlink (the corridor floor minus `rf.min_rssi_offset_db`, default 5 dB: a design choice for the
+gap between the soft-roam trigger and the hard disconnect; no source gives this value) and converted by link
 reciprocity, `RSSI_up − RSSI_down = P_client − P_AP`, with a typical client power (`rf.client_tx_dbm`,
-default 15 dBm, a vendor figure):
+default 15 dBm, a typical phone figure without a standard behind it, a tunable):
 
 ```text
 min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
@@ -161,6 +168,10 @@ stronger than the downlink; without the conversion a Minimum RSSI never fires us
 The controller accepts −90 to −67 dBm for Minimum RSSI (verified on U6 Lite and U7 Lite, both bands). A derived
 value outside that range moves to the nearer end, and the report names the derived value next to it. An
 enabled Minimum RSSI set to that end counts as confirmed.
+
+Ubiquiti's own guidance is more cautious than the derived values: "It's safe to say -80dBm would be a starting
+point for standard home or office configurations" (Understanding and Implementing Minimum RSSI), and its SSID
+settings overview calls the hard kick "generally not recommended unless running a high density deployment".
 
 Enabling it is a deployment choice: a disabled Minimum RSSI is reported as the value to use if it is
 switched on, never as a pending change; enabled at the derived value it is confirmed, elsewhere it is a
@@ -206,11 +217,16 @@ Suggestions slider (observed on Network 10.6.106). A value outside that range ca
 point at 23 dBm on 5 GHz derives −83 dBm from the −75 dBm floor (−75 − (23 − 15)). The report then names the
 derived value and the range, the target is the nearer end, and a WLAN set to it passes the check.
 
-Defaults: offset 0 (the trigger sits at the lower corridor edge, matching the published client triggers —
-Apple iPhone/iPad −70 dBm, Mac −75 dBm), margin 5 dB, floor −75 dBm (Apple's macOS trigger), ceiling −65
+Defaults: offset 0 (the trigger sits at the lower corridor edge; Apple's published client scan triggers are
+−70 dBm on iPhone/iPad and −75 dBm on Mac, support document 102002 — they start the client's own search for a better
+access point and are not a controller threshold), margin 5 dB, floor −75 dBm (the macOS trigger), ceiling −65
 dBm (a design choice with no standard behind it: higher would make clients roam while well inside a
 cell). All four are tunables under `rf.*`. Every AP whose value equals the minimum is a limiting AP; ties are
 all reported.
+
+Ubiquiti describes the mechanism as BSS transition frames that tell a client it will be dissociated once it drops
+below the threshold, and suggests a value "below -70 dBm" (UniFi WiFi SSID and AP Settings Overview). A
+low-power access point can derive a value above that guidance; the report prints the derived value either way.
 
 Incomplete data never produces a silently optimistic value: a broadcasting AP without a configured neighbour
 that also broadcasts the WLAN, a missing peer reading, an unresolvable AP group or a group member that is
@@ -231,20 +247,24 @@ Geometry in use always comes from the radio statistics (a radar move takes a fix
 configured channel that differs from the one in use is reported). Two graphs over the site's access
 points: the configured adjacency, and the **heard graph** — own access points whose median reading of each
 other is at or above −82 dBm, the IEEE 802.11 CCA level at which an OFDM receiver must defer to a 20 MHz
-transmission (equal to the 6 Mb/s minimum sensitivity of Table 17-18). Receivers defer well below that
-level, so the check under-reports contention rather than inventing it.
+transmission (equal to the 6 Mb/s minimum sensitivity of Table 17-18). The level is the one for the primary 20 MHz
+channel; the check applies it to any overlap, including overlap only in a secondary channel, where the standard's
+levels differ. It is a simplified contention indicator, not a prediction of what a receiver defers to.
 
 - **Overlap** between configured neighbours (5 GHz: bonded blocks within a UNII range; 2.4 GHz: 20 MHz
-  plus a 2 MHz guard so 1/6/11 stay disjoint; a 40 MHz block follows the secondary channel when the
+  plus a 2 MHz guard, this tool's choice, so the common 1/6/11 plan stays disjoint; a 40 MHz block follows the secondary channel when the
   controller reports it) is an advisory with the free candidate channels from the controller's own
   candidate list.
 - **Co-channel contention** between any two own access points that hear each other at or above the CCA
   level on an overlapping channel is an advisory, configured pair or not.
 - **Reuse feasibility**: the component of the union graph (heard ∪ configured) must be colourable with the
   channels available — three on 2.4 GHz, the number of disjoint blocks of the widest width inside the
-  candidate set on 5 GHz. The old width budgets (60/320 MHz) are gone.
-- **Channel AI**: an auto radio managed by Channel AI is reported, not recommended — the nightly
-  optimisation would overwrite the advice; the layout is an information line ("if this persists across
+  candidate set on 5 GHz. The old width budgets (60/320 MHz) are gone. Without a channel list from the controller
+  the 5 GHz hints and this check are skipped and the report says so, because the usable 5 GHz channels depend on the
+  country.
+- **Channel AI**: an auto radio managed by Channel AI is reported, not recommended — Ubiquiti documents it as
+  changing channels only ("channel width and transmit power remain unchanged"), and a Channel AI run would overwrite
+  channel advice; the layout is an information line ("if this persists across
   runs, pin channels or add exclusions"). An auto radio without Channel AI gets a "pin channels" advisory;
   a fixed radio is always judged. A channel on the Channel AI blacklist is an advisory.
 - **40 MHz on 2.4 GHz** covers two of the three non-overlapping channels and is an advisory by itself.
@@ -303,3 +323,5 @@ access point, no signal) are counted once per site and named as such.
 - **Cisco**: [Site Survey Guidelines for WLAN Deployment](https://www.cisco.com/c/en/us/support/docs/wireless/5500-series-wireless-controllers/116057-site-survey-guidelines-wlan-00.html) — 25 dB SNR, −67 dBm edge, at least two access points heard at −67 dBm, 20 percent cell overlap
 - **Apple**: [Wi-Fi roaming for iPhone, iPad and Mac](https://support.apple.com/en-us/102002) — client roaming triggers
 - **Ubiquiti**: [Understanding and Implementing Minimum RSSI](https://help.ui.com/hc/en-us/articles/221321728-Understanding-and-Implementing-Minimum-RSSI), the U6 Lite and U7 Lite tech specs (transmit power, antenna gain)
+- **Cisco**: [RRM white paper, TPC](https://www.cisco.com/c/en/us/td/docs/wireless/controller/technotes/8-1/mobility_express/b_RRM_White_Paper/b_RRM_White_Paper_chapter_0101.html) — third loudest neighbour, −70 dBm default threshold, 6 dB and 3 dB hysteresis
+- **Ubiquiti**: [UniFi WiFi SSID and AP Settings Overview](https://help.ui.com/hc/en-us/articles/32065480092951-UniFi-WiFi-SSID-and-AP-Settings-Overview) (Handoff Suggestions below −70 dBm, Minimum RSSI), [UniFi Channel AI](https://help.ui.com/hc/en-us/articles/37367741854743-UniFi-Channel-AI-and-Automated-WiFi-Optimization)

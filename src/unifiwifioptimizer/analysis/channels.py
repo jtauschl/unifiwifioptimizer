@@ -3,8 +3,8 @@
 The geometry in use always comes from the radio statistics (a radar move takes a fixed radio elsewhere).
 Overlap between configured neighbours and co-channel contention between any two own access points that
 hear each other at or above the CCA level are advisories; a layout that cannot be coloured with the
-channels available is one too. Under Channel AI an auto radio's layout is reported, not recommended: the
-nightly optimisation would overwrite the advice.
+channels available is one too. Under Channel AI an auto radio's layout is reported, not recommended: a
+Channel AI run would overwrite channel advice.
 """
 
 from collections import defaultdict
@@ -21,7 +21,6 @@ from unifiwifioptimizer.domain.models import AccessPoint, Band, ChannelAiSetting
 from unifiwifioptimizer.domain.report import Finding, Severity
 from unifiwifioptimizer.domain.scan import SiteScan
 from unifiwifioptimizer.rf.channels import (
-    CHANNELS_5G,
     CLEAN_2G_CHANNELS,
     PUNCTURED_WIDTHS_5G,
     channel_block_5g,
@@ -99,11 +98,13 @@ def free_candidates(
     return free
 
 
-def candidate_set(band: Band, channel_ai: ChannelAiSettings | None) -> frozenset[int]:
-    """The controller's per-band candidate list when it has one, else the full channel set."""
+def candidate_set(band: Band, channel_ai: ChannelAiSettings | None) -> frozenset[int] | None:
+    """The controller's per-band candidate list when it has one; 1/6/11 on 2.4 GHz otherwise. None for 5 GHz
+    without a list: which channels may be used depends on the country, which this tool does not model, and a
+    guessed set would miscount the blocks available for reuse."""
     if channel_ai is not None and band in channel_ai.channels and channel_ai.channels[band]:
         return channel_ai.channels[band]
-    return CLEAN_2G_CHANNELS if band is Band.GHZ_2 else CHANNELS_5G
+    return CLEAN_2G_CHANNELS if band is Band.GHZ_2 else None
 
 
 def colour_count(band: Band, candidates: frozenset[int], width_mhz: int) -> int:
@@ -243,12 +244,16 @@ def analyse_channels(
                 )  # fmt: skip
             else:
                 taken = [geometries[(p, band)] for p in peers if (p, band) in geometries]
-                free = free_candidates(band, taken, candidate_set(band, channel_ai), geometry.width_mhz)
-                hint = (
-                    f"; free candidates: {', '.join(str(c) for c in free)}"
-                    if free
-                    else "; no free candidate at this width"
-                )
+                candidates = candidate_set(band, channel_ai)
+                if candidates is None:
+                    hint = ""
+                else:
+                    free = free_candidates(band, taken, candidates, geometry.width_mhz)
+                    hint = (
+                        f"; free candidates: {', '.join(str(c) for c in free)}"
+                        if free
+                        else "; no free candidate at this width"
+                    )
                 if overlapping:
                     findings.append(
                         _finding(
@@ -270,6 +275,18 @@ def analyse_channels(
                     )  # fmt: skip
     # Reuse feasibility over the union of the heard and the configured graph, per component.
     for band in EVALUATED_BANDS:
+        candidates = candidate_set(band, channel_ai)
+        band_aps = sorted(name for name in aps if (name, band) in geometries)
+        if candidates is None:
+            if len(band_aps) > 1:
+                findings.append(
+                    _finding(
+                        Severity.INFO, "channel_candidates_unknown", snapshot.site.id, band,
+                        f"the controller sent no {band.label} channel list; free-channel hints and the "
+                        "channel-reuse check are skipped",
+                    )
+                )  # fmt: skip
+            continue
         union: dict[str, set[str]] = defaultdict(set)
         for name in aps:
             if (name, band) in geometries:
@@ -289,7 +306,7 @@ def analyse_channels(
             if len(component) < 2:
                 continue
             widest = max(geometries[(n, band)].width_mhz for n in component)
-            colours = colour_count(band, candidate_set(band, channel_ai), widest)
+            colours = colour_count(band, candidates, widest)
             sub = {n: frozenset(p for p in adjacency[n] if p in component) for n in component}
             if not channel_reuse_feasible(sub, colours):
                 infeasible[band].append(component)

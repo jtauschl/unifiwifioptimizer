@@ -94,13 +94,14 @@ Every key carries a tier in the `evidence` section of the profiles file; a profi
 where its value is a compatibility choice (the IoT profile's PMF and protocol entries are `practice`
 although the mechanisms are standards, because the standard argues for the stricter setting):
 
-- **standard** — a published standard: IEEE 802.11 (r, v incl. the Proxy ARP service, w, protection
-  mechanism), Wi-Fi Alliance (WPA3, Enhanced Open), IETF (RFC 8110 OWE).
-- **vendor** — reproducible official guidance: Cisco/Aruba high-density minimum rates, Apple roaming
-  behaviour, Ubiquiti feature documentation.
-- **practice** — community and vendor habit without a published derivation: DTIM values, group rekey
-  interval, U-APSD on or off, multicast handling, isolation. These are the tunables to adjust first when your
-  environment disagrees.
+- **standard** — a published standard requires or defines exactly this value; today the `pmf` and
+  `wpa3_enhanced_192` keys (IEEE 802.11w, Wi-Fi Alliance WPA3). A standard that defines a *mechanism* (802.11r,
+  802.11v, Proxy ARP, WPA3 transition mode, OWE) does not recommend switching it on; that advice is vendor guidance.
+- **vendor** — reproducible official guidance for this value or setting, each entry naming the document: Cisco
+  Catalyst 9800 best practices (mandatory rates), Apple router settings, Ubiquiti help articles, including their
+  advice to keep a default.
+- **practice** — habit without a published derivation: DTIM values, U-APSD, multicast handling, isolation, the
+  compatibility choices of the IoT profile. These are the tunables to adjust first when your environment disagrees.
 
 ## Advisories
 
@@ -113,7 +114,7 @@ configuration:
 | `pmf_matches_protocol` | PMF does not fit the protocol: WPA3-only and OWE-only need Required, a WPA3 transition mode exactly Optional (Required would lock out its WPA2 clients), OWE transition Optional or Required, plain Open has no RSN for PMF to protect (Wi-Fi Alliance WPA3 Specification, Wi-Fi Enhanced Open) |
 | `fast_roaming_without_bss_transition` | 802.11r is on and 802.11v is off |
 | `fast_roaming_on_2g_only_wlan` | 802.11r is on for a WLAN that broadcasts only on 2.4 GHz (IoT-class clients) |
-| `min_rate_2g_dsss`, `min_rate_2g_below_ofdm` | the WLAN broadcasts on 2.4 GHz with a fixed (`manual`) minimum rate that is a DSSS rate or below 12 Mbit/s, and 802.11b support is known to be on; silent under `auto` and while `b_supported` is unknown |
+| `min_rate_2g_dsss`, `min_rate_2g_below_recommended` | the WLAN broadcasts on 2.4 GHz with a fixed (`manual`) minimum rate that is a DSSS rate or below 12 Mbit/s, and 802.11b support is known to be on; silent under `auto` and while `b_supported` is unknown |
 | `iot_locks_on_dual_band_wlan` | an IoT lock is on for a WLAN whose profile expects 5 or 6 GHz |
 | `mdns_proxy_with_isolation` | the mDNS proxy is on while clients are isolated |
 | `ppsk_requires_psk` | Private Pre-Shared Keys are on without a PSK handshake (WPA2 or WPA2/WPA3) |
@@ -128,5 +129,8 @@ controller enforces WPA3-only + PMF Required on the 6 GHz radio internally.
 - Wi-Fi Alliance: WPA3 Specification; Wi-Fi Enhanced Open; WMM Power Save
 - IETF RFC 8110 — Opportunistic Wireless Encryption
 - Ubiquiti: [UniFi WiFi SSID and AP Settings Overview](https://help.ui.com/hc/en-us/articles/32065480092951-UniFi-WiFi-SSID-level-Settings-Overview)
+- Cisco: [Catalyst 9800 Series Configuration Best Practices](https://www.cisco.com/c/en/us/products/collateral/wireless/catalyst-9800-series-wireless-controllers/guide-c07-743627.html)
+- Apple: [Recommended settings for Wi-Fi routers and access points](https://support.apple.com/en-ie/102766)
+- Ubiquiti: [Using PPSK / RADIUS for Multiple VLANs on an SSID](https://help.ui.com/hc/en-us/articles/29887064407319)
 - Ubiquiti: [UniFi Wireless Guest Network Setup](https://help.ui.com/hc/en-us/articles/115000166827-UniFi-Wireless-Guest-Network-Setup)
 - Ubiquiti: [Setting Up Passpoint on UniFi Network](https://help.ui.com/hc/en-us/articles/25473982758551-Setting-Up-Passpoint-on-UniFi-Network)

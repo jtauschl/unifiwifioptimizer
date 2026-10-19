@@ -503,3 +503,13 @@ def test_a_client_between_the_set_value_and_the_derived_value_is_not_counted_bel
     # Below the derived value, but not below the -67 that is actually set.
     assert (after.total, after.below_min_rssi) == (before.total + 1, before.below_min_rssi)
 
+
+def test_a_missing_5_ghz_channel_list_is_a_site_finding_and_not_an_access_point_one() -> None:
+    inp = golden_input()
+    ai = inp.snapshot.settings.channel_ai
+    assert ai is not None
+    snapshot = replace(inp.snapshot, settings=replace(inp.snapshot.settings, channel_ai=replace(ai, channels={})))
+    report = analyze_site(replace(inp, snapshot=snapshot))
+    unknown = [f for f in report.site_findings if f.code == "channel_candidates_unknown"]
+    assert [(f.subject, f.band) for f in unknown] == [(snapshot.site.id, Band.GHZ_5)]
+    assert all(f.code != "channel_candidates_unknown" for ap in report.aps for b in ap.bands for f in b.findings)

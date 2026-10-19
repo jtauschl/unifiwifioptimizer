@@ -88,10 +88,10 @@ class EvidenceTier(StrEnum):
 
 DNS_ASSISTANCE_MODES = frozenset({"off", "auto", "custom"})
 MDNS_PROXY_MODES = frozenset({"off", "auto", "custom"})
-# 802.11b DSSS rates admit 802.11b clients and keep protection overhead on every OFDM frame; 6 and 9 Mbit/s
-# are OFDM rates below the recommendation that do not themselves admit 802.11b clients.
+# 802.11b DSSS rates admit 802.11b clients, whose presence makes protection mechanisms cost airtime on OFDM
+# frames; 6 and 9 Mbit/s are OFDM rates below the recommendation that do not themselves admit 802.11b clients.
 DSSS_RATES_KBPS = frozenset({1000, 2000, 5500, 11000})
-MIN_OFDM_RATE_KBPS = 12000
+RECOMMENDED_MIN_RATE_2G_KBPS = 12000
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

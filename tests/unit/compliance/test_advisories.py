@@ -157,7 +157,7 @@ def test_min_rate_2g_speaks_only_for_a_fixed_2g_rate_with_802_11b_known_to_be_on
         return None if f is None else f.code
 
     assert code(1000) == "min_rate_2g_dsss" and code(5500) == "min_rate_2g_dsss" and code(11000) == "min_rate_2g_dsss"
-    assert code(6000) == "min_rate_2g_below_ofdm" and code(9000) == "min_rate_2g_below_ofdm"
+    assert code(6000) == "min_rate_2g_below_recommended" and code(9000) == "min_rate_2g_below_recommended"
     assert code(12000) is None and code(24000) is None and code(None) is None
     # Under `auto` the stored value is inert; the live preset WLANs carry 1000 kbps there.
     assert code(1000, minrate_setting_preference="auto") is None and code(1000, minrate_setting_preference=None) is None

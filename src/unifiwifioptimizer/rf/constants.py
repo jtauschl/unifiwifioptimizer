@@ -51,13 +51,13 @@ ROAMING_ASSISTANT_MAX_DBM = -60
 # Range of the per-radio Minimum RSSI the controller accepts (verified on U6 Lite and U7 Lite, both bands).
 MIN_RSSI_MIN_DBM = -90
 MIN_RSSI_MAX_DBM = -67
-# Vendor consensus margin between the soft-roam trigger and the hard disconnect (Cisco uses ~10 dB).
+# Design choice, no source gives this value: the gap between the soft-roam trigger and the hard disconnect.
 DEFAULT_MIN_RSSI_OFFSET_DB = 5
 
 # IEEE 802.11-2020 OFDM PHY CCA requirements (17.3.10.6): the start of a valid 20 MHz OFDM transmission at or
 # above the 6 Mb/s minimum sensitivity (-82 dBm, Table 17-18) must make CCA report busy. Two access points
-# that hear each other at this level or above cannot transmit co-channel at the same time; receivers defer
-# well below it, so a check at this threshold under-reports contention rather than inventing it.
+# that hear each other at this level or above cannot transmit co-channel at the same time. The level is the
+# primary-channel one; applying it to any overlap is a simplification.
 CCA_PREAMBLE_DETECT_DBM = -82
 # IEEE 802.11 RCPI measurement accuracy: +/- 5 dB at 95 % confidence (stated in every PHY's RCPI clause). A
 # receiver-offset estimate below this is within one receiver's own tolerance.

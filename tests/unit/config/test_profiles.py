@@ -84,14 +84,15 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
 
 
 def test_a_profile_that_switches_proxy_arp_off_carries_its_own_practice_entry() -> None:
-    # Proxy ARP is a standard mechanism (802.11v); a profile that switches it off must say why itself.
+    # The set-wide entry describes Proxy ARP as vendor guidance for it being on; a profile that switches it off
+    # must say why itself.
     profiles = shipped_profiles()
-    assert profiles.evidence["proxy_arp"].tier is EvidenceTier.STANDARD
+    assert profiles.evidence["proxy_arp"].tier is EvidenceTier.VENDOR
     for name, profile in profiles.profiles.items():
         own = profiles.evidence_for(profile, "proxy_arp")
         assert own is not None
         if profile.proxy_arp:
-            assert own.tier is EvidenceTier.STANDARD, name
+            assert own.tier is EvidenceTier.VENDOR, name
         else:
             assert own.tier is EvidenceTier.PRACTICE and "off" in own.source, name
 

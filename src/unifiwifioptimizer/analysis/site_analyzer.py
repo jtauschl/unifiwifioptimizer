@@ -435,6 +435,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
                 "neighbour scans skipped; every scan-dependent block is left out",
             )
         )
+    site_findings.extend(f for f in channels.findings if f.subject == snapshot.site.id)
     for lister, peer in asymmetric_pairs(inp.neighbours):
         if lister not in aps_by_name or peer not in aps_by_name:
             continue

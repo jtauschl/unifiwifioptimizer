@@ -16,7 +16,7 @@ from unifiwifioptimizer.analysis.channels import (
 )
 from unifiwifioptimizer.domain.models import Band, ChannelAiSettings
 from unifiwifioptimizer.domain.report import Finding, Severity
-from unifiwifioptimizer.rf.channels import CHANNELS_5G, CLEAN_2G_CHANNELS
+from unifiwifioptimizer.rf.channels import CLEAN_2G_CHANNELS
 
 from .builders import (
     ap_named,
@@ -157,14 +157,16 @@ def test_candidate_sets_and_colour_counts_follow_the_controller_lists() -> None:
     assert (
         candidate_set(Band.GHZ_2, AI) == frozenset({1, 6, 11}) and candidate_set(Band.GHZ_2, None) == CLEAN_2G_CHANNELS
     )
-    assert candidate_set(Band.GHZ_5, None) == CHANNELS_5G
+    assert candidate_set(Band.GHZ_5, None) is None and candidate_set(Band.GHZ_5, replace(AI, channels={})) is None
     assert (
         colour_count(Band.GHZ_2, frozenset({1, 6, 11}), 20) == 3
         and colour_count(Band.GHZ_2, frozenset({1, 6, 11}), 40) == 1
     )
     # The fixture's 5 GHz list 36..128 holds four 80 MHz blocks and two 160 MHz blocks.
-    assert colour_count(Band.GHZ_5, candidate_set(Band.GHZ_5, AI), 80) == 4
-    assert colour_count(Band.GHZ_5, candidate_set(Band.GHZ_5, AI), 160) == 2
+    listed = candidate_set(Band.GHZ_5, AI)
+    assert listed is not None
+    assert colour_count(Band.GHZ_5, listed, 80) == 4
+    assert colour_count(Band.GHZ_5, listed, 160) == 2
     assert components({"a": frozenset({"b"}), "b": frozenset({"a"}), "c": frozenset()}) == [
         frozenset({"a", "b"}),
         frozenset({"c"}),
@@ -177,7 +179,9 @@ def test_free_candidates_avoid_every_taken_block() -> None:
         for g in (geometry_of(ap_named(SNAP, "AP-2"), Band.GHZ_5), geometry_of(ap_named(SNAP, "AP-4"), Band.GHZ_5))
         if g is not None
     ]
-    free = free_candidates(Band.GHZ_5, taken, candidate_set(Band.GHZ_5, AI), 80)
+    listed = candidate_set(Band.GHZ_5, AI)
+    assert listed is not None
+    free = free_candidates(Band.GHZ_5, taken, listed, 80)
     # AP-2 occupies 52..64, AP-4 36..48: the free 80 MHz blocks are 100..112 and 116..128.
     assert free == [100, 104, 108, 112, 116, 120, 124, 128]
 
@@ -239,3 +243,35 @@ def test_a_punctured_width_is_detected_not_evaluated() -> None:
 
 def test_channel_ai_settings_type_is_the_models_one() -> None:
     assert isinstance(AI, ChannelAiSettings)
+
+
+def test_without_a_controller_channel_list_5_ghz_hints_and_reuse_are_skipped_and_said_so() -> None:
+    no_list = replace(AI_OFF, channels={})
+    clash = with_ap(SNAP, with_stats(ap_named(SNAP, "AP-4"), Band.GHZ_5, channel=56))
+    neighbours = {"AP-2": frozenset({"AP-4"})}
+    analysis = analyse_channels(clash, None, neighbours, no_list)
+    overlaps = [f for f in by_code(analysis, "channel_overlap") if f.band is Band.GHZ_5]
+    assert [f.subject for f in overlaps] == ["AP-2", "AP-4"]
+    assert all("candidate" not in f.message for f in overlaps)
+    listed = analyse_channels(clash, None, neighbours, AI_OFF)
+    assert by_code(listed, "channel_candidates_unknown") == []
+    assert all("free candidate" in f.message for f in by_code(listed, "channel_overlap") if f.band is Band.GHZ_5)
+
+
+def test_the_5_ghz_reuse_check_runs_with_a_list_and_is_skipped_and_named_at_site_level_without_one() -> None:
+    # Three access points that all hear each other at 160 MHz need three colours; the fixture's 36..128 list
+    # offers two 160 MHz blocks.
+    triangle = SNAP
+    for name in ("AP-1", "AP-2", "AP-3"):
+        triangle = with_ap(triangle, with_stats(ap_named(triangle, name), Band.GHZ_5, channel=36, width_mhz=160))
+    chain = {"AP-1": frozenset({"AP-2", "AP-3"}), "AP-2": frozenset({"AP-3"})}
+    listed = analyse_channels(triangle, None, chain, AI_OFF)
+    assert [f.band for f in by_code(listed, "channel_reuse_infeasible")] == [Band.GHZ_5]
+    assert len(listed.reuse_infeasible[Band.GHZ_5]) == 1
+    assert by_code(listed, "channel_candidates_unknown") == []
+    for channel_ai in (replace(AI_OFF, channels={}), None):
+        skipped = analyse_channels(triangle, None, chain, channel_ai)
+        assert by_code(skipped, "channel_reuse_infeasible") == []
+        assert Band.GHZ_5 not in skipped.reuse_infeasible
+        unknown = by_code(skipped, "channel_candidates_unknown")
+        assert [(f.subject, f.band, f.severity) for f in unknown] == [(SNAP.site.id, Band.GHZ_5, Severity.INFO)]

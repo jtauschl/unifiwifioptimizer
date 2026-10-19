@@ -2,11 +2,11 @@
 #
 # Every profile describes how a WLAN of that kind should be configured so that the compliance check
 # reports deviations from a well-founded baseline. Each key has an evidence tier in the `evidence`
-# section at the end: `standard` (IEEE 802.11, Wi-Fi Alliance, IETF), `vendor` (reproducible official
-# guidance from Apple, Cisco, Ubiquiti), `practice` (community and vendor habit without a published
+# section at the end: `standard` (a published standard requires or defines this value), `vendor`
+# (reproducible official guidance from Apple, Cisco, Ubiquiti), `practice` (habit without a published
 # derivation). Practice-tier values are tunables: adjust them in your own profiles file (see
 # docs/PROFILES.md) when your clients or policy need something else. A profile may carry its own
-# `evidence` entries where a value is a compatibility choice that the key's standard argues against.
+# `evidence` entries where its value is a compatibility or deployment choice that differs from the set-wide entry.
 #
 # Field guide:
 # - wifi_bands: bands the WLAN must broadcast on (2g, 5g, 6g)
@@ -47,7 +47,7 @@ profiles:
     sae_anti_clogging: 5
     sae_sync_time: 5
     evidence:
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
 
   # 2.4 GHz-only WLAN for low-capability clients. WPA2 with PMF off is accepted because many of them break
   # on PMF or on WPA3 IEs; a WPA2/WPA3 transition with PMF Optional is accepted too (backward-compatible by
@@ -74,14 +74,14 @@ profiles:
     sae_anti_clogging: 5
     sae_sync_time: 5
     evidence:
-      security_protocols: {tier: practice, source: "compatibility of low-capability clients; the standard tier would prefer WPA3"}
+      security_protocols: {tier: practice, source: "compatibility of low-capability clients that cannot do WPA3"}
       pmf: {tier: practice, source: "compatibility: PMF breaks some IoT clients; IEEE 802.11w would prefer it on"}
       fast_roaming: {tier: practice, source: "802.11r IEs break some IoT clients (ESP32-era, older printers, first-generation speakers)"}
       bss_transition: {tier: practice, source: "no steering of stationary low-power clients"}
       roaming_assistant: {tier: practice, source: "no steering of stationary low-power clients"}
       band_steering: {tier: practice, source: "2.4 GHz-only clients cannot be steered"}
       group_rekey_s: {tier: practice, source: "rekeys disconnect flaky IoT clients; disabled on purpose"}
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
 
   # Guest WLAN: encryption without a password through OWE (transition mode keeps devices without OWE on),
   # isolated clients, plain Open accepted for captive-portal setups that cannot use OWE yet.
@@ -111,7 +111,7 @@ profiles:
       security_protocols: {tier: practice, source: "plain Open stays accepted for captive portals that cannot use OWE yet; OWE itself is RFC 8110"}
       pmf: {tier: practice, source: "follows the protocol in use (Open: off, OWE transition: optional or required, OWE: required), checked by the pmf_matches_protocol advisory"}
       fast_roaming: {tier: practice, source: "802.11r needs an RSN with an FT AKM; Open has none and the Open twin of an OWE transition keeps it off"}
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is standard (802.11v)"}
+      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
 
   # Primary WLAN tuned for airtime efficiency.
   Throughput:
@@ -172,35 +172,35 @@ profiles:
 # One entry per profile key: the tier and the source the recommendation rests on.
 evidence:
   wifi_bands: {tier: practice, source: "deployment choice; 6 GHz values are detect-only (see docs/PROFILES.md)"}
-  security_protocols: {tier: standard, source: "Wi-Fi Alliance WPA3 Specification (SAE, transition mode), RFC 8110 (OWE)"}
+  security_protocols: {tier: vendor, source: "WPA3 transition mode and OWE are specified by the Wi-Fi Alliance and RFC 8110; Ubiquiti: \"Use WPA2/WPA3 for most environments\"; Apple lists WPA2/WPA3 Transitional for compatibility"}
   pmf: {tier: standard, source: "IEEE 802.11w; a WPA3 transition mode runs PMF optional, WPA3-only required (Wi-Fi Alliance WPA3 Specification)"}
-  fast_roaming: {tier: standard, source: "IEEE 802.11r Fast BSS Transition; Apple and Android roaming documentation"}
-  bss_transition: {tier: standard, source: "IEEE 802.11v BSS Transition Management"}
-  roaming_assistant: {tier: vendor, source: "Ubiquiti Handoff Suggestions; threshold from the site RF model (ALGORITHM.md §7)"}
-  band_steering: {tier: vendor, source: "Ubiquiti band steering (no2ghz_oui); dual-band clients perform better on 5 GHz"}
+  fast_roaming: {tier: vendor, source: "IEEE 802.11r defines Fast BSS Transition; Ubiquiti SSID settings overview: \"Our strong recommendation is to have this feature turned on\", with a possible conflict with Switch Port Isolation"}
+  bss_transition: {tier: vendor, source: "IEEE 802.11v defines BSS Transition Management; Ubiquiti builds Handoff Suggestions and band steering on BSS transition frames"}
+  roaming_assistant: {tier: vendor, source: "Ubiquiti Handoff Suggestions: BSS transition frames tell a client it will be dissociated below the threshold, which Ubiquiti suggests keeping below -70 dBm; the threshold itself comes from the site RF model (ALGORITHM.md §7)"}
+  band_steering: {tier: vendor, source: "Ubiquiti band steering moves 2.4 GHz clients to 5 GHz with BSS transition frames and deprecates the old AP-level method; the controller field is no2ghz_oui"}
   mlo: {tier: practice, source: "MLO is IEEE 802.11be, its WPA3 requirement Wi-Fi Alliance certification; keeping it off until the site has Wi-Fi 7 clients on a WPA3-only WLAN is a deployment choice"}
-  uapsd: {tier: practice, source: "the mechanism is IEEE 802.11e U-APSD / Wi-Fi Alliance WMM Power Save; on for latency, off elsewhere because of client bugs"}
-  proxy_arp: {tier: standard, source: "IEEE 802.11v Proxy ARP service, required by Hotspot 2.0; reduces broadcast ARP"}
+  uapsd: {tier: practice, source: "U-APSD / WMM Power Save is a client battery feature (Ubiquiti: clients stay in low-power mode longer); on for Latency is this profile's choice, off elsewhere for client compatibility"}
+  proxy_arp: {tier: vendor, source: "Ubiquiti: reduces broadcast traffic and can improve airtime and latency, especially in large networks, at the cost of AP resources; Cisco calls ARP proxy the recommended setting (client battery life); the mechanism is IEEE 802.11v"}
   multicast_broadcast_blocker: {tier: practice, source: "Ubiquiti setting; off because mDNS and DHCP need broadcast"}
-  multicast_to_unicast: {tier: practice, source: "Ubiquiti setting; tunable for streaming-heavy WLANs"}
-  hide_wifi_name: {tier: standard, source: "hidden SSIDs add probe traffic and no security (IEEE 802.11 probe request behaviour)"}
+  multicast_to_unicast: {tier: practice, source: "Ubiquiti Multicast Enhancement converts multicast into unicast and is especially helpful with frequent streaming or discovery multicast (Chromecast, Apple TV, Sonos); off by default here"}
+  hide_wifi_name: {tier: practice, source: "hidden SSIDs add probe traffic and no security (common guidance; IEEE 802.11 probe request behaviour)"}
   client_device_isolation: {tier: practice, source: "guest isolation principle; Ubiquiti setting"}
   ap_name_in_beacon: {tier: practice, source: "Ubiquiti setting; information leak with no client benefit"}
-  minrate_mode: {tier: vendor, source: "Cisco and Aruba high-density guidance: fixed minimum basic rates"}
-  minrate_24_kbps: {tier: vendor, source: "12 Mbit/s = lowest OFDM rate (IEEE 802.11g); value is vendor guidance"}
-  minrate_5_kbps: {tier: vendor, source: "24 Mbit/s basic rate on 5 GHz: Cisco/Aruba high-density guidance"}
+  minrate_mode: {tier: vendor, source: "Cisco Catalyst 9800 best practices: fixed mandatory rates, 12 Mbit/s as the default starting point for most networks; Ubiquiti: a higher minimum rate mainly helps large or high-density networks and can block legacy clients"}
+  minrate_24_kbps: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Use 12Mbps mandatory as a default starting point for most networks\" and \"Disable all 11b rates, unless needed\"; 6 and 9 Mbit/s are OFDM rates as well"}
+  minrate_5_kbps: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Use 24Mbps mandatory for well-designed high-density networks\" (its starting point for most networks is 12 Mbit/s); a tunable that shrinks the cell"}
   dtim_mode: {tier: practice, source: "DTIM mechanics are IEEE 802.11; choosing custom values is practice"}
-  dtim_24: {tier: practice, source: "3 for throughput (power saving), 1 for latency (multicast latency)"}
+  dtim_24: {tier: practice, source: "habit values: Ubiquiti's own defaults are 1 on 2.4 GHz and 3 on 5/6 GHz, \"tuned to balance connectivity and device performance\", and raising the interval may negatively affect airtime efficiency, battery life and IoT connectivity; the shipped 3 on 2.4 GHz (Throughput) and 1 on both bands (Latency) are habit choices"}
   dtim_5: {tier: practice, source: "as dtim_24"}
   dtim_6: {tier: practice, source: "as dtim_24"}
-  group_rekey_s: {tier: practice, source: "3600 s is the common vendor default (Cisco, Ubiquiti); 0 disables rekeying"}
-  sae_anti_clogging: {tier: vendor, source: "Ubiquiti default for SAE WLANs"}
-  sae_sync_time: {tier: vendor, source: "Ubiquiti default for SAE WLANs"}
+  group_rekey_s: {tier: vendor, source: "Ubiquiti: \"We strongly recommend keeping the default setting\"; 3600 s is the value observed on Network 10.6.106, 0 disables rekeying"}
+  sae_anti_clogging: {tier: vendor, source: "Ubiquiti: \"We highly recommend not to adjust the default value of it\"; 5 is the value observed on Network 10.6.106"}
+  sae_sync_time: {tier: vendor, source: "Ubiquiti: on by default and \"should only be adjusted in high-security environments\"; 5 is the value observed on Network 10.6.106"}
   iot_dtim_lock: {tier: vendor, source: "Ubiquiti IoT lock (Network Application 10.4); 2.4 GHz-only IoT WLANs"}
   iot_channel_lock: {tier: vendor, source: "Ubiquiti IoT lock (Network Application 10.4); 2.4 GHz-only IoT WLANs"}
   enhanced_iot: {tier: vendor, source: "Ubiquiti Enhanced IoT Connectivity"}
-  b_supported: {tier: standard, source: "802.11b DSSS rates cost airtime on every OFDM frame (IEEE 802.11 protection mechanism)"}
+  b_supported: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Disable all 11b rates, unless needed\"; with 802.11b stations present, protection mechanisms cost airtime on OFDM frames (IEEE 802.11)"}
   dns_assistance_mode: {tier: vendor, source: "Ubiquiti DNS Assistance (Network Application 10.3)"}
   mdns_proxy_mode: {tier: practice, source: "mDNS proxy only where cross-VLAN discovery is wanted; never on isolated WLANs"}
-  ppsk: {tier: vendor, source: "Ubiquiti Private Pre-Shared Keys; need a PSK handshake (WPA2 or WPA2/WPA3)"}
+  ppsk: {tier: vendor, source: "Ubiquiti Private Pre-Shared Keys: \"This option is WPA2 only, so it will not work on 6 GHz\"; whether a WPA2/WPA3 WLAN accepts it is not documented"}
   wpa3_enhanced_192: {tier: standard, source: "Wi-Fi Alliance WPA3-Enterprise 192-bit mode (CNSA suite), WPA3 Enterprise only"}
