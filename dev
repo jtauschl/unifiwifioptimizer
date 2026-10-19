@@ -225,10 +225,12 @@ cmd_lower_bound() {
   require_uv
   local probe
   new_temp_dir probe
-  # The tests of the build helpers, the release workflow and the documentation read scripts/, .github/, dev, the
-  # README and the config starters beside src/.
+  # The tests of the build helpers, the release workflow and the documentation read scripts/, .github/, docs/, dev,
+  # the README and the config starters beside src/.
   cp -R src tests scripts .github dev pyproject.toml .python-version README.md LICENSE config.example.yaml config.minimal.yaml "$probe/" ||
     fail "could not copy the project into the probe directory"
+  mkdir "$probe/docs" || fail "could not create the probe documentation directory"
+  cp docs/*.md "$probe/docs/" || fail "could not copy the documentation into the probe directory"
   (
     cd "$probe" || exit 1
     export UV_RESOLUTION=lowest-direct

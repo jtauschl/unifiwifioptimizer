@@ -1,291 +1,297 @@
 # Walkthrough
 
-This walkthrough uses a five-AP example for `UniFi WiFi Optimizer`.
-It starts with a minimal controller-only config, then shows how to discover the site, generate a site config block, and complete the `neighbors` model.
-
-<p align="center">
-  <img src="img/Example.png" alt="Example layout with five access points" width="600">
-</p>
+This walkthrough follows one run on an example site with four access points: from the first command to the
+changes you make in UniFi Network. Every output block below is real output of the tool for that site; the
+site's names are synthetic (`AP-1`, `SSID-1`, …); an omission inside a block is marked `[…]`.
 
 ## Example Layout
 
-- upper row: `AP1`, `AP2`, `AP3`
-- lower row: `AP4`, `AP5`
+The four access points sit in a row; each can hear its direct neighbours:
 
-`AP2` sits at the center and overlaps with all four surrounding APs.
-The outer APs overlap only with their direct neighbors.
+```text
+AP-1 ── AP-2 ── AP-3 ── AP-4
+```
 
-## Neighbor Model
+The **neighbour model** tells the tool which pairs to measure: where clients are expected to roam between access
+points. Listing each pair once is enough; the tool evaluates both directions, and the report prints one `!` note
+per pair that is listed on one side only, which needs no action.
 
-The neighbor list describes where clients are expected to roam between APs:
-
-- `AP1`: `AP2`, `AP4`
-- `AP2`: `AP1`, `AP3`, `AP4`, `AP5`
-- `AP3`: `AP2`, `AP5`
-- `AP4`: `AP1`, `AP2`, `AP5`
-- `AP5`: `AP2`, `AP3`, `AP4`
+- `AP-1`: `AP-2`
+- `AP-2`: `AP-3`
+- `AP-3`: `AP-4`
 
 ## 1. Set Up API and SSH Access
 
 In the UniFi Network Application (web UI):
 
 - enable `Device SSH Authentication`
-- set a device SSH password there, or keep passwordless SSH
-- if you want passwordless SSH, add your public key under `Settings` -> `System` -> `Advanced` -> `Device Authentication` -> `SSH Keys`
-- create a UniFi Network API key under `Integrations` or `Control Plane` -> `Integrations`, depending on the version
+- create a UniFi Network API key for an account with the full Administrator role (under `Integrations` or `Control Plane` → `Integrations`, depending on the version); the tool reads the controller-managed SSH credentials of the access points through it, which a View Only account cannot read
 
-Create `config.yaml` from the minimal starter:
+On your computer, install the tool (`uv tool install unifiwifioptimizer`; see the [README](../README.md#install)). If the controller still has its factory certificate, get its fingerprint and compare it with the certificate view in the controller:
 
 ```bash
-cp config.minimal.yaml config.yaml
+unifiwifioptimizer controller-fingerprint --url https://unifi.example.com
 ```
 
-Then enter your controller URL and API key in `config.yaml`.
+Then create the configuration file. `init` asks for the controller URL, the API key and the fingerprint, and writes `~/.config/unifiwifioptimizer/config.yaml` with mode `0600`:
 
-## 2. Discover the Site and Generate a Config Block
+```bash
+unifiwifioptimizer init
+```
+
+## 2. Discover the Site
 
 List the available site IDs:
 
 ```bash
-./unifiwifioptimizer --sites
+unifiwifioptimizer sites
 ```
 
-Example output:
-
+<!-- source: sites -->
 ```text
   Site ID               Site Name                 Access Points
-  default               Default                   5
+  default               Site-1                    4
+  site-2                Site-2                    4
 ```
 
 Inspect one site:
 
 ```bash
-./unifiwifioptimizer --site default
+unifiwifioptimizer site default
 ```
 
-Example output:
-
+<!-- source: site -->
 ```text
   Site ID:   default
-  Site Name: Default
+  Site Name: Site-1
 
   WLANs:
-    General (enabled)
-    IoT (enabled)
-    Guest (enabled)
+    SSID-1 (enabled)
+    SSID-2 (disabled)
+    SSID-3 (disabled)
+    SSID-4 (disabled)
+    SSID-5 (disabled)
 
   Access Points:
-    Device Name   State   IP             MAC
-    AP1           ONLINE  192.168.1.101   f4:92:bf:aa:11:22
-    AP2           ONLINE  192.168.1.102   f4:92:bf:aa:33:44
-    AP3           ONLINE  192.168.1.103   f4:92:bf:aa:55:66
-    AP4           ONLINE  192.168.1.104   f4:92:bf:aa:77:88
-    AP5           ONLINE  192.168.1.105   f4:92:bf:aa:99:aa
+    AP-1 (UAL6, 02:00:00:00:00:04) 2.4 GHz ch auto/20 MHz, 5 GHz ch auto/80 MHz
+    AP-2 (UAPA693, 02:00:00:00:00:08) 2.4 GHz ch 1/20 MHz, 5 GHz ch 60/80 MHz
+    AP-3 (UAL6, 02:00:00:00:00:0e) 2.4 GHz ch 6/20 MHz, 5 GHz ch 104/80 MHz
+    AP-4 (UAPA693, 02:00:00:00:00:11) 2.4 GHz ch 11/20 MHz, 5 GHz ch 40/80 MHz
 ```
 
-Generate a site-specific config skeleton:
+## 3. Generate and Complete the Site Config
+
+Print a skeleton for the site and append it to the configuration file, below the `sites:` line:
 
 ```bash
-./unifiwifioptimizer --config default >> config.yaml
+unifiwifioptimizer config default >> ~/.config/unifiwifioptimizer/config.yaml
 ```
 
-This appends a site block to `config.yaml`. At this point, no backup is needed because `config.yaml` still only contains the controller settings from `config.minimal.yaml`.
-
-The appended block looks like this:
-
-```yaml
-sites:
-  default:
+<!-- source: skeleton -->
+```text
+  "default":
     ssh:
-      user: ubnt
-      # Set a password or remove this line for SSH key-based login.
-      password: YOUR_SSH_PASSWORD
+      # controller: use the SSH credentials the controller manages for its access points;
+      # key: your own key (set user, optionally key_file); password: user + password.
+      auth: controller
 
     # Open, Residential, Office, Obstructed, or a custom path-loss exponent
     environment: Residential
 
-    # Number of round-robin scan passes (default: 1).
-    # Use 1 for initial setup to converge quickly.
-    # Use 3 or more for fine-tuning — enables noise filtering via trimmed mean.
-    scan_passes: 1
+    # Round-robin scan passes per run; readings are aggregated as the median,
+    # so 3 or more passes outvote a single outlier.
+    scan_passes: 3
 
     # Standard, IoT, Hotspot, Throughput, or Latency
     wlans:
-      General: Throughput
-      IoT: IoT
-      Guest: Hotspot
+      "SSID-1": Standard
+      "SSID-2": Standard
+      "SSID-3": Standard
+      "SSID-4": Standard
+      "SSID-5": Standard
 
-    # Add neighbor AP names as a comma-separated list in brackets.
+    # Which access points can hear each other: fill in the neighbours of every access point;
+    # the tool cannot know your floor plan. Scans run between the listed pairs only.
     neighbors:
-      AP1: []
-      AP2: []
-      AP3: []
-      AP4: []
-      AP5: []
+      "AP-1": []
+      "AP-2": []
+      "AP-3": []
+      "AP-4": []
 ```
 
-## 3. Complete the Site Config
+Complete it with the layout above and the profile each WLAN should follow; a WLAN you leave out is not checked. The final file:
 
-Use the floorplan or layout sketch to define AP neighbors and verify the WLAN profile mapping.
-
-Final `config.yaml`:
-
+<!-- source: config -->
 ```yaml
 controller:
-  url: https://unifi.example.local
+  url: https://unifi.example.com
   api_key: YOUR_API_KEY
+  cert_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 sites:
-  default:
+  "default":
     ssh:
-      user: ubnt
-      password: YOUR_SSH_PASSWORD
-
+      auth: controller
+      scan_interface_toggle: true
     environment: Residential
-
-    scan_passes: 1
-
+    scan_passes: 3
     wlans:
-      General: Throughput
-      IoT: IoT
-      Guest: Hotspot
-
+      "SSID-1": Throughput
+      "SSID-2": Standard
+      "SSID-3": Hotspot
     neighbors:
-      AP1: [AP2, AP4]
-      AP2: [AP1, AP3, AP4, AP5]
-      AP3: [AP2, AP5]
-      AP4: [AP1, AP2, AP5]
-      AP5: [AP2, AP3, AP4]
+      "AP-1": ["AP-2"]
+      "AP-2": ["AP-3"]
+      "AP-3": ["AP-4"]
 ```
 
-## 4. Example Output (abbreviated)
+`environment` picks the indoor path-loss model (`Open`, `Residential`, `Office`, `Obstructed`, or your own exponent); the profile names are described in [PROFILES.md](PROFILES.md). `AP-1` and `AP-3` are U6 Lites, which keep their scan interfaces down at rest; `scan_interface_toggle: true` lets the scan bring them up for the scan and put them down again afterwards. Keep the file private: the tool refuses a configuration that others can read.
 
-Run the script with the completed configuration:
+## 4. Run the Controller-Side Analysis
+
+`run --no-scan` needs no SSH access: it checks the WLAN settings and shows the access points as the controller reports them.
 
 ```bash
-./unifiwifioptimizer
+unifiwifioptimizer run --no-scan
 ```
 
-The script first shows the site-level RF parameters, then checks each WLAN against its profile, and finally produces per-AP recommendations.
+The header of the report shows the RF target the later recommendations are measured against:
 
-### Environment Summary
-
+<!-- source: no-scan -->
 ```text
-Environment:               Residential
-Target RSSI @ Neighbor:    -73 dBm to -67 dBm
-Minimum RSSI:              -73 dBm
+  Path-loss model:                   Residential (n = 2.8, 2.4 GHz offset 6.21 dB)
+  Cell edge:                         -67 dBm (noise floor -92 dBm + SNR 25 dB)
+  Target RSSI @ neighbour 2.4 GHz:   -73 dBm to -67 dBm
+  Target RSSI @ neighbour 5 GHz:     -67 dBm to -61 dBm
+  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 15 dBm)
+  Roaming trigger bounds:            -75 dBm .. -65 dBm (margin 5 dB)
+  Scan passes:                       3 (scans skipped)
 ```
 
-These values are derived from `environment: Residential` and are the same for all APs on the site. Roaming Assistant is no longer a site-wide value here — since UniFi moved it from radio level to WLAN level, it's computed per WLAN (aggregated across the APs broadcasting that SSID) and shown in the per-WLAN profile check below, not in this site-level summary.
+Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says where to change it, `?` cannot be judged (data is missing, here the scan):
 
-### Per-WLAN Profile Check
-
-Each WLAN is checked against its assigned profile:
-
+<!-- source: no-scan -->
 ```text
-WLAN       General
-Profile    Throughput
+  WLAN       SSID-1  (profile Throughput)
+[…]
+    ✓ Band Steering                      Enabled
+    ✓ BSS Transition                     Enabled
+[…]
+    ? Roaming Assistant                  threshold not available without neighbour data
+        AP-1: no reading of neighbour AP-2 (scan skipped)
+[…]
+  WLAN       SSID-2  (profile Standard)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Radio Setup:
-  ✓ WiFi Band                        2.4 GHz, 5 GHz
-  Roaming Assistance:
-  ✓ Fast Roaming                     Enabled
-  ✓ Roaming Assistant                Enabled, -73 dBm
-  Hi-Capacity Tuning:
-  ✓ Minimum Data Rate Mode           Manual
-  ✓ Minimum Data Rate 2.4 GHz        11 Mbps
-  ✓ Minimum Data Rate 5 GHz          24 Mbps
-  ✓ Multicast and Broadcast Blocker  Disabled
-  ✓ Multicast to Unicast             Disabled
-  ✓ Proxy ARP                        Enabled
-  Security:
-  ✓ Security Protocol                WPA2/WPA3
-  ✓ PMF                              Optional
-  ✓ Hide WiFi Name                   Disabled
-  ✓ Client Device Isolation          Disabled
-  ✓ SAE Anti-clogging                10
-  ✓ SAE Sync Time                    5
-  Behaviour Controls:
-  ✓ MLO                              Disabled
-  ✓ BSS Transition                   Enabled
-  ✓ UAPSD                            Disabled
-  ✓ DTIM Mode                        Custom
-  ✓ DTIM Period 2.4 GHz              3
-  ✓ DTIM Period 5 GHz                3
-  ✓ Group Rekey Interval             3600 s
-  ✓ Show Access Point Name in Beacon Disabled
+    ✗ WLAN Enabled                       Enabled (currently Disabled)
+        the WLAN is disabled on the controller
+        → WLAN edit → Enabled toggle
 ```
 
-Mismatches between the WLAN and its profile are flagged with `✗`.
+The Roaming Assistant threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. The full report below was taken before that change.
 
-### Per-AP Recommendations
+## 5. Trust the Access Points' Host Keys and Scan
 
-An outer AP with two neighbors, both within the corridor:
+The scan connects to every access point over SSH and refuses one whose host key it does not know. Store the keys once; the command asks per access point before it stores a key:
 
+```bash
+unifiwifioptimizer trust-host-keys --site default
+```
+
+Then run the full analysis. Scans run one access point at a time and take a while:
+
+```bash
+unifiwifioptimizer run
+```
+
+An off-channel scan interrupts service on the scanning access point for its duration; run it off hours. A U6 Lite needs `scan_interface_toggle: true`, as in the file above; without it a band whose interface is down is reported as `interface_down` and left alone.
+
+## 6. Read the Report
+
+The report is built per access point and band. The first access point shows the typical elements:
+
+<!-- source: golden -->
 ```text
-AP        AP1
-MAC       f4:92:bf:aa:11:22
+  AP         AP-1 (UAL6)
+  MAC        02:00:00:00:00:04
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2.4 GHz  (Channel Width: 20 MHz, Channel: 1, TX Power: 9 dBm)
+  2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm
+           (unverified))
 
-Neighbor AP:    RSSI @ Neighbor:
-AP2             -71 dBm
-AP4             -73 dBm
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -70 dBm n=3 offset -12 dB
+[…]
+  5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm
+         (unverified))
 
-Recommendations:
-  ✓ Transmit Power           Custom, 9 dBm
-  ✓ Minimum RSSI             Disabled
+  Neighbour AP:             RSSI @ neighbour:
+  AP-2                      -72 dBm n=3 offset -3 dB *
+
+  · the radio has not demonstrated power above 20 dBm on this channel
+
+  Recommendations:
+    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
+                               the demonstrated power is unverified
+        → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
+    · Minimum RSSI             disabled (if enabled: -77 dBm on the uplink)
 ```
 
-The center AP with four neighbors and a TX power adjustment:
+- **TX and `max`**: the radio's effective transmit power is what counts. In automatic mode the configured value is stale, so the tool judges the effective one and phrases a change as "set to Custom, N dBm". `max … (unverified)` marks a ceiling the radio has not demonstrated yet.
+- **Neighbour table**: `RSSI @ neighbour` is how strongly the neighbour hears this access point's beacons, the median of `n` readings taken on this access point's channel. `offset` is the two receivers' disagreement after the power difference; from 5 dB on the report adds a line saying that one reads systematically high or low. `*` marks a pair that stays outside the corridor even after the recommended change, `°` one that is outside now and inside after it, and `~` a reading predicted from the opposite direction because the neighbour did not hear this access point.
+- **Recommendations**: `✗` is a change to make, with the UniFi path under it; `✓` confirms the current value; `-` is a decision without a change; `·` is information. Findings under a band are marked `*` (warning), `!` (worth checking) and `·` (information). A disabled Minimum RSSI is shown with the value to use if you enable it.
+- **`regulatory cap`**: the radio runs below its configured power, so the lower power is its verified maximum.
 
+Two situations deserve a closer look. A pair that is below the cell edge even at the radio's effective maximum cannot be fixed with power:
+
+<!-- source: golden -->
 ```text
-AP        AP2
-MAC       f4:92:bf:aa:33:44
-
-5 GHz  (Channel Width: 80 MHz, Channel: 44, TX Power: 23 dBm)
-
-Neighbor AP:    RSSI @ Neighbor:
-AP1             -66 dBm
-AP3             -65 dBm
-AP4             -68 dBm
-AP5             -67 dBm
-
-Recommendations:
-  ✗ Transmit Power           Custom, 19 dBm (reduce by 4 dBm)
-  ✓ Minimum RSSI             Disabled
+  5 GHz  (channel 60, DFS (CAC 60 s), width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap);
+         max 18 dBm)
+[…]
+  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective
+    maximum 18 dBm): add an access point or accept [AP-1, AP-3]
 ```
 
-Here the average neighbor RSSI (−66 dBm) is above the corridor (−73 dBm to −67 dBm), so the script recommends reducing TX power by 4 dBm. If the average were already within the corridor, no change would be recommended regardless of the shift value.
+A neighbour that is not heard at all, in either direction, at the maximum power is a placement question:
 
-Roaming Assistant no longer appears in this per-AP recommendations block — see the "Per-WLAN Profile Check" example above, where it's now a per-WLAN compliance check (unless no WLAN on the site exposes the field, in which case the tool falls back to the previous per-AP behavior shown here, see `docs/ALGORITHM.md` §7).
-
-An outer AP hitting the hardware maximum:
-
+<!-- source: golden -->
 ```text
-AP        AP3
-MAC       f4:92:bf:aa:55:66
+  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an
+    access point [AP-4]
 
-5 GHz  (Channel Width: 80 MHz, Channel: 149, TX Power: 23 dBm)
-
-Neighbor AP:    RSSI @ Neighbor:
-AP2             -72 dBm
-AP5             -78 dBm *
-
-* Coverage gap – signal too weak at: AP5
-  Consider repositioning this AP or adding a neighbor AP.
-
-Recommendations:
-  ✓ Transmit Power           Custom, 23 dBm
-  ✓ Minimum RSSI             Disabled
+  Recommendations:
+    - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
 ```
 
-The coverage warning appears because TX power is at the hardware maximum. `AP5` is projected below `TX_LO` (−73 dBm) even at full power.
+A band whose scan comes back empty is reported as such, and its recommendations wait for a re-run after a restart:
 
-## Notes
+<!-- source: golden -->
+```text
+  * the scan saw nothing on this band; restart the radio or the access point before trusting any
+    conclusion
+```
 
-- AP names in `neighbors` must match the UniFi device names exactly (case-sensitive).
-- AP names must be unique within the UniFi site.
-- Keep neighbors symmetric when the physical overlap is symmetric.
-- For multi-floor environments, include only APs that are meaningful RF neighbors across floors.
-- Use `scan_passes: 1` during initial setup to apply changes quickly. Once the network is close to target, switch to `scan_passes: 3` for stable fine-tuning — three passes enables trimmed-mean noise filtering (the highest and lowest RSSI measurements are discarded before averaging). Any value ≥ 3 activates trimming; 3 is sufficient for most deployments.
+The end of the report summarises the site:
+
+<!-- source: golden -->
+```text
+  Adjacency groups
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  AP-1, AP-2, AP-3, AP-4
+  ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
+
+  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes,
+    run the tool again.
+  Partial result (band empty); the exit code says so.
+```
+
+A partial result ends with exit code 6; the [README](../README.md#exit-codes) lists every code.
+
+## 7. Apply and Re-Run
+
+1. Fix the WLAN deviations first: they are quick and independent of the RF settings. A WLAN you do not want checked belongs out of `wlans:`, not in the controller's settings.
+2. Change the transmit power as recommended, except on a band the report marks as empty: restart that radio or access point and re-run first. The Roaming Assistant threshold and the Minimum RSSI follow the effective power, so apply the power changes first and re-run before you touch them.
+3. Re-run `unifiwifioptimizer run` and repeat until the recommendations stop changing.
+4. Re-test with real clients. The report works from controller configuration and access-point-to-access-point readings; it cannot see non-WiFi interference or what a client experiences.
