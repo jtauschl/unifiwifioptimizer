@@ -126,7 +126,7 @@ Complete it with the layout above and the profile each WLAN should follow; a WLA
 controller:
   url: https://unifi.example.com
   api_key: YOUR_API_KEY
-  cert_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  cert_fingerprint: "SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxA"
 
 sites:
   "default":

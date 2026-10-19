@@ -10,7 +10,7 @@ controller:
   # root certificates apply.
   #   cert_fingerprint: SHA-256 of the controller's certificate, from `unifiwifioptimizer controller-fingerprint`
   #   ca_cert:          absolute path of a CA file that signed the controller's certificate
-  # cert_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  # cert_fingerprint: "SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxA"
   # ca_cert: /etc/ssl/private-ca.pem
   # Seconds per controller request (1..120, default 15).
   timeout_s: 15
@@ -29,7 +29,7 @@ sites:
       # Pin an access point's host key by MAC address. The pin is checked first; an access point whose
       # controller-reported fingerprint differs from it is refused.
       # host_keys:
-      #   "aa:bb:cc:dd:ee:01": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      #   "aa:bb:cc:dd:ee:01": "SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxA"
 
       # Bring a scan interface that is down up for the scan and put it down again afterwards
       # (default false). The U6 Lite keeps its scan interfaces down at rest and needs this.

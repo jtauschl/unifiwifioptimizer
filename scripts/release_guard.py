@@ -60,6 +60,8 @@ def https_get(host: str, path: str, headers: Mapping[str, str]) -> tuple[int, by
     """One verified GET to an allow-listed host; redirects and oversized bodies are errors."""
     if host not in ALLOWED_HOSTS:
         raise ReleaseGuardError(f"refusing to contact {host}")
+    # The default context verifies certificate and hostname; the audit rule only flags the class.
+    # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
     connection = http.client.HTTPSConnection(host, timeout=TIMEOUT_S)
     try:
         connection.request("GET", path, headers=dict(headers))
