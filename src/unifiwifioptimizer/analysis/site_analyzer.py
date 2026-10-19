@@ -258,6 +258,7 @@ def _roaming_summary(target: WlanRoamingTarget, pending_5g: frozenset[str]) -> W
         wlan=target.wlan,
         status=target.status,
         threshold_dbm=target.threshold_dbm,
+        derived_dbm=target.derived_dbm,
         reasons=target.reasons,
         limiting=target.limiting,
         broadcasting=target.broadcasting,
@@ -328,7 +329,7 @@ def _band_report(
         min_rssi = recommend_band_min_rssi(ap, band, corridor, tx_eff, inp.rf)
         recommendations.append(min_rssi)
         advisory = min_rssi_before_roaming(
-            ap, band, min_rssi, _roaming_trigger(targets, ap.name), corridor, inp.rf, tx.coverage_gap
+            ap, band, min_rssi, _roaming_trigger(targets, ap.name), tx_eff, inp.rf, tx.coverage_gap
         )
         if advisory is not None:
             findings.append(advisory)

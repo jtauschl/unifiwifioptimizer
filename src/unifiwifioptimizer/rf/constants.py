@@ -44,6 +44,13 @@ DEFAULT_ROAM_FLOOR_DBM = -75
 # Design choice, no standard behind it: a trigger above this would make clients roam while still well
 # inside a cell. Tunable.
 DEFAULT_ROAM_CEILING_DBM = -65
+# Range of the Handoff Suggestions threshold the controller accepts (the slider's stops on Network 10.6.106).
+# A derived uplink value outside it cannot be configured, so the recommendation stops at the nearer end.
+ROAMING_ASSISTANT_MIN_DBM = -80
+ROAMING_ASSISTANT_MAX_DBM = -60
+# Range of the per-radio Minimum RSSI the controller accepts (verified on U6 Lite and U7 Lite, both bands).
+MIN_RSSI_MIN_DBM = -90
+MIN_RSSI_MAX_DBM = -67
 # Vendor consensus margin between the soft-roam trigger and the hard disconnect (Cisco uses ~10 dB).
 DEFAULT_MIN_RSSI_OFFSET_DB = 5
 

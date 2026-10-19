@@ -95,6 +95,8 @@ class Recommendation:
     reason: str
     current_mode: TxPowerMode | None = None
     unverified_headroom: bool = False
+    # The corridor-derived value when `recommended` was moved into the range the controller accepts.
+    derived_dbm: int | None = None
 
     @property
     def is_change(self) -> bool:
@@ -252,6 +254,8 @@ class WlanRoamingSummary:
     wlan: str
     status: WlanRoamingStatus
     threshold_dbm: int | None
+    # The derived value when `threshold_dbm` was moved to the nearest value the controller accepts.
+    derived_dbm: int | None
     reasons: tuple[str, ...]
     limiting: tuple[str, ...]
     broadcasting: tuple[str, ...]

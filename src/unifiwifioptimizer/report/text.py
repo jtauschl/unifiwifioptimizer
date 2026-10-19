@@ -34,6 +34,12 @@ from unifiwifioptimizer.domain.report import (
 )
 from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
 from unifiwifioptimizer.report.ui_paths import ui_path
+from unifiwifioptimizer.rf.constants import (
+    MIN_RSSI_MAX_DBM,
+    MIN_RSSI_MIN_DBM,
+    ROAMING_ASSISTANT_MAX_DBM,
+    ROAMING_ASSISTANT_MIN_DBM,
+)
 
 
 def render_sites(overview: SitesOverview) -> str:
@@ -245,6 +251,11 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
             )
     if summary.limiting and summary.status is WlanRoamingStatus.OK:
         lines.append(f"        limiting access point(s): {', '.join(name(a) for a in summary.limiting)}")
+    if summary.derived_dbm is not None:
+        lines.append(
+            f"        derived {summary.derived_dbm} dBm is outside the range the controller accepts "
+            f"({ROAMING_ASSISTANT_MIN_DBM}..{ROAMING_ASSISTANT_MAX_DBM} dBm); set to {summary.threshold_dbm} dBm"
+        )
     if summary.status is WlanRoamingStatus.INCOMPLETE:
         lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons]
     if summary.tx_change_pending:
@@ -275,10 +286,17 @@ def _tx_value(rec: Recommendation) -> str:
 
 def _min_rssi_value(rec: Recommendation) -> str:
     if rec.kind is RecommendationKind.CONDITIONAL:
-        return f"disabled (if enabled: {rec.recommended} dBm on the uplink)"
-    if rec.kind is RecommendationKind.CHANGE:
-        return f"enabled, set {rec.recommended} dBm (currently {rec.current} dBm)"
-    return f"enabled, {rec.current} dBm"
+        text = f"disabled (if enabled: {rec.recommended} dBm on the uplink)"
+    elif rec.kind is RecommendationKind.CHANGE:
+        text = f"enabled, set {rec.recommended} dBm (currently {rec.current} dBm)"
+    else:
+        text = f"enabled, {rec.current} dBm"
+    if rec.derived_dbm is not None:
+        text += (
+            f"; derived {rec.derived_dbm} dBm is outside the range the controller accepts "
+            f"({MIN_RSSI_MIN_DBM}..{MIN_RSSI_MAX_DBM} dBm)"
+        )
+    return text
 
 
 def _band(band: BandReport) -> list[str]:

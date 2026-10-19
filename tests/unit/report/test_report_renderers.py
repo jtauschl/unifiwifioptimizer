@@ -10,12 +10,12 @@ import pytest
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.domain.analysis import PartialReason, ReadingSource, RoamingCap, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import Band, FieldProblem, MgmtSettings, UnparsableDevice
-from unifiwifioptimizer.domain.report import RecommendationKind, RoamingApDetail, WlanRoamingSummary
+from unifiwifioptimizer.domain.report import Recommendation, RecommendationKind, RoamingApDetail, WlanRoamingSummary
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind
 from unifiwifioptimizer.domain.secrets import Secret
 from unifiwifioptimizer.report.json import SCHEMA_VERSION, plain, render_json
 from unifiwifioptimizer.report.safe_text import INVISIBLE_LEADERS, REPORT_MARKS, safe_line_start
-from unifiwifioptimizer.report.text import _fold, render_report
+from unifiwifioptimizer.report.text import _fold, _min_rssi_value, render_report
 
 from ..analysis.builders import ap_named, golden_input, with_ap
 
@@ -240,8 +240,8 @@ def test_both_roaming_cap_kinds_render_as_plain_detail_lines() -> None:
         uplink_dbm=-80, cap=RoamingCap.MARGIN, raw_cap_dbm=None,
     )  # fmt: skip
     summary = WlanRoamingSummary(
-        wlan="SSID-1", status=WlanRoamingStatus.OK, threshold_dbm=-80, reasons=(), limiting=("AP-9",),
-        broadcasting=("AP-9",), per_ap=(detail,), tx_change_pending=False,
+        wlan="SSID-1", status=WlanRoamingStatus.OK, threshold_dbm=-80, derived_dbm=None, reasons=(),
+        limiting=("AP-9",), broadcasting=("AP-9",), per_ap=(detail,), tx_change_pending=False,
     )  # fmt: skip
     text = render_report(replace(REPORT, roaming=(summary,)), width=None)
     assert (
@@ -300,3 +300,26 @@ def test_a_hostile_name_in_a_list_cannot_open_a_folded_line_like_a_check() -> No
 @pytest.mark.parametrize("leader", [*sorted(INVISIBLE_LEADERS), "\u0301", "\u0903", "\u20dd"])
 def test_every_invisible_leader_and_combining_category_is_skipped(leader: str) -> None:
     assert safe_line_start(f"{leader}✗ x") == f"{leader}� x"
+
+
+def test_a_threshold_raised_to_the_controller_limit_says_what_was_derived() -> None:
+    summary = WlanRoamingSummary(
+        wlan="SSID-1", status=WlanRoamingStatus.OK, threshold_dbm=-80, derived_dbm=-83, reasons=(),
+        limiting=("AP-9",), broadcasting=("AP-9",), per_ap=(), tx_change_pending=False,
+    )  # fmt: skip
+    text = render_report(replace(REPORT, roaming=(summary,)), width=None)
+    assert "        derived -83 dBm is outside the range the controller accepts (-80..-60 dBm); set to -80 dBm" in text
+    plain = replace(summary, derived_dbm=None)
+    assert "derived" not in render_report(replace(REPORT, roaming=(plain,)), width=None)
+
+
+def test_a_min_rssi_moved_into_the_controller_range_names_the_derived_value() -> None:
+    conditional = Recommendation(
+        code="min_rssi", subject="AP-9", band=Band.GHZ_5, setting="min_rssi", current=None, recommended=-67,
+        kind=RecommendationKind.CONDITIONAL, reason="disabled; the value to use if enabled", derived_dbm=-63,
+    )  # fmt: skip
+    assert _min_rssi_value(conditional) == (
+        "disabled (if enabled: -67 dBm on the uplink); derived -63 dBm is outside the range the controller accepts "
+        "(-90..-67 dBm)"
+    )
+    assert _min_rssi_value(replace(conditional, derived_dbm=None)) == "disabled (if enabled: -67 dBm on the uplink)"

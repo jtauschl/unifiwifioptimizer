@@ -18,6 +18,8 @@ from unifiwifioptimizer.domain.analysis import (
 from unifiwifioptimizer.domain.models import Band, ClientSighting, FieldProblem, UnparsableDevice
 from unifiwifioptimizer.domain.report import TX_POWER, RecommendationKind, Severity, SiteReport
 from unifiwifioptimizer.domain.scan import BandScanStatus, ScanFailure, ScanFailureKind
+from unifiwifioptimizer.rf.constants import MIN_RSSI_MAX_DBM, MIN_RSSI_MIN_DBM
+from unifiwifioptimizer.rf.settings import RfSettings
 
 from .builders import (
     ap_named,
@@ -379,8 +381,8 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
         advisory = next(f for f in band.findings if f.code == "min_rssi_before_roaming")
         assert advisory.severity is Severity.ADVISORY and "coverage gap" in advisory.message
     # The late trigger: AP-1 (20 dBm, heard at -66) and AP-2 (23 dBm, heard at -80) alone broadcast the WLAN.
-    # AP-2's floor-clamped uplink value -83 is the WLAN threshold; at AP-1 it fires at -78 on the downlink,
-    # below AP-1's Minimum RSSI target of -72.
+    # AP-2's floor-clamped uplink value -83 is below what the controller accepts, so the WLAN threshold is -80;
+    # at AP-1 it fires at -75 on the downlink, below AP-1's Minimum RSSI target of -72.
     pair = with_groups(fixture_snapshot(), ("g1", ("AP-1", "AP-2")))
     pair = with_ap(pair, with_radio(ap_named(pair, "AP-1"), Band.GHZ_5, min_rssi_enabled=True, min_rssi_dbm=-80))
     pair = with_ap(pair, with_stats(ap_named(pair, "AP-2"), Band.GHZ_5, observed_tx_dbm=23))
@@ -395,9 +397,10 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
     late = analyze_site(replace(inp, snapshot=pair, scan=scan, neighbours=neighbours))
     (target,) = late.roaming
-    assert (target.status, target.threshold_dbm, target.limiting) == (WlanRoamingStatus.OK, -83, ("AP-2",))
+    assert (target.status, target.threshold_dbm, target.limiting) == (WlanRoamingStatus.OK, -80, ("AP-2",))
+    assert target.derived_dbm == -83
     advisory = next(f for f in band_of(late, "AP-1", Band.GHZ_5).findings if f.code == "min_rssi_before_roaming")
-    assert "(-78 dBm at the client)" in advisory.message and "(-72 dBm)" in advisory.message
+    assert "(-75 dBm at the client)" in advisory.message and "(-72 dBm)" in advisory.message
     # Both heard inside the corridor: the WLAN threshold (-75, AP-2's uplink value) fires at -70 on AP-1's
     # downlink and at -67 on AP-2's, both above the -72 targets, and no neighbour is out of reach: no advisory.
     both = with_ap(pair, with_radio(ap_named(pair, "AP-2"), Band.GHZ_5, min_rssi_enabled=True, min_rssi_dbm=-80))
@@ -453,3 +456,50 @@ def test_prepare_site_tx_checks_zero_when_all_ok() -> None:
     )
     assert sum(1 for r in all_ok.recommendations if r.setting == TX_POWER) == 8 and all_ok.pending_tx_changes == 0
     assert GOLDEN.pending_tx_changes == 4
+
+
+def test_clients_are_counted_against_the_min_rssi_that_can_be_set() -> None:
+    # A 30 dBm client pushes the derived uplink values above the controller's upper stop.
+    report = analyze_site(replace(golden_input(clients=True), rf=RfSettings(client_tx_dbm=30)))
+    moved = 0
+    for ap in report.aps:
+        for band in ap.bands:
+            if band.clients is None:
+                continue
+            rec = next(r for r in band.recommendations if r.setting == "min_rssi")
+            assert band.clients.min_rssi_dbm == rec.recommended
+            assert MIN_RSSI_MIN_DBM <= rec.recommended <= MIN_RSSI_MAX_DBM
+            moved += rec.derived_dbm is not None
+    assert moved
+
+
+def test_a_client_between_the_set_value_and_the_derived_value_is_not_counted_below_min_rssi() -> None:
+    inp = replace(golden_input(clients=True), rf=RfSettings(client_tx_dbm=30))
+    assert inp.snapshot.clients is not None
+    base = analyze_site(inp)
+    target = next(
+        (ap.name, band.band, rec)
+        for ap in base.aps
+        for band in ap.bands
+        if band.clients is not None
+        for rec in band.recommendations
+        if rec.setting == "min_rssi" and rec.derived_dbm is not None and rec.derived_dbm > rec.recommended
+    )
+    name, band_of_target, rec = target
+    assert rec.derived_dbm is not None
+    stray = ClientSighting(
+        ap_mac=ap_named(inp.snapshot, name).mac,
+        band=band_of_target,
+        essid=None,
+        channel=60,
+        signal_dbm=rec.derived_dbm - 1,
+        noise_dbm=None,
+        satisfaction_pct=None,
+        fast_transition=None,
+    )
+    more = analyze_site(replace(inp, snapshot=replace(inp.snapshot, clients=(*inp.snapshot.clients, stray))))
+    before, after = band_of(base, name, band_of_target).clients, band_of(more, name, band_of_target).clients
+    assert before is not None and after is not None
+    # Below the derived value, but not below the -67 that is actually set.
+    assert (after.total, after.below_min_rssi) == (before.total + 1, before.below_min_rssi)
+

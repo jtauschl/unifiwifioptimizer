@@ -2,9 +2,10 @@
 
 The threshold is a WLAN-level setting on the controller, so it is aggregated over the access points that
 broadcast the WLAN: every broadcasting AP gets its own threshold from the weakest reading its SSID peers
-(configured neighbours that also broadcast the WLAN) took of it, and the WLAN's target is the minimum —
-no AP is judged more optimistically than its own coverage allows. Incomplete data never produces a
-silently optimistic value: a missing peer reading marks the WLAN incomplete and passes no threshold on.
+(configured neighbours that also broadcast the WLAN) took of it, and the WLAN's target is the minimum, held
+inside the range the controller accepts — no AP is judged more optimistically than its own coverage allows.
+Incomplete data never produces a silently optimistic value: a missing peer reading marks the WLAN incomplete
+and passes no threshold on.
 """
 
 from collections.abc import Mapping
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from unifiwifioptimizer.analysis.neighbors import NeighbourMatrix, PeerReading
 from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import AccessPoint, Band, SiteSnapshot, WlanConfig
+from unifiwifioptimizer.rf.constants import ROAMING_ASSISTANT_MAX_DBM, ROAMING_ASSISTANT_MIN_DBM
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.roaming import RoamingRecommendation, recommend_roaming
 from unifiwifioptimizer.rf.settings import RfSettings
@@ -41,6 +43,8 @@ class WlanRoamingTarget:
     status: WlanRoamingStatus
     # The uplink value to configure, present only when the status is OK.
     threshold_dbm: int | None
+    # The derived value when it lies outside what the controller accepts and `threshold_dbm` was moved to the limit.
+    derived_dbm: int | None = None
     reasons: tuple[str, ...]
     # Every AP whose own threshold equals the WLAN's minimum, sorted by name.
     limiting: tuple[str, ...]
@@ -169,11 +173,13 @@ def roaming_target(
             broadcasting=broadcasting,
         )
     minimum = min(d.recommendation.uplink_dbm for d in details)
+    settable = min(max(minimum, ROAMING_ASSISTANT_MIN_DBM), ROAMING_ASSISTANT_MAX_DBM)
     limiting = tuple(sorted(d.ap for d in details if d.recommendation.uplink_dbm == minimum))
     return WlanRoamingTarget(
         wlan=wlan.name,
         status=WlanRoamingStatus.OK,
-        threshold_dbm=minimum,
+        threshold_dbm=settable,
+        derived_dbm=minimum if settable != minimum else None,
         reasons=(),
         limiting=limiting,
         per_ap=tuple(details),
@@ -208,9 +214,10 @@ def thresholds_for_compliance(targets: Mapping[str, WlanRoamingTarget]) -> dict[
 def downlink_trigger_for(target: WlanRoamingTarget | None, ap_name: str) -> int | None:
     """Where the WLAN's threshold fires at `ap_name`, on the downlink, for the Min-RSSI ordering advisory.
 
-    The controller applies one uplink value per WLAN (the minimum over its access points), so everywhere but
-    at the limiting access point the trigger fires at a weaker downlink signal than that access point's own
-    derived value. Only an OK target has a threshold."""
+    The controller applies one uplink value per WLAN (the minimum over its access points, held inside the range
+    the controller accepts), so an access point whose own derived value lies above it fires at a weaker downlink
+    signal than derived, and one whose derived value lies below the range fires at a stronger one. Only an OK
+    target has a threshold."""
     if target is None or target.status is not WlanRoamingStatus.OK or target.threshold_dbm is None:
         return None
     for detail in target.per_ap:

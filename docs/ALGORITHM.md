@@ -158,17 +158,22 @@ min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
 On 2.4 GHz, where access points often run 6 dBm against clients at 15–20 dBm, the uplink is 9–14 dB
 stronger than the downlink; without the conversion a Minimum RSSI never fires usefully there.
 
+The controller accepts −90 to −67 dBm for Minimum RSSI (verified on U6 Lite and U7 Lite, both bands). A derived
+value outside that range moves to the nearer end, and the report names the derived value next to it. An
+enabled Minimum RSSI set to that end counts as confirmed.
+
 Enabling it is a deployment choice: a disabled Minimum RSSI is reported as the value to use if it is
 switched on, never as a pending change; enabled at the derived value it is confirmed, elsewhere it is a
 change. An enabled Minimum RSSI on a 5 GHz radio with a coverage gap, or whose roaming trigger lies below
 the Minimum RSSI target, gets an advisory: the disconnect would fire before any neighbour can take over.
 The comparison is between the recommended values at the radio's current effective power — the WLAN
-threshold of §7 and the Minimum RSSI target derived here — not the values configured today; a pending
+threshold of §7 and the Minimum RSSI value to set (moved into the controller's range where needed), converted back
+to the downlink — not the values configured today; a pending
 transmit-power change moves the trigger on the downlink. "Coverage gap" here means rows 6 (at the maximum)
 and 10 of §4 and any neighbour marked `*` below the corridor. The trigger compared is the WLAN's threshold
-as this radio sees it on the downlink — the controller applies one uplink value per WLAN (§7), so at every
-access point but the limiting one it fires at a weaker signal than the access point's own derived value
-would.
+as this radio sees it on the downlink — the controller applies one uplink value per WLAN (§7), so at an access
+point whose own derived value lies above it, it fires at a weaker signal than that derived value would, and at one
+whose derived value lies below the controller's range, at a stronger signal.
 
 ## 7. Roaming Assistant
 
@@ -193,8 +198,13 @@ for each broadcasting AP with SSID peers:
     downlink  = clamp(downlink, ROAM_FLOOR, ROAM_CEILING)
     uplink    = downlink − (P_AP_effective − P_client)             # what the controller compares against
 
-WLAN target = min(uplink over the broadcasting APs)
+WLAN target = clamp(min(uplink over the broadcasting APs), ROAMING_ASSISTANT_MIN, ROAMING_ASSISTANT_MAX)
 ```
+
+`ROAMING_ASSISTANT_MIN` and `ROAMING_ASSISTANT_MAX` are −80 and −60 dBm, the stops of the controller's Handoff
+Suggestions slider (observed on Network 10.6.106). A value outside that range cannot be configured: an access
+point at 23 dBm on 5 GHz derives −83 dBm from the −75 dBm floor (−75 − (23 − 15)). The report then names the
+derived value and the range, the target is the nearer end, and a WLAN set to it passes the check.
 
 Defaults: offset 0 (the trigger sits at the lower corridor edge, matching the published client triggers —
 Apple iPhone/iPad −70 dBm, Mac −75 dBm), margin 5 dB, floor −75 dBm (Apple's macOS trigger), ceiling −65

@@ -312,12 +312,13 @@ def test_the_downlink_trigger_is_the_wlan_threshold_seen_from_each_access_point(
     assert result is not None and result.threshold_dbm == -78 and result.limiting == ("AP-2",)
     assert [(d.ap, d.recommendation.downlink_dbm) for d in result.per_ap] == [("AP-1", -73), ("AP-2", -78)]
     assert downlink_trigger_for(result, "AP-2") == -78 and downlink_trigger_for(result, "AP-1") == -78
-    # At 23 dBm AP-1's uplink value is -73 - (23 - 15) = -81, now the WLAN minimum: AP-2's clients are let go 3 dB
+    # At 22 dBm AP-1's uplink value is -73 - (22 - 15) = -80, now the WLAN minimum: AP-2's clients are let go 2 dB
     # below AP-2's own derived trigger, and AP-1 sees the threshold at -73 on the downlink again.
-    strong = with_ap(snap, with_stats(ap_named(snap, "AP-1"), Band.GHZ_5, observed_tx_dbm=23))
+    strong = with_ap(snap, with_stats(ap_named(snap, "AP-1"), Band.GHZ_5, observed_tx_dbm=22))
     result = target(strong, groups_wlan("Corp", "g1"), neighbours, scan)
-    assert result is not None and result.threshold_dbm == -81 and result.limiting == ("AP-1",)
-    assert downlink_trigger_for(result, "AP-1") == -73 and downlink_trigger_for(result, "AP-2") == -81
+    assert result is not None and result.threshold_dbm == -80 and result.limiting == ("AP-1",)
+    assert result.derived_dbm is None
+    assert downlink_trigger_for(result, "AP-1") == -73 and downlink_trigger_for(result, "AP-2") == -80
     assert downlink_trigger_for(result, "AP-9") is None and downlink_trigger_for(None, "AP-1") is None
     # An incomplete target has no threshold the controller could apply, so no trigger either.
     three = with_groups(SNAP, ("g1", ("AP-1", "AP-2", "AP-3")))
@@ -333,3 +334,50 @@ def test_an_offline_broadcasting_access_point_is_skipped_not_incomplete() -> Non
     scan = sightings(snap, ("AP-2", "AP-1", -70), ("AP-1", "AP-2", -70))
     result = target(snap, groups_wlan("Corp", "g1"), neighbours, scan)
     assert result is not None and result.status is WlanRoamingStatus.OK and result.limiting == ("AP-1", "AP-2")
+
+
+def test_a_derived_value_below_what_the_controller_accepts_is_raised_to_the_limit() -> None:
+    snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))
+    neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
+    scan = sightings(snap, ("AP-2", "AP-1", -70), ("AP-1", "AP-2", -82))
+    # At 23 dBm AP-1's uplink value is -73 - (23 - 15) = -81, one dB below the lowest value the controller takes.
+    strong = with_ap(snap, with_stats(ap_named(snap, "AP-1"), Band.GHZ_5, observed_tx_dbm=23))
+    result = target(strong, groups_wlan("Corp", "g1"), neighbours, scan)
+    assert result is not None and result.status is WlanRoamingStatus.OK
+    assert (result.threshold_dbm, result.derived_dbm, result.limiting) == (-80, -81, ("AP-1",))
+    assert [(d.ap, d.recommendation.uplink_dbm) for d in result.per_ap] == [("AP-1", -81), ("AP-2", -78)]
+    # The controller applies -80, so that is where the trigger fires at each AP.
+    assert downlink_trigger_for(result, "AP-1") == -72 and downlink_trigger_for(result, "AP-2") == -80
+    assert thresholds_for_compliance({"Corp": result}) == {"Corp": -80}
+    configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=-80)
+    check = roaming_assistant_check(profile("Throughput"), configured, -80)
+    assert check.status is CheckStatus.PASSED
+
+
+def test_a_derived_value_exactly_at_the_limit_is_not_reported_as_raised() -> None:
+    snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))
+    neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
+    scan = sightings(snap, ("AP-2", "AP-1", -70), ("AP-1", "AP-2", -82))
+    at_limit = with_ap(snap, with_stats(ap_named(snap, "AP-1"), Band.GHZ_5, observed_tx_dbm=22))
+    result = target(at_limit, groups_wlan("Corp", "g1"), neighbours, scan)
+    assert result is not None and (result.threshold_dbm, result.derived_dbm) == (-80, None)
+
+
+def test_a_derived_value_above_what_the_controller_accepts_is_lowered_to_the_limit() -> None:
+    # Floor -58 and ceiling -55 with equal power: both access points derive -58 on the uplink, above the
+    # slider's upper stop of -60.
+    rf = RfSettings(
+        client_tx_dbm=EQUAL_POWER, roaming=RoamingTunables(offset_db=0, margin_db=5, floor_dbm=-58, ceiling_dbm=-55)
+    )
+    snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))
+    neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
+    scan = sightings(snap, ("AP-2", "AP-1", -70), ("AP-1", "AP-2", -70))
+    matrix = build_matrix(snap, scan, neighbours, scan_skipped=False)
+    result = roaming_target(groups_wlan("Corp", "g1"), snap, matrix, CORRIDOR, rf)
+    assert result is not None and result.status is WlanRoamingStatus.OK
+    assert (result.threshold_dbm, result.derived_dbm) == (-60, -58)
+    exact = RfSettings(
+        client_tx_dbm=EQUAL_POWER, roaming=RoamingTunables(offset_db=0, margin_db=5, floor_dbm=-60, ceiling_dbm=-55)
+    )
+    at_limit = roaming_target(groups_wlan("Corp", "g1"), snap, matrix, CORRIDOR, exact)
+    assert at_limit is not None and (at_limit.threshold_dbm, at_limit.derived_dbm) == (-60, None)

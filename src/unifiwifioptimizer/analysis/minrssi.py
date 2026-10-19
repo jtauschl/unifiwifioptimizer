@@ -7,6 +7,7 @@ disconnect would fire before the roaming trigger it is meant to follow.
 
 from unifiwifioptimizer.domain.models import AccessPoint, Band
 from unifiwifioptimizer.domain.report import MIN_RSSI, Finding, Recommendation, RecommendationKind, Severity
+from unifiwifioptimizer.rf.constants import MIN_RSSI_MAX_DBM, MIN_RSSI_MIN_DBM
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.minrssi import recommend_min_rssi
 from unifiwifioptimizer.rf.settings import RfSettings
@@ -18,7 +19,8 @@ def recommend_band_min_rssi(
     radio = ap.radio(band)
     enabled = radio is not None and radio.min_rssi_enabled
     current = radio.min_rssi_dbm if radio is not None and enabled else None
-    recommended = recommend_min_rssi(corridor, tx_eff_dbm, rf.client_tx_dbm, rf.min_rssi_offset_db)
+    derived = recommend_min_rssi(corridor, tx_eff_dbm, rf.client_tx_dbm, rf.min_rssi_offset_db)
+    recommended = min(max(derived, MIN_RSSI_MIN_DBM), MIN_RSSI_MAX_DBM)
     if not enabled:
         kind, reason = RecommendationKind.CONDITIONAL, "disabled; the value to use if enabled"
     elif current == recommended:
@@ -34,6 +36,7 @@ def recommend_band_min_rssi(
         recommended=recommended,
         kind=kind,
         reason=reason,
+        derived_dbm=derived if derived != recommended else None,
     )
 
 
@@ -42,15 +45,16 @@ def min_rssi_before_roaming(
     band: Band,
     min_rssi: Recommendation,
     roaming_downlink_dbm: int | None,
-    corridor: Corridor,
+    tx_eff_dbm: int,
     rf: RfSettings,
     coverage_gap: bool,
 ) -> Finding | None:
     """ALGORITHM §6: an enabled Min RSSI on a 5 GHz radio must not kick a client before the roaming trigger
-    (compared on the downlink, where both are derived) or on a radio with a coverage gap."""
+    (compared on the downlink) or on a radio with a coverage gap. The Min RSSI side is the value that can be
+    set, converted back to the downlink, so a value moved into the controller's range is judged as set."""
     if band is not Band.GHZ_5 or min_rssi.kind is RecommendationKind.CONDITIONAL:
         return None
-    min_rssi_downlink = corridor.low - rf.min_rssi_offset_db
+    min_rssi_downlink = min_rssi.recommended + (tx_eff_dbm - rf.client_tx_dbm)
     if coverage_gap:
         message = (
             "Minimum RSSI is enabled on a radio with a coverage gap; the hard disconnect would fire before any "
