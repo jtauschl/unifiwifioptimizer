@@ -14,12 +14,17 @@ def test_uplink_threshold_follows_reciprocity() -> None:
 
 
 def test_default_offset_sits_five_db_below_the_corridor_before_the_uplink_conversion() -> None:
-    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=15) == -78
-    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=6) == -69
+    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=15, client_tx_dbm=15) == -78
+    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=6, client_tx_dbm=15) == -69
+
+
+def test_the_default_client_power_is_14_dbm() -> None:
+    # An access point at the client's power derives the downlink value unchanged: -73 - 5.
+    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=14) == -78
 
 
 def test_zero_offset_collapses_onto_the_corridor_edge() -> None:
-    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=15, offset_db=0) == -73
+    assert recommend_min_rssi(Corridor(low=-73), tx_eff_ap_dbm=15, client_tx_dbm=15, offset_db=0) == -73
 
 
 @pytest.mark.parametrize("offset", [-1, 31])

@@ -35,7 +35,7 @@ def test_minimal_configuration_fills_every_default() -> None:
     assert config.controller.ca_cert is None and config.controller.cert_fingerprint is None
     assert config.sites == {}
     assert (config.rf.client_tx_dbm, config.rf.cell_edge.noise_floor_dbm, config.rf.cell_edge.required_snr_db) == (
-        15,
+        14,
         -92,
         25,
     )

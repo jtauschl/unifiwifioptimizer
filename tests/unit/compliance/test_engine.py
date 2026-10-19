@@ -73,22 +73,46 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
         )
         for e in compliance.evaluations
     }
-    # SSID-1 is the live main WLAN (WPA2/WPA3, manual rates, custom DTIM, proxy ARP); SSID-2 the old
-    # Standard preset; SSID-3 the Hotspot preset; SSID-4/5 the OWE and OWE-transition presets.
+    # SSID-1 is the live main WLAN (WPA2/WPA3, manual rates, custom DTIM, proxy ARP on, multicast-to-unicast off);
+    # SSID-2 the old Standard preset; SSID-3 the Hotspot preset; SSID-4/5 the OWE and OWE-transition presets.
     assert golden == {
-        "SSID-1": (["dtim_mode", "minrate_mode", "proxy_arp"], ["roaming_assistant"], []),
+        "SSID-1": (["dtim_mode", "minrate_mode", "multicast_to_unicast"], ["roaming_assistant"], []),
         "SSID-2": (
-            ["fast_roaming", "group_rekey", "pmf", "roaming_assistant", "security_protocol"],
+            [
+                "fast_roaming",
+                "group_rekey",
+                "multicast_to_unicast",
+                "pmf",
+                "proxy_arp",
+                "roaming_assistant",
+                "security_protocol",
+            ],
             ["ap_name_in_beacon", "mlo", "multicast_broadcast_blocker"],
             [],
         ),
         "SSID-3": (
-            ["client_device_isolation", "fast_roaming", "pmf", "roaming_assistant", "security_protocol"],
+            [
+                "client_device_isolation",
+                "fast_roaming",
+                "multicast_to_unicast",
+                "pmf",
+                "proxy_arp",
+                "roaming_assistant",
+                "security_protocol",
+            ],
             ["group_rekey"],
             [],
         ),
-        "SSID-4": (["fast_roaming", "pmf", "roaming_assistant", "security_protocol"], ["group_rekey"], []),
-        "SSID-5": (["fast_roaming", "roaming_assistant", "security_protocol"], ["group_rekey"], []),
+        "SSID-4": (
+            ["fast_roaming", "multicast_to_unicast", "pmf", "proxy_arp", "roaming_assistant", "security_protocol"],
+            ["group_rekey"],
+            [],
+        ),
+        "SSID-5": (
+            ["fast_roaming", "multicast_to_unicast", "proxy_arp", "roaming_assistant", "security_protocol"],
+            ["group_rekey"],
+            [],
+        ),
     }
     for evaluation in compliance.evaluations:
         codes = [c.code for c in evaluation.checks]

@@ -13,6 +13,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
     downlink_trigger_for,
     roaming_target,
     roaming_targets,
+    threshold_above_guidance,
     thresholds_for_compliance,
 )
 from unifiwifioptimizer.compliance.roaming_check import roaming_assistant_check
@@ -381,3 +382,19 @@ def test_a_derived_value_above_what_the_controller_accepts_is_lowered_to_the_lim
     )
     at_limit = roaming_target(groups_wlan("Corp", "g1"), snap, matrix, CORRIDOR, exact)
     assert at_limit is not None and (at_limit.threshold_dbm, at_limit.derived_dbm) == (-60, None)
+
+
+def test_a_threshold_not_below_minus_70_is_above_ubiquitis_guidance() -> None:
+    snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))
+    neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
+    scan = sightings(snap, ("AP-2", "AP-1", -70), ("AP-1", "AP-2", -70))
+    result = target(snap, groups_wlan("Corp", "g1"), neighbours, scan)
+    assert result is not None and result.status is WlanRoamingStatus.OK
+    assert [threshold_above_guidance(replace(result, threshold_dbm=value)) for value in (-71, -70, -69, -60)] == [
+        False,
+        True,
+        True,
+        True,
+    ]
+    assert not threshold_above_guidance(replace(result, status=WlanRoamingStatus.INCOMPLETE, threshold_dbm=-60))
+    assert not threshold_above_guidance(replace(result, threshold_dbm=None))

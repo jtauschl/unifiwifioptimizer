@@ -35,9 +35,9 @@ profiles:
     band_steering: true
     mlo: false
     uapsd: false
-    proxy_arp: false
+    proxy_arp: true
     multicast_broadcast_blocker: false
-    multicast_to_unicast: false
+    multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
     ap_name_in_beacon: false
@@ -46,8 +46,6 @@ profiles:
     group_rekey_s: 3600
     sae_anti_clogging: 5
     sae_sync_time: 5
-    evidence:
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
 
   # 2.4 GHz-only WLAN for low-capability clients. WPA2 with PMF off is accepted because many of them break
   # on PMF or on WPA3 IEs; a WPA2/WPA3 transition with PMF Optional is accepted too (backward-compatible by
@@ -81,7 +79,8 @@ profiles:
       roaming_assistant: {tier: practice, source: "no steering of stationary low-power clients"}
       band_steering: {tier: practice, source: "2.4 GHz-only clients cannot be steered"}
       group_rekey_s: {tier: practice, source: "rekeys disconnect flaky IoT clients; disabled on purpose"}
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
+      proxy_arp: {tier: practice, source: "off: kept minimal for low-capability clients; Ubiquiti sees the benefit of Proxy ARP mainly in large networks"}
+      multicast_to_unicast: {tier: vendor, source: "Ubiquiti on Multicast Enhancement: \"Some smart home devices may require it to be disabled\"; off for the IoT profile"}
 
   # Guest WLAN: encryption without a password through OWE (transition mode keeps devices without OWE on),
   # isolated clients, plain Open accepted for captive-portal setups that cannot use OWE yet.
@@ -111,9 +110,10 @@ profiles:
       security_protocols: {tier: practice, source: "plain Open stays accepted for captive portals that cannot use OWE yet; OWE itself is RFC 8110"}
       pmf: {tier: practice, source: "follows the protocol in use (Open: off, OWE transition: optional or required, OWE: required), checked by the pmf_matches_protocol advisory"}
       fast_roaming: {tier: practice, source: "802.11r needs an RSN with an FT AKM; Open has none and the Open twin of an OWE transition keeps it off"}
-      proxy_arp: {tier: practice, source: "off: a home or guest WLAN has too little broadcast ARP to justify a proxy; the mechanism itself is IEEE 802.11v and Ubiquiti sees the benefit mainly in large networks"}
+      proxy_arp: {tier: practice, source: "off: client isolation already keeps guests from reaching each other, so there is little ARP to proxy"}
+      multicast_to_unicast: {tier: practice, source: "off: guest clients are isolated from each other"}
 
-  # Primary WLAN tuned for airtime efficiency.
+  # Primary WLAN tuned for airtime efficiency: fixed minimum rates, 802.11b off, the controller's DTIM defaults.
   Throughput:
     wifi_bands: [2g, 5g]
     security_protocols: ["WPA2/WPA3", "WPA2/WPA3 Enterprise"]
@@ -126,22 +126,20 @@ profiles:
     uapsd: false
     proxy_arp: true
     multicast_broadcast_blocker: false
-    multicast_to_unicast: false
+    multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
     ap_name_in_beacon: false
     minrate_mode: manual
     minrate_24_kbps: 12000
-    minrate_5_kbps: 24000
-    dtim_mode: custom
-    dtim_24: 3
-    dtim_5: 3
+    minrate_5_kbps: 12000
+    dtim_mode: default
     group_rekey_s: 3600
     sae_anti_clogging: 5
     sae_sync_time: 5
     b_supported: false
 
-  # Primary WLAN tuned for responsiveness (voice, gaming, realtime).
+  # Primary WLAN tuned for responsiveness (voice, gaming, realtime): as Throughput, with DTIM 1 on both bands.
   Latency:
     wifi_bands: [2g, 5g]
     security_protocols: ["WPA2/WPA3", "WPA2/WPA3 Enterprise"]
@@ -151,16 +149,16 @@ profiles:
     roaming_assistant: true
     band_steering: true
     mlo: false
-    uapsd: true
+    uapsd: false
     proxy_arp: true
     multicast_broadcast_blocker: false
-    multicast_to_unicast: false
+    multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
     ap_name_in_beacon: false
     minrate_mode: manual
     minrate_24_kbps: 12000
-    minrate_5_kbps: 24000
+    minrate_5_kbps: 12000
     dtim_mode: custom
     dtim_24: 1
     dtim_5: 1
@@ -179,18 +177,18 @@ evidence:
   roaming_assistant: {tier: vendor, source: "Ubiquiti Handoff Suggestions: BSS transition frames tell a client it will be dissociated below the threshold, which Ubiquiti suggests keeping below -70 dBm; the threshold itself comes from the site RF model (ALGORITHM.md §7)"}
   band_steering: {tier: vendor, source: "Ubiquiti band steering moves 2.4 GHz clients to 5 GHz with BSS transition frames and deprecates the old AP-level method; the controller field is no2ghz_oui"}
   mlo: {tier: practice, source: "MLO is IEEE 802.11be, its WPA3 requirement Wi-Fi Alliance certification; keeping it off until the site has Wi-Fi 7 clients on a WPA3-only WLAN is a deployment choice"}
-  uapsd: {tier: practice, source: "U-APSD / WMM Power Save is a client battery feature (Ubiquiti: clients stay in low-power mode longer); on for Latency is this profile's choice, off elsewhere for client compatibility"}
+  uapsd: {tier: practice, source: "U-APSD / WMM Power Save is a client battery feature (Ubiquiti: clients stay in low-power mode longer), not a latency feature; off in every shipped profile, switch it on in your own for VoIP handsets"}
   proxy_arp: {tier: vendor, source: "Ubiquiti: reduces broadcast traffic and can improve airtime and latency, especially in large networks, at the cost of AP resources; Cisco calls ARP proxy the recommended setting (client battery life); the mechanism is IEEE 802.11v"}
   multicast_broadcast_blocker: {tier: practice, source: "Ubiquiti setting; off because mDNS and DHCP need broadcast"}
-  multicast_to_unicast: {tier: practice, source: "Ubiquiti Multicast Enhancement converts multicast into unicast and is especially helpful with frequent streaming or discovery multicast (Chromecast, Apple TV, Sonos); off by default here"}
+  multicast_to_unicast: {tier: vendor, source: "Ubiquiti Multicast Enhancement converts multicast into unicast and is especially helpful with frequent streaming or discovery multicast (Chromecast, Apple TV, Sonos)"}
   hide_wifi_name: {tier: practice, source: "hidden SSIDs add probe traffic and no security (common guidance; IEEE 802.11 probe request behaviour)"}
   client_device_isolation: {tier: practice, source: "guest isolation principle; Ubiquiti setting"}
   ap_name_in_beacon: {tier: practice, source: "Ubiquiti setting; information leak with no client benefit"}
   minrate_mode: {tier: vendor, source: "Cisco Catalyst 9800 best practices: fixed mandatory rates, 12 Mbit/s as the default starting point for most networks; Ubiquiti: a higher minimum rate mainly helps large or high-density networks and can block legacy clients"}
   minrate_24_kbps: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Use 12Mbps mandatory as a default starting point for most networks\" and \"Disable all 11b rates, unless needed\"; 6 and 9 Mbit/s are OFDM rates as well"}
-  minrate_5_kbps: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Use 24Mbps mandatory for well-designed high-density networks\" (its starting point for most networks is 12 Mbit/s); a tunable that shrinks the cell"}
+  minrate_5_kbps: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Use 12Mbps mandatory as a default starting point for most networks\"; 24 Mbit/s is for \"well-designed high-density networks\" and shrinks the cell"}
   dtim_mode: {tier: practice, source: "DTIM mechanics are IEEE 802.11; choosing custom values is practice"}
-  dtim_24: {tier: practice, source: "habit values: Ubiquiti's own defaults are 1 on 2.4 GHz and 3 on 5/6 GHz, \"tuned to balance connectivity and device performance\", and raising the interval may negatively affect airtime efficiency, battery life and IoT connectivity; the shipped 3 on 2.4 GHz (Throughput) and 1 on both bands (Latency) are habit choices"}
+  dtim_24: {tier: practice, source: "Latency pins 1 on both bands so buffered broadcast traffic goes out at every beacon (most multicast is converted to unicast); the other profiles keep the controller default (Ubiquiti: 1 on 2.4 GHz and 3 on 5/6 GHz, \"tuned to balance connectivity and device performance\"; raising the interval may negatively affect airtime efficiency, battery life and IoT connectivity)"}
   dtim_5: {tier: practice, source: "as dtim_24"}
   dtim_6: {tier: practice, source: "as dtim_24"}
   group_rekey_s: {tier: vendor, source: "Ubiquiti: \"We strongly recommend keeping the default setting\"; 3600 s is the value observed on Network 10.6.106, 0 disables rekeying"}

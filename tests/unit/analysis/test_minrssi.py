@@ -8,7 +8,7 @@ from .builders import ap_named, fixture_snapshot, with_radio
 
 SNAP = fixture_snapshot()
 FIVE = Corridor(low=-67)
-RF = RfSettings()
+RF = RfSettings(client_tx_dbm=15)
 
 
 def test_a_disabled_min_rssi_is_conditional_with_the_uplink_value_to_use() -> None:

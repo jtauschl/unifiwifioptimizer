@@ -11,7 +11,8 @@
   Cell edge:                         -67 dBm (noise floor -92 dBm + SNR 25 dB)
   Target RSSI @ neighbour 2.4 GHz:   -73 dBm to -67 dBm
   Target RSSI @ neighbour 5 GHz:     -67 dBm to -61 dBm
-  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 15 dBm)
+  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 14 dBm)
+                                     Ubiquiti: for high density; -80 dBm as a home/office start
   Roaming trigger bounds:            -75 dBm .. -65 dBm (margin 5 dB)
   Scan passes:                       3
 
@@ -30,9 +31,11 @@
     ✓ Fast Roaming                       Enabled
     ✓ Minimum Data Rate Mode             Manual
     ✓ Minimum Data Rate 2.4 GHz          12 Mbps
-    ✓ Minimum Data Rate 5 GHz            24 Mbps
+    ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
+        → WLAN edit → Advanced → Hi-Capacity Tuning → Minimum Data Rate → 5 GHz slider
     ✓ Multicast and Broadcast Blocker    Disabled
-    ✓ Multicast to Unicast               Disabled
+    ✗ Multicast to Unicast               Enabled (currently Disabled)
+        → WLAN edit → Advanced → Hi-Capacity Tuning → Multicast to Unicast
     ✓ Proxy ARP                          Enabled
     ✓ Security Protocol                  WPA2/WPA3
     ✓ PMF                                Optional
@@ -44,18 +47,17 @@
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
     ✓ UAPSD                              Disabled
-    ✓ DTIM Mode                          Custom
-    ✓ DTIM Period 2.4 GHz                3
-    ✓ DTIM Period 5 GHz                  3
+    ✗ DTIM Mode                          Default (currently Custom)
+        → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
     ✓ Group Rekey Interval               3600 s
     ✓ Show Access Point Name in Beacon   Disabled
     ✓ 802.11b Support                    Disabled
     ? Roaming Assistant                  threshold not available without neighbour data
         AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the
-          floor -75 dBm; clamped to the floor (-80 dBm on the uplink) — no reachable roaming
+          floor -75 dBm; clamped to the floor (-81 dBm on the uplink) — no reachable roaming
           neighbour, fix placement
         AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the
-          floor -75 dBm; clamped to the floor (-78 dBm on the uplink) — no reachable roaming
+          floor -75 dBm; clamped to the floor (-79 dBm on the uplink) — no reachable roaming
           neighbour, fix placement
         AP-3: no reading of neighbour AP-4 (not sighted)
         AP-4: no reading of neighbour AP-3 (not sighted)
@@ -94,7 +96,7 @@
 
   Recommendations:
     ✓ Transmit Power           17 dBm (mode auto)
-    · Minimum RSSI             disabled (if enabled: -80 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -81 dBm on the uplink)
 
   · airtime: utilisation 0 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
@@ -111,7 +113,7 @@
     ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
                                the demonstrated power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
-    · Minimum RSSI             disabled (if enabled: -77 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
 
   · airtime: utilisation 4 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
@@ -134,7 +136,7 @@
     ✗ Transmit Power           10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
-    · Minimum RSSI             disabled (if enabled: -69 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -70 dBm on the uplink)
 
   · airtime: utilisation 12 %, self rx/tx 1/1 %, retries 10.9 %, 3 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
@@ -153,7 +155,7 @@
 
   Recommendations:
     - Transmit Power           18 dBm, no change: at the effective maximum
-    · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -76 dBm on the uplink)
 
   · airtime: utilisation 1 %, self rx/tx 0/1 %, retries 21.3 %, 4 client(s)
   · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
@@ -173,7 +175,7 @@
     ✗ Transmit Power           17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
-    · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
 
   · airtime: utilisation 30 %, self rx/tx 0/3 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
@@ -189,7 +191,7 @@
 
   Recommendations:
     - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
-    · Minimum RSSI             disabled (if enabled: -80 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -81 dBm on the uplink)
 
   · airtime: utilisation 3 %, self rx/tx 0/0 %, retries 17.5 %, satisfaction 96 %, 1 client(s)
   · foreign networks heard: 1 (strongest -75 dBm), 1 on an overlapping channel
@@ -211,7 +213,7 @@
     ✗ Transmit Power           17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
-    · Minimum RSSI             disabled (if enabled: -73 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
 
   · airtime: utilisation 11 %, self rx/tx 0/0 %, retries 20.8 %, 7 client(s)
 
@@ -225,7 +227,7 @@
 
   Recommendations:
     - Transmit Power           18 dBm, no change: at the effective maximum, neighbour unsighted
-    · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -76 dBm on the uplink)
 
   · airtime: utilisation 8 %, self rx/tx 4/3 %, retries 13.2 %, 11 client(s)
   · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
@@ -237,7 +239,7 @@
   AP-1, AP-2, AP-3, AP-4
   ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
 
-  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
     run the tool again.
   Partial result (band empty); the exit code says so.
 

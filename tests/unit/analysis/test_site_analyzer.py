@@ -365,7 +365,7 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     # Three gaps on 5 GHz: AP-1 is raised to its maximum with AP-2 still below the corridor (row 11, marker
     # `*`), AP-2 sits at its effective maximum (row 10), AP-3 is unsighted by AP-4 at the maximum (row 6). An
     # enabled Minimum RSSI on each of them gets the advisory.
-    inp = golden_input()
+    inp = replace(golden_input(), rf=RfSettings(client_tx_dbm=15))
     snap = inp.snapshot
     for name in ("AP-1", "AP-2", "AP-3"):
         snap = with_ap(snap, with_radio(ap_named(snap, name), Band.GHZ_5, min_rssi_enabled=True, min_rssi_dbm=-80))
@@ -401,6 +401,19 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     assert target.derived_dbm == -83
     advisory = next(f for f in band_of(late, "AP-1", Band.GHZ_5).findings if f.code == "min_rssi_before_roaming")
     assert "(-75 dBm at the client)" in advisory.message and "(-72 dBm)" in advisory.message
+    # No hint while the threshold is below -70; a 30 dBm client raises it to -68.
+    assert "roaming_threshold_above_guidance" not in codes(late.site_findings)
+    high_rf = replace(inp, snapshot=pair, scan=scan, neighbours=neighbours, rf=RfSettings(client_tx_dbm=30))
+    (hint,) = [f for f in analyze_site(high_rf).site_findings if f.code == "roaming_threshold_above_guidance"]
+    assert (hint.subject, hint.severity) == ("SSID-1", Severity.INFO)
+    assert "-68 dBm" in hint.message and "-70 dBm" in hint.message
+    # The hint belongs to a mapped, enabled WLAN whose profile expects Handoff Suggestions.
+    for quiet_input in (
+        replace(high_rf, wlan_profiles={"SSID-1": "Hotspot"}),
+        replace(high_rf, wlan_profiles={}),
+        replace(high_rf, snapshot=replace(pair, wlans=(groups_wlan("SSID-1", "g1", enabled=False),))),
+    ):
+        assert "roaming_threshold_above_guidance" not in codes(analyze_site(quiet_input).site_findings)
     # Both heard inside the corridor: the WLAN threshold (-75, AP-2's uplink value) fires at -70 on AP-1's
     # downlink and at -67 on AP-2's, both above the -72 targets, and no neighbour is out of reach: no advisory.
     both = with_ap(pair, with_radio(ap_named(pair, "AP-2"), Band.GHZ_5, min_rssi_enabled=True, min_rssi_dbm=-80))

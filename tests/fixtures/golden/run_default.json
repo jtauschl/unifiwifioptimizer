@@ -73,7 +73,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -80,
+                  "recommended": -81,
                   "setting": "min_rssi",
                   "subject": "AP-1",
                   "unverified_headroom": false
@@ -157,7 +157,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -77,
+                  "recommended": -78,
                   "setting": "min_rssi",
                   "subject": "AP-1",
                   "unverified_headroom": false
@@ -264,7 +264,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -69,
+                  "recommended": -70,
                   "setting": "min_rssi",
                   "subject": "AP-2",
                   "unverified_headroom": false
@@ -370,7 +370,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -75,
+                  "recommended": -76,
                   "setting": "min_rssi",
                   "subject": "AP-2",
                   "unverified_headroom": false
@@ -466,7 +466,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -74,
+                  "recommended": -75,
                   "setting": "min_rssi",
                   "subject": "AP-3",
                   "unverified_headroom": false
@@ -561,7 +561,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -80,
+                  "recommended": -81,
                   "setting": "min_rssi",
                   "subject": "AP-3",
                   "unverified_headroom": false
@@ -653,7 +653,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -73,
+                  "recommended": -74,
                   "setting": "min_rssi",
                   "subject": "AP-4",
                   "unverified_headroom": false
@@ -739,7 +739,7 @@
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
-                  "recommended": -75,
+                  "recommended": -76,
                   "setting": "min_rssi",
                   "subject": "AP-4",
                   "unverified_headroom": false
@@ -809,8 +809,8 @@
                 "actual": "24 Mbps",
                 "code": "minrate_5",
                 "detail": "",
-                "expected": "24 Mbps",
-                "status": "passed",
+                "expected": "12 Mbps",
+                "status": "failed",
                 "subject": "SSID-1"
               },
               {
@@ -825,8 +825,8 @@
                 "actual": "Disabled",
                 "code": "multicast_to_unicast",
                 "detail": "",
-                "expected": "Disabled",
-                "status": "passed",
+                "expected": "Enabled",
+                "status": "failed",
                 "subject": "SSID-1"
               },
               {
@@ -921,24 +921,8 @@
                 "actual": "Custom",
                 "code": "dtim_mode",
                 "detail": "",
-                "expected": "Custom",
-                "status": "passed",
-                "subject": "SSID-1"
-              },
-              {
-                "actual": "3",
-                "code": "dtim_24",
-                "detail": "",
-                "expected": "3",
-                "status": "passed",
-                "subject": "SSID-1"
-              },
-              {
-                "actual": "3",
-                "code": "dtim_5",
-                "detail": "",
-                "expected": "3",
-                "status": "passed",
+                "expected": "Default",
+                "status": "failed",
                 "subject": "SSID-1"
               },
               {
@@ -1059,8 +1043,8 @@
             "actual": "24 Mbps",
             "code": "minrate_5",
             "detail": "",
-            "expected": "24 Mbps",
-            "status": "passed",
+            "expected": "12 Mbps",
+            "status": "failed",
             "subject": "SSID-1"
           },
           {
@@ -1075,8 +1059,8 @@
             "actual": "Disabled",
             "code": "multicast_to_unicast",
             "detail": "",
-            "expected": "Disabled",
-            "status": "passed",
+            "expected": "Enabled",
+            "status": "failed",
             "subject": "SSID-1"
           },
           {
@@ -1171,24 +1155,8 @@
             "actual": "Custom",
             "code": "dtim_mode",
             "detail": "",
-            "expected": "Custom",
-            "status": "passed",
-            "subject": "SSID-1"
-          },
-          {
-            "actual": "3",
-            "code": "dtim_24",
-            "detail": "",
-            "expected": "3",
-            "status": "passed",
-            "subject": "SSID-1"
-          },
-          {
-            "actual": "3",
-            "code": "dtim_5",
-            "detail": "",
-            "expected": "3",
-            "status": "passed",
+            "expected": "Default",
+            "status": "failed",
             "subject": "SSID-1"
           },
           {
@@ -1374,7 +1342,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -80,
+            "recommended": -81,
             "setting": "min_rssi",
             "subject": "AP-1",
             "unverified_headroom": false
@@ -1400,7 +1368,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -77,
+            "recommended": -78,
             "setting": "min_rssi",
             "subject": "AP-1",
             "unverified_headroom": false
@@ -1426,7 +1394,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -69,
+            "recommended": -70,
             "setting": "min_rssi",
             "subject": "AP-2",
             "unverified_headroom": false
@@ -1452,7 +1420,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -75,
+            "recommended": -76,
             "setting": "min_rssi",
             "subject": "AP-2",
             "unverified_headroom": false
@@ -1478,7 +1446,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -74,
+            "recommended": -75,
             "setting": "min_rssi",
             "subject": "AP-3",
             "unverified_headroom": false
@@ -1504,7 +1472,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -80,
+            "recommended": -81,
             "setting": "min_rssi",
             "subject": "AP-3",
             "unverified_headroom": false
@@ -1530,7 +1498,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -73,
+            "recommended": -74,
             "setting": "min_rssi",
             "subject": "AP-4",
             "unverified_headroom": false
@@ -1556,7 +1524,7 @@
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
-            "recommended": -75,
+            "recommended": -76,
             "setting": "min_rssi",
             "subject": "AP-4",
             "unverified_headroom": false
@@ -1599,7 +1567,7 @@
       ],
       "rf": {
         "cell_edge_dbm": -67,
-        "client_tx_dbm": 15,
+        "client_tx_dbm": 14,
         "min_rssi_offset_db": 5,
         "noise_floor_dbm": -92,
         "required_snr_db": 25,
@@ -1625,7 +1593,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -77,
               "source": "measured",
-              "uplink_dbm": -80,
+              "uplink_dbm": -81,
               "weakest_peer": "AP-2",
               "weakest_rssi_dbm": -72
             },
@@ -1635,7 +1603,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -76,
               "source": "measured",
-              "uplink_dbm": -78,
+              "uplink_dbm": -79,
               "weakest_peer": "AP-1",
               "weakest_rssi_dbm": -71
             }
@@ -1665,7 +1633,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -77,
               "source": "measured",
-              "uplink_dbm": -80,
+              "uplink_dbm": -81,
               "weakest_peer": "AP-2",
               "weakest_rssi_dbm": -72
             },
@@ -1675,7 +1643,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -76,
               "source": "measured",
-              "uplink_dbm": -78,
+              "uplink_dbm": -79,
               "weakest_peer": "AP-1",
               "weakest_rssi_dbm": -71
             }
@@ -1705,7 +1673,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -77,
               "source": "measured",
-              "uplink_dbm": -80,
+              "uplink_dbm": -81,
               "weakest_peer": "AP-2",
               "weakest_rssi_dbm": -72
             },
@@ -1715,7 +1683,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -76,
               "source": "measured",
-              "uplink_dbm": -78,
+              "uplink_dbm": -79,
               "weakest_peer": "AP-1",
               "weakest_rssi_dbm": -71
             }
@@ -1745,7 +1713,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -77,
               "source": "measured",
-              "uplink_dbm": -80,
+              "uplink_dbm": -81,
               "weakest_peer": "AP-2",
               "weakest_rssi_dbm": -72
             },
@@ -1755,7 +1723,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -76,
               "source": "measured",
-              "uplink_dbm": -78,
+              "uplink_dbm": -79,
               "weakest_peer": "AP-1",
               "weakest_rssi_dbm": -71
             }
@@ -1785,7 +1753,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -77,
               "source": "measured",
-              "uplink_dbm": -80,
+              "uplink_dbm": -81,
               "weakest_peer": "AP-2",
               "weakest_rssi_dbm": -72
             },
@@ -1795,7 +1763,7 @@
               "downlink_dbm": -75,
               "raw_cap_dbm": -76,
               "source": "measured",
-              "uplink_dbm": -78,
+              "uplink_dbm": -79,
               "weakest_peer": "AP-1",
               "weakest_rssi_dbm": -71
             }

@@ -163,7 +163,8 @@ The header of the report shows the RF target the later recommendations are measu
   Cell edge:                         -67 dBm (noise floor -92 dBm + SNR 25 dB)
   Target RSSI @ neighbour 2.4 GHz:   -73 dBm to -67 dBm
   Target RSSI @ neighbour 5 GHz:     -67 dBm to -61 dBm
-  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 15 dBm)
+  Minimum RSSI:                      corridor floor - 5 dB, on the uplink (client 14 dBm)
+                                     Ubiquiti: for high density; -80 dBm as a home/office start
   Roaming trigger bounds:            -75 dBm .. -65 dBm (margin 5 dB)
   Scan passes:                       3 (scans skipped)
 ```
@@ -188,7 +189,7 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
         → WLAN edit → Enabled toggle
 ```
 
-The Roaming Assistant threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. The full report below was taken before that change.
+The Roaming Assistant threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Throughput` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
 
 ## 5. Trust the Access Points' Host Keys and Scan
 
@@ -234,7 +235,7 @@ The report is built per access point and band. The first access point shows the 
     ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
                                the demonstrated power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
-    · Minimum RSSI             disabled (if enabled: -77 dBm on the uplink)
+    · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
 ```
 
 - **TX and `max`**: the radio's effective transmit power is what counts. In automatic mode the configured value is stale, so the tool judges the effective one and phrases a change as "set to Custom, N dBm". `max … (unverified)` marks a ceiling the radio has not demonstrated yet.
@@ -282,7 +283,7 @@ The end of the report summarises the site:
   AP-1, AP-2, AP-3, AP-4
   ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
 
-  4 pending setting change(s) (4 transmit power) and 2 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
     run the tool again.
   Partial result (band empty); the exit code says so.
 ```

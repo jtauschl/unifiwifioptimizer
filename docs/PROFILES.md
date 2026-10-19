@@ -12,11 +12,11 @@ differs from the factory preset".
 
 | Profile | Intent | Key choices |
 | --- | --- | --- |
-| `Standard` | Everyday WLAN for phones and laptops on 2.4 + 5 GHz | WPA2/WPA3 transition with PMF Optional, 802.11r + 802.11v, Roaming Assistant on, band steering on |
+| `Standard` | Everyday WLAN for phones and laptops on 2.4 + 5 GHz | WPA2/WPA3 transition with PMF Optional, 802.11r + 802.11v, Roaming Assistant on, band steering on, Proxy ARP on, multicast-to-unicast on |
 | `IoT` | 2.4 GHz-only WLAN for low-capability clients | WPA2 (a WPA2/WPA3 transition is accepted too), PMF off or optional, no 802.11r, no active steering, no band steering, no group rekey — many such clients break on each of these |
 | `Hotspot` | Guest WLAN | Enhanced Open (OWE, preferably in transition mode) or plain Open for captive portals, client isolation on, mDNS proxy off |
-| `Throughput` | Primary WLAN tuned for airtime | WPA2/WPA3 (Personal or Enterprise), fixed minimum rates 12/24 Mbit/s, 802.11b off, DTIM 3, group rekey 3600 s, Proxy ARP |
-| `Latency` | Primary WLAN tuned for responsiveness | As Throughput, with DTIM 1 and U-APSD on |
+| `Throughput` | Primary WLAN tuned for airtime | WPA2/WPA3 (Personal or Enterprise), fixed minimum rate 12 Mbit/s on both bands, 802.11b off, the controller's DTIM defaults, group rekey 3600 s, Proxy ARP and multicast-to-unicast on |
+| `Latency` | Primary WLAN tuned for responsiveness | As Throughput, with DTIM 1 on both bands |
 
 Print the effective set, comments and evidence included:
 
@@ -100,7 +100,7 @@ although the mechanisms are standards, because the standard argues for the stric
 - **vendor** — reproducible official guidance for this value or setting, each entry naming the document: Cisco
   Catalyst 9800 best practices (mandatory rates), Apple router settings, Ubiquiti help articles, including their
   advice to keep a default.
-- **practice** — habit without a published derivation: DTIM values, U-APSD, multicast handling, isolation, the
+- **practice** — habit without a published derivation: DTIM values, U-APSD, isolation, the
   compatibility choices of the IoT profile. These are the tunables to adjust first when your environment disagrees.
 
 ## Advisories

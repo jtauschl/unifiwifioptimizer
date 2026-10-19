@@ -259,7 +259,7 @@ Keys (every key not listed is an error):
 | `sites.<site>.neighbors` | AP-to-AP neighbor model; names must match UniFi device names exactly (case-sensitive) |
 | `rf.noise_floor_dbm` | Receiver noise floor, default -92 |
 | `rf.required_snr_db` | SNR required at the cell edge, default 25 |
-| `rf.client_tx_dbm` | Typical client transmit power for the uplink conversion, default 15 |
+| `rf.client_tx_dbm` | Typical client transmit power for the uplink conversion, default 14 |
 | `rf.min_rssi_offset_db` | Distance of Minimum RSSI below the roaming trigger, default 5 |
 | `rf.roam_offset_db` | Shift of the Roaming Assistant threshold, default 0 |
 | `rf.roam_margin_db` | Margin of the Roaming Assistant threshold below a weak neighbour, default 5 |

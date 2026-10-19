@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from unifiwifioptimizer.analysis.neighbors import NeighbourMatrix, PeerReading
 from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import AccessPoint, Band, SiteSnapshot, WlanConfig
-from unifiwifioptimizer.rf.constants import ROAMING_ASSISTANT_MAX_DBM, ROAMING_ASSISTANT_MIN_DBM
+from unifiwifioptimizer.rf.constants import (
+    ROAMING_ASSISTANT_MAX_DBM,
+    ROAMING_ASSISTANT_MIN_DBM,
+    ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM,
+)
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.roaming import RoamingRecommendation, recommend_roaming
 from unifiwifioptimizer.rf.settings import RfSettings
@@ -209,6 +213,15 @@ def thresholds_for_compliance(targets: Mapping[str, WlanRoamingTarget]) -> dict[
         for name, target in targets.items()
         if target.status is WlanRoamingStatus.OK and target.threshold_dbm is not None
     }
+
+
+def threshold_above_guidance(target: WlanRoamingTarget) -> bool:
+    """True when the value to set is not below the one Ubiquiti suggests for Handoff Suggestions."""
+    return (
+        target.status is WlanRoamingStatus.OK
+        and target.threshold_dbm is not None
+        and target.threshold_dbm >= ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM
+    )
 
 
 def downlink_trigger_for(target: WlanRoamingTarget | None, ap_name: str) -> int | None:

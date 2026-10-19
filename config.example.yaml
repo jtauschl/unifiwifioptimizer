@@ -63,7 +63,7 @@ sites:
 # rf:
 #   noise_floor_dbm: -92      # receiver noise floor, -105..-80
 #   required_snr_db: 25       # SNR at the cell edge, 10..40
-#   client_tx_dbm: 15         # typical client transmit power, 0..30
+#   client_tx_dbm: 14         # typical client transmit power, 0..30
 #   min_rssi_offset_db: 5     # Minimum RSSI sits this far below the roaming trigger, 0..30
 #   roam_offset_db: 0         # shift of the Roaming Assistant threshold, 0..30
 #   roam_margin_db: 5         # margin of the Roaming Assistant threshold, 0..30

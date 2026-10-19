@@ -8,22 +8,31 @@ from typing import Any
 import pytest
 
 from unifiwifioptimizer.compliance.rules import RULE_BY_CODE, RULES, RuleGroup, evaluate_rules
-from unifiwifioptimizer.domain.models import Band
+from unifiwifioptimizer.domain.models import Band, WlanConfig
 from unifiwifioptimizer.domain.profile import DtimMode, MinRateMode, PmfMode, SecurityProtocol
 from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
-from .builders import profile, throughput_wlan, wlan
+from .builders import profile, wlan
+from .builders import throughput_wlan as shipped_throughput_wlan
 
-THROUGHPUT = profile("Throughput")
+# The shipped Throughput profile uses the controller's DTIM defaults, which switches the DTIM rules off; these
+# tests need every rule to apply, so they fix the DTIM values.
+THROUGHPUT = replace(profile("Throughput"), dtim_mode=DtimMode.CUSTOM, dtim_24=3, dtim_5=3)
+
+
+def throughput_wlan(**overrides: Any) -> WlanConfig:
+    return shipped_throughput_wlan(**{"dtim_mode": "custom", "dtim_ng": 3, "dtim_na": 3, **overrides})
+
+
 # Rule → the WLAN field(s) that make it fail and the field that, missing, makes it INCOMPLETE.
 DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "wifi_bands": ({"bands": frozenset({Band.GHZ_5})}, ""),
     "fast_roaming": ({"fast_roaming_enabled": False}, "fast_roaming_enabled"),
     "minrate_mode": ({"minrate_setting_preference": "auto"}, "minrate_setting_preference"),
     "minrate_24": ({"minrate_ng_data_rate_kbps": 6000}, "minrate_ng_data_rate_kbps"),
-    "minrate_5": ({"minrate_na_data_rate_kbps": 12000}, "minrate_na_data_rate_kbps"),
+    "minrate_5": ({"minrate_na_data_rate_kbps": 24000}, "minrate_na_data_rate_kbps"),
     "multicast_broadcast_blocker": ({"bc_filter_enabled": True}, "bc_filter_enabled"),
-    "multicast_to_unicast": ({"mcastenhance_enabled": True}, "mcastenhance_enabled"),
+    "multicast_to_unicast": ({"mcastenhance_enabled": False}, "mcastenhance_enabled"),
     "proxy_arp": ({"proxy_arp": False}, "proxy_arp"),
     "security_protocol": ({"wpa3_support": False}, "security"),
     "pmf": ({"pmf_mode": "disabled"}, "pmf_mode"),
@@ -123,7 +132,7 @@ def test_each_optional_rule_fails_on_its_deviation_and_is_incomplete_without_its
 
 def test_expected_and_actual_are_human_readable() -> None:
     results = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(minrate_na_data_rate_kbps=6000, group_rekey=0)))
-    assert (results["minrate_5"].expected, results["minrate_5"].actual) == ("24 Mbps", "6 Mbps")
+    assert (results["minrate_5"].expected, results["minrate_5"].actual) == ("12 Mbps", "6 Mbps")
     assert (results["group_rekey"].expected, results["group_rekey"].actual) == ("3600 s", "Disabled")
     assert results["security_protocol"].expected == "WPA2/WPA3, WPA2/WPA3 Enterprise"
     assert results["wifi_bands"].actual == "2.4 GHz, 5 GHz"

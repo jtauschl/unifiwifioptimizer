@@ -29,6 +29,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
     WlanRoamingTarget,
     downlink_trigger_for,
     roaming_targets,
+    threshold_above_guidance,
     thresholds_for_compliance,
 )
 from unifiwifioptimizer.analysis.txpower import BandTxResult, analyse_band_tx, apply_mesh_guard
@@ -57,6 +58,7 @@ from unifiwifioptimizer.domain.report import (
 )
 from unifiwifioptimizer.domain.scan import BandScanStatus, ScanFailure, ScanFailureKind, SiteScan
 from unifiwifioptimizer.rf.channels import DFS_CHANNELS_5G, cac_seconds
+from unifiwifioptimizer.rf.constants import ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM
 from unifiwifioptimizer.rf.corridor import Corridor, corridor_for
 
 WIRELESS_UPLINK = "wireless"
@@ -527,6 +529,20 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
         )
         if unplaced is not None:
             site_findings.append(unplaced)
+    wants_handoff = {e.wlan for e in compliance.evaluations if inp.profiles.profiles[e.profile].roaming_assistant}
+    broadcasting = {w.name for w in snapshot.wlans if w.enabled}
+    site_findings.extend(
+        _finding(
+            Severity.INFO,
+            "roaming_threshold_above_guidance",
+            target.wlan,
+            f"the Handoff Suggestions threshold to set, {target.threshold_dbm} dBm, is not below the "
+            f"{ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM} dBm Ubiquiti suggests; the uplink value is high when the "
+            "access point transmits little above the client's power",
+        )
+        for target in targets.values()
+        if target.wlan in wants_handoff and target.wlan in broadcasting and threshold_above_guidance(target)
+    )
     offline_macs = {ap.mac for ap in snapshot.access_points if ap.offline}
     problems = tuple(p for p in snapshot.problems if not (p.device_mac in offline_macs and STATS_PATH_MARKER in p.path))
     roaming = tuple(_roaming_summary(t, frozenset(pending_5g)) for t in targets.values())

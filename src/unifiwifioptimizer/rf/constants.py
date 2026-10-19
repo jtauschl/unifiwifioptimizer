@@ -33,9 +33,9 @@ PATH_LOSS_PRESETS = MappingProxyType(
     }
 )
 
-# Vendor figure, no standard: typical smartphone transmit power. Enters the uplink conversion of
-# thresholds the AP evaluates on received client signal.
-DEFAULT_CLIENT_TX_DBM = 15
+# Cisco: "the typical Wi-Fi client transmits at about 13-14 dBm"; no standard. Enters the uplink conversion
+# of thresholds the AP evaluates on received client signal.
+DEFAULT_CLIENT_TX_DBM = 14
 
 DEFAULT_ROAM_OFFSET_DB = 0
 DEFAULT_ROAM_MARGIN_DB = 5
@@ -51,6 +51,10 @@ ROAMING_ASSISTANT_MAX_DBM = -60
 # Range of the per-radio Minimum RSSI the controller accepts (verified on U6 Lite and U7 Lite, both bands).
 MIN_RSSI_MIN_DBM = -90
 MIN_RSSI_MAX_DBM = -67
+# Ubiquiti's starting point for a Minimum RSSI at home or in an office, and the Handoff Suggestions value it
+# suggests staying below; vendor guidance for context, never a limit.
+MIN_RSSI_VENDOR_START_DBM = -80
+ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM = -70
 # Design choice, no source gives this value: the gap between the soft-roam trigger and the hard disconnect.
 DEFAULT_MIN_RSSI_OFFSET_DB = 5
 

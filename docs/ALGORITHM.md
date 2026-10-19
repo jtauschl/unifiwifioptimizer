@@ -156,13 +156,13 @@ The controller evaluates Minimum RSSI on the client's **uplink** as received by 
 derived on the downlink (the corridor floor minus `rf.min_rssi_offset_db`, default 5 dB: a design choice for the
 gap between the soft-roam trigger and the hard disconnect; no source gives this value) and converted by link
 reciprocity, `RSSI_up − RSSI_down = P_client − P_AP`, with a typical client power (`rf.client_tx_dbm`,
-default 15 dBm, a typical phone figure without a standard behind it, a tunable):
+default 14 dBm, Cisco's figure for a typical client ("about 13-14 dBm"), no standard, a tunable):
 
 ```text
 min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
 ```
 
-On 2.4 GHz, where access points often run 6 dBm against clients at 15–20 dBm, the uplink is 9–14 dB
+On 2.4 GHz, where access points often run 6 dBm against clients at about 14 dBm, the uplink is about 8 dB
 stronger than the downlink; without the conversion a Minimum RSSI never fires usefully there.
 
 The controller accepts −90 to −67 dBm for Minimum RSSI (verified on U6 Lite and U7 Lite, both bands). A derived
@@ -214,7 +214,7 @@ WLAN target = clamp(min(uplink over the broadcasting APs), ROAMING_ASSISTANT_MIN
 
 `ROAMING_ASSISTANT_MIN` and `ROAMING_ASSISTANT_MAX` are −80 and −60 dBm, the stops of the controller's Handoff
 Suggestions slider (observed on Network 10.6.106). A value outside that range cannot be configured: an access
-point at 23 dBm on 5 GHz derives −83 dBm from the −75 dBm floor (−75 − (23 − 15)). The report then names the
+point at 23 dBm on 5 GHz derives −84 dBm from the −75 dBm floor (−75 − (23 − 14)). The report then names the
 derived value and the range, the target is the nearer end, and a WLAN set to it passes the check.
 
 Defaults: offset 0 (the trigger sits at the lower corridor edge; Apple's published client scan triggers are
@@ -226,7 +226,9 @@ all reported.
 
 Ubiquiti describes the mechanism as BSS transition frames that tell a client it will be dissociated once it drops
 below the threshold, and suggests a value "below -70 dBm" (UniFi WiFi SSID and AP Settings Overview). A
-low-power access point can derive a value above that guidance; the report prints the derived value either way.
+value that is not below −70 dBm (an access point transmitting little above the client's power, a high ceiling or a
+high client power) gets an `info` finding for each WLAN that is enabled and whose profile expects Handoff Suggestions;
+the report prints the derived value either way.
 
 Incomplete data never produces a silently optimistic value: a broadcasting AP without a configured neighbour
 that also broadcasts the WLAN, a missing peer reading, an unresolvable AP group or a group member that is
@@ -296,7 +298,7 @@ access point, no signal) are counted once per site and named as such.
 
 - AP-to-AP RSSI is a proxy for cell overlap at the neighbour's location, not a client link budget: a
   client transmits with less power than an access point (the `rf.client_tx_dbm` conversion assumes a
-  typical phone), loses 1–7 dB to the body, and sits at desk height under a ceiling antenna's elevation
+  typical client), loses 1–7 dB to the body, and sits at desk height under a ceiling antenna's elevation
   pattern — effects as large as the whole preset span.
 - Beacons are 20 MHz frames at the radio's full target power; 80/160 MHz data at the same total power has
   6/9 dB less power per 20 MHz, and the high MCS rates are backed off and do not follow a reduction until

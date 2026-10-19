@@ -37,6 +37,7 @@ from unifiwifioptimizer.report.ui_paths import ui_path
 from unifiwifioptimizer.rf.constants import (
     MIN_RSSI_MAX_DBM,
     MIN_RSSI_MIN_DBM,
+    MIN_RSSI_VENDOR_START_DBM,
     ROAMING_ASSISTANT_MAX_DBM,
     ROAMING_ASSISTANT_MIN_DBM,
 )
@@ -179,6 +180,7 @@ def _environment(report: SiteReport) -> list[str]:
     lines += [
         f"  {'Minimum RSSI:':<{LABEL}} corridor floor - {rf.min_rssi_offset_db} dB, on the uplink "
         f"(client {rf.client_tx_dbm} dBm)",
+        f"  {'':<{LABEL}} Ubiquiti: for high density; {MIN_RSSI_VENDOR_START_DBM} dBm as a home/office start",
         f"  {'Roaming trigger bounds:':<{LABEL}} {rf.roam_floor_dbm} dBm .. {rf.roam_ceiling_dbm} dBm "
         f"(margin {rf.roam_margin_db} dB)",
         f"  {'Scan passes:':<{LABEL}} {report.scan_passes}" + (" (scans skipped)" if report.scan.skipped else ""),

@@ -21,7 +21,7 @@ from unifiwifioptimizer.config.profiles import (
 )
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import Band
-from unifiwifioptimizer.domain.profile import EvidenceTier, MinRateMode, PmfMode, SecurityProtocol
+from unifiwifioptimizer.domain.profile import DtimMode, EvidenceTier, MinRateMode, PmfMode, SecurityProtocol
 
 Document = dict[str, Any]
 
@@ -56,11 +56,22 @@ def test_the_shipped_baselines_follow_the_decided_recommendations() -> None:
     assert p["IoT"].fast_roaming is False and p["IoT"].band_steering is False
     for name in ("Throughput", "Latency"):
         assert p[name].minrate_mode is MinRateMode.MANUAL
-        assert (p[name].minrate_24_kbps, p[name].minrate_5_kbps) == (12000, 24000)
+        assert (p[name].minrate_24_kbps, p[name].minrate_5_kbps) == (12000, 12000)
         assert (
             p[name].b_supported is False and p[name].wifi_bands == {Band.GHZ_2, Band.GHZ_5} and p[name].dtim_6 is None
         )
-    assert (p["Throughput"].dtim_24, p["Latency"].dtim_24, p["Latency"].uapsd) == (3, 1, True)
+    # Throughput keeps the controller's DTIM defaults, Latency pins 1 on both bands; U-APSD is off everywhere.
+    assert (p["Throughput"].dtim_mode, p["Throughput"].dtim_24, p["Throughput"].dtim_5) == (
+        DtimMode.DEFAULT,
+        None,
+        None,
+    )
+    assert (p["Latency"].dtim_mode, p["Latency"].dtim_24, p["Latency"].dtim_5) == (DtimMode.CUSTOM, 1, 1)
+    assert not any(profile.uapsd for profile in p.values())
+    # One Proxy ARP and one multicast-to-unicast value for the three primary profiles.
+    assert {p[name].proxy_arp for name in ("Standard", "Throughput", "Latency")} == {True}
+    assert {p[name].multicast_to_unicast for name in ("Standard", "Throughput", "Latency")} == {True}
+    assert not p["IoT"].multicast_to_unicast and not p["Hotspot"].multicast_to_unicast
 
 
 def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choices() -> None:
@@ -79,22 +90,24 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
         "band_steering",
         "group_rekey_s",
         "proxy_arp",
+        "multicast_to_unicast",
     }
     assert profiles.evidence_for(iot, "no_such_key") is None
 
 
-def test_a_profile_that_switches_proxy_arp_off_carries_its_own_practice_entry() -> None:
-    # The set-wide entry describes Proxy ARP as vendor guidance for it being on; a profile that switches it off
-    # must say why itself.
+@pytest.mark.parametrize("key", ["proxy_arp", "multicast_to_unicast"])
+def test_a_profile_that_switches_a_vendor_advised_setting_off_carries_its_own_entry(key: str) -> None:
+    # The set-wide entry gives vendor guidance for the setting being on; a profile that switches it off must
+    # say why itself.
     profiles = shipped_profiles()
-    assert profiles.evidence["proxy_arp"].tier is EvidenceTier.VENDOR
+    assert profiles.evidence[key].tier is EvidenceTier.VENDOR
     for name, profile in profiles.profiles.items():
-        own = profiles.evidence_for(profile, "proxy_arp")
+        own = profiles.evidence_for(profile, key)
         assert own is not None
-        if profile.proxy_arp:
-            assert own.tier is EvidenceTier.VENDOR, name
+        if getattr(profile, key):
+            assert own == profiles.evidence[key], name
         else:
-            assert own.tier is EvidenceTier.PRACTICE and "off" in own.source, name
+            assert "off" in own.source, name
 
 
 def mutate(path: str, value: Any, delete: bool = False) -> Document:
@@ -126,8 +139,8 @@ INVALID: list[tuple[Document, str, str]] = [
     (mutate("profiles.Standard.minrate_24_kbps", 12000), P + "Standard.minrate_24_kbps", "remove it"),
     (mutate("profiles.Throughput.minrate_24_kbps", None, delete=True), P + "Throughput.minrate_24_kbps", "required"),
     (mutate("profiles.Throughput.minrate_24_kbps", 500), P + "Throughput.minrate_24_kbps", "integer"),
-    (mutate("profiles.Throughput.dtim_6", 3), P + "Throughput.dtim_6", "remove it"),
-    (mutate("profiles.Throughput.dtim_24", 0), P + "Throughput.dtim_24", "integer"),
+    (mutate("profiles.Latency.dtim_6", 3), P + "Latency.dtim_6", "remove it"),
+    (mutate("profiles.Latency.dtim_24", 0), P + "Latency.dtim_24", "integer"),
     (mutate("profiles.Standard.group_rekey_s", True), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.group_rekey_s", 90000), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.sae_sync_time", -1), P + "Standard.sae_sync_time", "integer"),
