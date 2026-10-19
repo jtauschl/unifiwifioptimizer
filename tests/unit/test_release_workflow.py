@@ -342,6 +342,14 @@ def test_the_workflow_uses_no_stored_secret(release: Document) -> None:
     assert "secrets." not in RELEASE_PATH.read_text(encoding="utf-8")
 
 
-def test_the_tag_must_be_exact_semver_before_anything_else_runs(release: Document) -> None:
-    first = steps_of(release["jobs"]["test"])[0]
-    assert first["if"] == TAG_GUARD and "^v(0|[1-9][0-9]*)" in first["run"]
+SEMVER_JOBS = ("test", "build", "sbom", "attest", "publish", "github-release")
+SEMVER_PREDICATE = "=~ ^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+
+
+def test_every_job_that_builds_attests_publishes_or_releases_checks_the_tag_itself_first(release: Document) -> None:
+    """Each such job re-validates the tag before its first step acts, unconditionally: a step condition could
+    skip it, and a `continue-on-error` would let the job go on after it failed."""
+    for name in SEMVER_JOBS:
+        first = steps_of(release["jobs"][name])[0]
+        assert "if" not in first and "continue-on-error" not in first, name
+        assert SEMVER_PREDICATE in first["run"] and "GITHUB_REF_TYPE" in first["run"], name
