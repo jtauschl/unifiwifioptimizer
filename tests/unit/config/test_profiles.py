@@ -79,15 +79,21 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
     iot, standard = profiles.profiles["IoT"], profiles.profiles["Standard"]
     assert profiles.evidence["pmf"].tier is EvidenceTier.STANDARD
     iot_pmf = profiles.evidence_for(iot, "pmf")
-    assert iot_pmf is not None and iot_pmf.tier is EvidenceTier.PRACTICE
+    assert iot_pmf is not None and iot_pmf.tier is EvidenceTier.VENDOR
     assert profiles.evidence_for(standard, "pmf") == profiles.evidence["pmf"]
     assert set(iot.evidence) == {
+        "wifi_bands",
         "security_protocols",
         "pmf",
         "fast_roaming",
         "bss_transition",
         "roaming_assistant",
         "band_steering",
+        "uapsd",
+        "client_device_isolation",
+        "multicast_broadcast_blocker",
+        "minrate_mode",
+        "dtim_mode",
         "group_rekey_s",
         "proxy_arp",
         "multicast_to_unicast",

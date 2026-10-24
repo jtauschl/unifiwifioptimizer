@@ -13,7 +13,7 @@ differs from the factory preset".
 | Profile | Intent | Key choices |
 | --- | --- | --- |
 | `Standard` | Everyday WLAN for phones and laptops on 2.4 + 5 GHz | WPA2/WPA3 transition with PMF Optional, 802.11r + 802.11v, Roaming Assistant on, band steering on, Proxy ARP on, multicast-to-unicast on |
-| `IoT` | 2.4 GHz-only WLAN for low-capability clients | WPA2 (a WPA2/WPA3 transition is accepted too), PMF off or optional, no 802.11r, no active steering, no band steering, no group rekey — many such clients break on each of these |
+| `IoT` | 2.4 GHz-only WLAN for legacy clients with compatibility issues | WPA2 (a WPA2/WPA3 transition is accepted too), PMF off or optional, no 802.11r, no active steering, no band steering, no group rekey — Ubiquiti recommends these compatibility settings when legacy IoT devices have trouble on Wi-Fi 7 |
 | `Hotspot` | Guest WLAN | Enhanced Open (OWE, preferably in transition mode) or plain Open for captive portals, client isolation on, mDNS proxy off |
 | `Throughput` | Primary WLAN tuned for airtime | WPA2/WPA3 (Personal or Enterprise), fixed minimum rate 12 Mbit/s on both bands, 802.11b off, the controller's DTIM defaults, group rekey 3600 s, Proxy ARP and multicast-to-unicast on |
 | `Latency` | Primary WLAN tuned for responsiveness | As Throughput, with DTIM 1 on both bands |
