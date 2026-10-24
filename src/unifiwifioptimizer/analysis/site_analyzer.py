@@ -10,8 +10,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 
 from unifiwifioptimizer.analysis.airtime import airtime_of
+from unifiwifioptimizer.analysis.channel_plan import extended_channel_plan
 from unifiwifioptimizer.analysis.channels import ChannelAnalysis, analyse_channels, foreign_networks, geometry_of
 from unifiwifioptimizer.analysis.clients import clients_of, unassignable, unassignable_finding
+from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.groups import group_reports
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.minrssi import min_rssi_before_roaming, recommend_band_min_rssi
@@ -37,7 +39,6 @@ from unifiwifioptimizer.compliance.engine import evaluate_site
 from unifiwifioptimizer.domain.analysis import BandTxOutcome, NeighbourMarker, PartialReason
 from unifiwifioptimizer.domain.models import AccessPoint, Band, DeviceState, Mac, SiteSnapshot
 from unifiwifioptimizer.domain.report import (
-    TX_POWER,
     AirtimeReport,
     ApReport,
     BandReport,
@@ -274,6 +275,7 @@ def _roaming_summary(target: WlanRoamingTarget, pending_5g: frozenset[str]) -> W
                 uplink_dbm=d.recommendation.uplink_dbm,
                 cap=d.recommendation.cap,
                 raw_cap_dbm=d.recommendation.raw_cap_dbm,
+                assumed_client_tx_dbm=d.assumed_client_tx_dbm,
             )
             for d in target.per_ap
         ),
@@ -348,6 +350,9 @@ def _band_report(
     foreign = foreign_networks(ap, band, inp.scan, inp.snapshot)
     geometry = geometry_of(ap, band)
     stats = ap.stats(band)
+    assumed_client_tx = inp.rf.client_tx_assumption(
+        band, stats.channel if stats is not None else None, stats.width_mhz if stats is not None else None
+    )
     dfs = band is Band.GHZ_5 and stats is not None and stats.channel in DFS_CHANNELS_5G
     cac: int | None = None
     if dfs and stats is not None:
@@ -386,6 +391,7 @@ def _band_report(
         )
         if foreign is not None
         else None,
+        assumed_client_tx_dbm=assumed_client_tx if inp.rf.client_tx_dbm_5g_upper is not None else None,
     )
 
 
@@ -473,7 +479,6 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     scan_findings_by_ap: dict[str, list[Finding]] = {}
     for finding in scan_findings:
         scan_findings_by_ap.setdefault(finding.subject, []).append(finding)
-    pending_5g: set[str] = set()
     ap_reports: list[ApReport] = []
     offsets_reported: set[tuple[frozenset[str], Band]] = set()
     for name in ap_order(inp.neighbours, snapshot):
@@ -520,8 +525,6 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
                 ap, band, inp, matrix, corridors[band], channels, targets, roles, configured, partial, offsets_reported
             )
             bands.append(report)
-            if band is Band.GHZ_5 and any(r.setting == TX_POWER and r.is_change for r in report.recommendations):
-                pending_5g.add(name)
         ap_reports.append(_ap_report(ap, configured, tuple(bands), ap_findings))
     if snapshot.clients is not None:
         unplaced = unassignable_finding(
@@ -545,7 +548,15 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     )
     offline_macs = {ap.mac for ap in snapshot.access_points if ap.offline}
     problems = tuple(p for p in snapshot.problems if not (p.device_mac in offline_macs and STATS_PATH_MARKER in p.path))
-    roaming = tuple(_roaming_summary(t, frozenset(pending_5g)) for t in targets.values())
+    plan = extended_channel_plan(inp.snapshot, scan, inp.neighbours) if inp.extended else None
+    deferred = apply_deferrals(
+        ap_reports, compliance, {t.wlan: t.broadcasting for t in targets.values()}, wants_handoff, plan
+    )
+    compliance = deferred.compliance
+    roaming = tuple(
+        _roaming_summary(t, deferred.actionable_tx_5g if t.wlan in wants_handoff else frozenset())
+        for t in targets.values()
+    )
     model = inp.environment
     rf = inp.rf
     return SiteReport(
@@ -558,6 +569,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
             noise_floor_dbm=rf.cell_edge.noise_floor_dbm,
             required_snr_db=rf.cell_edge.required_snr_db,
             client_tx_dbm=rf.client_tx_dbm,
+            client_tx_dbm_5g_upper=rf.client_tx_dbm_5g_upper,
             min_rssi_offset_db=rf.min_rssi_offset_db,
             roam_offset_db=rf.roaming.offset_db,
             roam_margin_db=rf.roaming.margin_db,
@@ -566,7 +578,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
         ),
         corridors={band: CorridorSummary(low_dbm=c.low, high_dbm=c.high) for band, c in corridors.items()},
         scan_passes=inp.scan_passes,
-        aps=tuple(ap_reports),
+        aps=deferred.aps,
         compliance=compliance,
         roaming=roaming,
         groups=group_reports(matrix, channels),
@@ -578,6 +590,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
         verifiable_ap_count=verifiable,
         host_key_failed_ap_count=host_key_failed,
         scanning=scan is not None,
+        extended_channel_plan=plan,
     )
 
 

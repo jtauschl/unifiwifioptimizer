@@ -92,9 +92,15 @@ refused, so the cap cannot be bypassed. Every call has a timeout.
 
 One scan script runs through `sh -s` with its arguments on standard input. It writes no file on the access point and
 keeps no state outside its shell variables; a helper process it may start to bound one scan ends with that scan. It calls
-`iw scan`; with `scan_interface_toggle: true` it additionally brings a scan interface that is down up before the scan
-and puts it down again afterwards, also when the script is ended by a hang-up, interrupt, termination or broken-pipe signal; a kill or a power loss leaves the interface up. Without the toggle, an interface that is down is
-reported as `interface_down` and left alone.
+`iw scan`. Before and after it, on every scan, it only reads: it lists the wireless interfaces and their state (`iw dev`,
+`ifconfig`), the PHYs behind them (`iw phy … info`), on an access point with a U6-type 5 GHz interface, the kernel log for the DFS channel-availability state (`logread`, or `dmesg`
+where `logread` fails), the model name (`/etc/board.info` or `/proc/ubnthal/system.info`), and, for the 5 GHz PHY that serves
+an AP-mode interface, a
+bounded table of per-channel power limits (at most 64 lines) that `--extended` uses; the table is collected on every scan, whether or not `--extended` is used.
+With `scan_interface_toggle: true` it additionally brings a scan interface that is down up before the scan and puts it
+down again afterwards, also when the script is ended by a hang-up, interrupt, termination or broken-pipe signal; a
+kill or a power loss leaves the interface up. Without the toggle, an interface that is down is reported as
+`interface_down` and left alone.
 
 ### Credentials and secrets
 

@@ -603,7 +603,7 @@ def test_channel_ai_reports_every_rejected_channel_width_and_blacklist_entry() -
             {"radio": "ng", "channel": "2", "channel_width": "20"},
             {"radio": "6e", "channel": "x", "channel_width": "20"},
             {"radio": "ax", "channel": "2", "channel_width": "20"},
-            {"radio": "na", "channel": 52, "channel_width": "20"},
+            {"radio": "na", "channel": 52, "channel_width": 20},
             {"radio": "na", "channel": "999", "channel_width": "20"},
             {"radio": "na", "channel": "52", "channel_width": "30"},
             {"radio": "na", "channel": "5" * 5000, "channel_width": "20"},
@@ -615,7 +615,7 @@ def test_channel_ai_reports_every_rejected_channel_width_and_blacklist_entry() -
     assert ai is not None
     assert ai.channels == {Band.GHZ_2: {1, 6}}
     assert ai.width_candidates_mhz == {Band.GHZ_5: {20, 40}}
-    assert ai.blacklist == frozenset({(Band.GHZ_2, 2, 20)})
+    assert ai.blacklist == frozenset({(Band.GHZ_2, 2, 20), (Band.GHZ_5, 52, 20)})
     assert ai.excluded_devices == {"02:00:00:00:00:04"}
     assert [(p.path, p.message) for p in result.problems] == [
         ("$.data[0].channels_ng[1]", "not an allowed number"),
@@ -623,8 +623,27 @@ def test_channel_ai_reports_every_rejected_channel_width_and_blacklist_entry() -
         ("$.data[0].channels_ng[4]", "not an allowed number"),
         ("$.data[0].ht_modes_na[2]", "not an allowed number"),
         ("$.data[0].ht_modes_na[3]", "not an allowed number"),
-        *((f"$.data[0].channels_blacklist[{i}]", "invalid blacklist entry") for i in range(1, 7)),
+        *((f"$.data[0].channels_blacklist[{i}]", "invalid blacklist entry") for i in (1, 2, 4, 5, 6)),
     ]
+
+
+def test_channel_ai_blacklist_accepts_numeric_fields_without_coercing_booleans_or_floats() -> None:
+    record = setting(
+        "radio_ai",
+        channels_blacklist=[
+            {"radio": "na", "channel": 100, "channel_width": 20},
+            {"radio": "na", "channel": "104", "channel_width": "20"},
+            {"radio": "na", "channel": True, "channel_width": 20},
+            {"radio": "na", "channel": 108.0, "channel_width": 20},
+            {"radio": "na", "channel": 112, "channel_width": True},
+        ],
+    )
+    result = parse.parse_settings(envelope(record))
+    assert result.settings.channel_ai is not None
+    assert result.settings.channel_ai.blacklist == frozenset({(Band.GHZ_5, 100, 20), (Band.GHZ_5, 104, 20)})
+    assert plain_problems(result.problems) == tuple(
+        FieldProblem(f"$.data[0].channels_blacklist[{i}]", "invalid blacklist entry") for i in (2, 3, 4)
+    )
 
 
 def test_channel_ai_skips_a_blacklist_element_that_is_not_an_object() -> None:

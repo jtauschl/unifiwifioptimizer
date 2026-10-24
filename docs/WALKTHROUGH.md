@@ -149,10 +149,10 @@ sites:
 
 ## 4. Run the Controller-Side Analysis
 
-`run --no-scan` needs no SSH access: it checks the WLAN settings and shows the access points as the controller reports them.
+`run --no-scan` needs no SSH access: it checks the WLAN settings and shows the access points as the controller reports them. The examples below use `--details` to show the complete evidence; the default text output is a concise decision view.
 
 ```bash
-unifiwifioptimizer run --no-scan
+unifiwifioptimizer run --no-scan --details
 ```
 
 The header of the report shows the RF target the later recommendations are measured against:
@@ -203,6 +203,55 @@ Then run the full analysis. Scans run one access point at a time and take a whil
 
 ```bash
 unifiwifioptimizer run
+```
+
+The default output is a concise decision view: what to apply now, what the scan suggests, the current setup and the data quality:
+
+<!-- source: summary -->
+```text
+  Site default (Site-1) · 4 APs · 2026-10-12T20:00+00:00
+
+  Apply now:
+    AP-1 5 GHz TX: set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above the
+      demonstrated power is unverified
+    AP-2 2.4 GHz TX: set to 10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated
+      power is unverified
+    AP-3 2.4 GHz TX: set to 17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated
+      power is unverified
+    AP-4 2.4 GHz TX: set to 17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated
+      power is unverified
+    WLAN SSID-1 · Minimum Data Rate 5 GHz: 12 Mbps (current 24 Mbps)
+    WLAN SSID-1 · Multicast to Unicast: Enabled (current Disabled)
+    WLAN SSID-1 · DTIM Mode: Default (current Custom)
+    WLAN SSID-2 · WLAN Enabled: Enabled (current Disabled)
+    WLAN SSID-3 · WLAN Enabled: Enabled (current Disabled)
+    Re-run after TX changes before setting dependent roaming thresholds.
+
+  WiFi assessment:
+    * 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients.
+    * AP-4 2.4 GHz: the scan saw nothing on this band; restart the radio or the access point before
+      trusting any conclusion
+
+  AP setup (current):
+    AP-1                     2.4 GHz ch 6/20 · TX 17 dBm  |  5 GHz ch 44/80 · TX 20 dBm
+    AP-2                     2.4 GHz ch 1/20 · TX 6 dBm  |  5 GHz ch 60/80 · TX 18 dBm
+    AP-3                     2.4 GHz ch 6/20 · TX 11 dBm  |  5 GHz ch 104/80 · TX 23 dBm
+    AP-4                     2.4 GHz ch 11/20 · TX 10 dBm  |  5 GHz ch 40/80 · TX 18 dBm
+
+  Data quality:
+    Scan: 4 APs, 12/12 passes successful.
+    Partial result (band empty); the exit code says so.
+    WLAN checks that could not be evaluated: Roaming Assistant.
+    3 neighbour links are configured in one direction; both are evaluated.
+    AP beacon readings do not establish client roaming or channel airtime.
+
+  Full evidence: run with --details.
+```
+
+Add `--details` for the complete per-band evidence that the next section reads:
+
+```bash
+unifiwifioptimizer run --details
 ```
 
 An off-channel scan interrupts service on the scanning access point for its duration; run it off hours. A U6 Lite needs `scan_interface_toggle: true`, as in the file above; without it a band whose interface is down is reported as `interface_down` and left alone.

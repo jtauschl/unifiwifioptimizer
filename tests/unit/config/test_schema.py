@@ -39,6 +39,7 @@ def test_minimal_configuration_fills_every_default() -> None:
         -92,
         25,
     )
+    assert config.rf.client_tx_dbm_5g_upper is None
     assert (config.rf.roaming.floor_dbm, config.rf.roaming.ceiling_dbm, config.rf.min_rssi_offset_db) == (-75, -65, 5)
 
 
@@ -189,6 +190,10 @@ def test_api_key_falls_back_to_the_environment_only_when_absent() -> None:
         ({**minimal(), "sites": {"a": {"ssh": {"scan_attempts": 0}}}}, "sites.a.ssh.scan_attempts"),
         ({**minimal(), "sites": {"a": {"ssh": {"scan_interface_toggle": "yes"}}}}, "sites.a.ssh.scan_interface_toggle"),
         ({**minimal(), "rf": {"client_tx_dbm": 31}}, "rf.client_tx_dbm"),
+        ({**minimal(), "rf": {"client_tx_dbm_5g_upper": -1}}, "rf.client_tx_dbm_5g_upper"),
+        ({**minimal(), "rf": {"client_tx_dbm_5g_upper": 31}}, "rf.client_tx_dbm_5g_upper"),
+        ({**minimal(), "rf": {"client_tx_dbm_5g_upper": True}}, "rf.client_tx_dbm_5g_upper"),
+        ({**minimal(), "rf": {"client_tx_dbm_5g_upper": None}}, "rf.client_tx_dbm_5g_upper"),
         ({**minimal(), "rf": {"noise_floor_dbm": -106}}, "rf.noise_floor_dbm"),
         ({**minimal(), "rf": {"required_snr_db": 9}}, "rf.required_snr_db"),
         ({**minimal(), "rf": {"roam_floor_dbm": -60, "roam_ceiling_dbm": -70}}, "rf"),

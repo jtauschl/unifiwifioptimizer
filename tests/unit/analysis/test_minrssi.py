@@ -4,7 +4,7 @@ from unifiwifioptimizer.domain.report import RecommendationKind, Severity
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.settings import RfSettings
 
-from .builders import ap_named, fixture_snapshot, with_radio
+from .builders import ap_named, fixture_snapshot, with_radio, with_stats
 
 SNAP = fixture_snapshot()
 FIVE = Corridor(low=-67)
@@ -32,6 +32,21 @@ def test_the_client_power_and_the_offset_move_the_uplink_value() -> None:
     rec = recommend_band_min_rssi(ap_named(SNAP, "AP-3"), Band.GHZ_5, FIVE, 23, tuned)
     # Downlink -75; uplink -75 - (23 - 20) = -78.
     assert rec.recommended == -78
+
+
+def test_upper_5g_client_power_applies_to_min_rssi_and_its_reverse_advisory() -> None:
+    rf = RfSettings(client_tx_dbm=18, client_tx_dbm_5g_upper=20)
+    upper = with_radio(ap_named(SNAP, "AP-3"), Band.GHZ_5, min_rssi_enabled=True, min_rssi_dbm=-75)
+    upper_rec = recommend_band_min_rssi(upper, Band.GHZ_5, FIVE, 23, rf)
+    assert upper_rec.recommended == -75
+    late = min_rssi_before_roaming(upper, Band.GHZ_5, upper_rec, -73, 23, rf, coverage_gap=False)
+    assert late is not None and "(-72 dBm)" in late.message
+
+    lower = with_stats(upper, Band.GHZ_5, channel=44)
+    lower_rec = recommend_band_min_rssi(lower, Band.GHZ_5, FIVE, 23, rf)
+    assert lower_rec.recommended == -77
+    two_ghz = recommend_band_min_rssi(lower, Band.GHZ_2, Corridor(low=-73), 11, rf)
+    assert two_ghz.recommended == -71  # -73 - 5 - (11 - 18)
 
 
 def test_the_ordering_advisory_fires_only_for_an_enabled_5_ghz_min_rssi() -> None:

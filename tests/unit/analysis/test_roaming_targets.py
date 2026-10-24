@@ -94,6 +94,21 @@ def test_ssid_peer_filtering() -> None:
     assert result is not None and result.status is WlanRoamingStatus.OK and result.threshold_dbm == -73
 
 
+def test_each_ap_uses_the_client_power_of_its_current_5g_block_before_wlan_aggregation() -> None:
+    snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))
+    snap = with_ap(snap, with_stats(ap_named(snap, "AP-2"), Band.GHZ_5, channel=100))
+    neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
+    scan = sightings(snap, ("AP-1", "AP-2", -70), ("AP-2", "AP-1", -70))
+    matrix = build_matrix(snap, scan, neighbours, scan_skipped=False)
+    rf = RfSettings(client_tx_dbm=18, client_tx_dbm_5g_upper=20, roaming=TUNABLES)
+    result = roaming_target(groups_wlan("Guest", "g1"), snap, matrix, CORRIDOR, rf)
+    assert result is not None and result.status is WlanRoamingStatus.OK
+    by_ap = {detail.ap: detail for detail in result.per_ap}
+    assert (by_ap["AP-1"].assumed_client_tx_dbm, by_ap["AP-1"].recommendation.uplink_dbm) == (18, -70)
+    assert (by_ap["AP-2"].assumed_client_tx_dbm, by_ap["AP-2"].recommendation.uplink_dbm) == (20, -68)
+    assert result.threshold_dbm == -70 and result.limiting == ("AP-1",)
+
+
 def test_asymmetric_direction() -> None:
     # A's signal at B is -70 (no cap for A); B's signal at A is -82 (caps B). B is the limiting AP.
     snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2")))

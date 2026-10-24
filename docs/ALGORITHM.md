@@ -162,6 +162,16 @@ default 14 dBm, Cisco's figure for a typical client ("about 13-14 dBm"), no stan
 min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
 ```
 
+`rf.client_tx_dbm_5g_upper` optionally overrides the assumed client power when every 20 MHz channel of
+the AP's **current operating** 5 GHz block lies in channels 100–140. Both values accept 0–30 dBm; the
+upper override is absent by default, so older configurations keep one assumption on every band. A block
+including channel 144 or 149+, missing channel/width data, or an unmodelled bonded width uses the base
+`rf.client_tx_dbm` value. This is an operator-selected model of the client population, not a measured
+client TX or a device-specific guarantee. Certification maxima from a different country cannot establish
+the power used by a connected client here. Any 5 GHz channel change can alter neighbour evidence and AP
+power; it can also switch the client-power assumption. Re-run from fresh radio statistics before applying
+Minimum RSSI or Roaming Assistant values derived for the old block.
+
 On 2.4 GHz, where access points often run 6 dBm against clients at about 14 dBm, the uplink is about 8 dB
 stronger than the downlink; without the conversion a Minimum RSSI never fires usefully there.
 
@@ -211,6 +221,10 @@ for each broadcasting AP with SSID peers:
 
 WLAN target = clamp(min(uplink over the broadcasting APs), ROAMING_ASSISTANT_MIN, ROAMING_ASSISTANT_MAX)
 ```
+
+`P_client` is selected separately for each broadcasting AP's current 5 GHz block using the same
+configurable assumption as §6, before taking the WLAN-wide minimum. The report labels the assumption;
+the value is not a measurement of any associated phone's uplink.
 
 `ROAMING_ASSISTANT_MIN` and `ROAMING_ASSISTANT_MAX` are −80 and −60 dBm, the stops of the controller's Handoff
 Suggestions slider (observed on Network 10.6.106). A value outside that range cannot be configured: an access
@@ -276,6 +290,85 @@ levels differ. It is a simplified contention indicator, not a prediction of what
   foreign name leaves the scan.
 - **6 GHz** radios are detected and reported as their own band but not evaluated: no corridor, power or channel
   rule applies to them until a 6 GHz scan model and test hardware exist.
+
+### Optional site-wide channel proposal (`run --extended`)
+
+The concise text report groups setting changes, RF findings, current AP channels and powers, and evidence gaps.
+`--details` retains the complete per-WLAN and per-radio evidence. The extended view displays a channel move only for a recommended
+site-wide assignment. When any radio on a band changes channel, the report defers power and Minimum RSSI advice
+for every AP on that band until a new run: effective TX limits and neighbour readings may change even on a radio
+whose own channel stays fixed. A pending transmit-power change similarly defers the Minimum RSSI verdicts of that
+radio's band until the new effective TX is observed. The Roaming Assistant threshold of a WLAN is aggregated over the
+access points that broadcast it, so a failed Roaming Assistant check waits when one of them moves its 5 GHz channel
+or has a 5 GHz power change pending, or, after a channel move, when the band's power advice waits; a check that
+does not depend on those (the profile expects the assistant off) never waits. The analysis marks this advice as
+deferred (`deferred_by` in the JSON, `channel_plan` or `tx_change`); the summary, the detailed text, the footer
+counts (`derived.pending_tx_changes` counts the power changes that can be applied now, `derived.waiting_items` the
+changes and failed checks that wait) and the JSON all read that mark. The power-change deferral applies to every
+`run`, not only to `--extended`. An Auto radio assigned its observed primary must be pinned
+there to preserve the proposed layout, in both views. Unavailable plans, conditional Minimum RSSI values and downlink
+power trials are not presented as settings to apply. The default text view is a short decision view of the same report;
+`--details` prints the full evidence and JSON carries all of it (the new JSON fields are additive).
+
+The extended section uses the same controller snapshot and neighbour scans as the ordinary report;
+it makes no extra request and changes no setting. It plans 2.4 and 5 GHz independently. For each online
+radio it preserves the observed width and draws primary candidates from the controller's Channel AI list,
+excluding blacklisted channels (a 5 GHz blacklist entry excludes every block that overlaps the entry's own block; the
+ordinary `channel_in_blacklist` advisory uses the same overlap rule, so an entry that overlaps a radio's block is
+reported even when its channel or width differ) and DFS blocks on radios not
+known to support DFS. Without a controller list,
+only 2.4 GHz falls back to 1/6/11. A 5 GHz list is never guessed from a country number. On 5 GHz, primaries
+within one bonded block are equivalent for this model: the current primary is retained if it belongs to
+the block, otherwise the lowest listed primary represents it.
+
+The proposal uses the stronger of the two measured, per-direction median AP-to-AP readings for each pair,
+at the transmitting AP's current primary. Pairs at or above −82 dBm are consequential. This is a proxy
+at the receivers' locations; it is not airtime. A configured pair without a measured direction makes the
+whole band unavailable. Unconfigured pairs without readings remain unknown. Each scanner's visible foreign
+BSSID is counted once using its strict-majority frequency and median signal across usable passes; a tie or
+unknown frequency is a reported data gap. Foreign bandwidth is unknown and treated as 20 MHz. BSSIDs and
+SSIDs never leave the analysis. An off-channel `iw scan` does not prove that unsighted channels are empty.
+
+Assignments are ranked lexicographically: first the sum of `1 + (RSSI + 82)` over consequential own AP
+pairs assigned overlapping blocks, then possible additional co-channel pressure from a higher candidate TX
+ceiling, known losses of effective TX, the same proxy over visible foreign BSSs that overlap each proposed
+radio, the number of changed radios and the channel tuple. The foreign term only breaks ties in own AP
+pressure and power risk. The report shows the before/after conflict count and proxy, including residual overlaps when there
+are more mutually heard APs than disjoint channels. It recommends changes only when the own AP proxy strictly
+improves, the possible total pressure remains below the current proxy, and no selected radio has a known
+lower power ceiling than its observed TX. It never calls residual reuse unavoidable or predicts throughput. Up to 100,000 assignments the
+search is exact (radios with a single candidate are constants and do not multiply the search); above that it uses a
+deterministic greedy seed and at most 20,000 candidate evaluations including the seed's, run once from the greedy
+layout and once from the observed layout.
+Sites with more than 128 participating radios per band are marked unavailable.
+
+The same SSH scan call reads a bounded `iw phy` power table from the 5 GHz PHY attached to an UP AP-mode
+interface. It does so on every scan, with or without `--extended`; the access points only answer read-only queries
+that the script already makes (`SECURITY.md` lists them). A table from another PHY on the same AP is not interchangeable. For a candidate bonded block,
+the weakest reported 20 MHz limit is projected to a conducted TX ceiling after the controller's antenna
+gain and the setting's limit: the configured value in Custom mode, the hardware maximum under High and Auto; the
+fixed Low and Medium levels are unknown. The driver-dependent projection is used only when the observed current
+TX agrees with the current channel's projection within 1 dB; every candidate ceiling is then shifted by that rounding
+step, so a candidate in the same sub-band shows neither gain nor loss. Missing, zero, changing or inconsistent PHY
+tables remain unknown; an unknown candidate has no inferred gain. The projection is an **upper bound**, not
+a measurement of future TX. For a measured AP pair, a possible TX increase raises the transmitter's
+directed beacon RSSI proxy; it can create co-channel pressure even when the current signal is below −82 dBm.
+A lower ceiling never removes a currently measured conflict from the score.
+
+The report can separately show one higher-ceiling channel per AP as a **downlink power trial** with its
+maximum possible dB difference, measured AP overlaps and DFS CAC time. This trial is not an automatic
+channel-change recommendation. A stronger AP does not improve the client's transmit power or establish
+two-way coverage; verify both directions after a controlled channel change. An empty or failed band scan
+suppresses the plan and all power trials, regardless of a readable PHY table.
+
+Unknown channel geometry, an observed fixed channel moved by radar or the controller, an active DFS wait,
+2.4 GHz at 40 MHz, a Channel AI-managed auto radio, an automatic radio without any Channel AI state from the
+controller, settings the controller sent only partly, a configured neighbour that is offline, a missing usable scan
+from any participating AP, or missing candidate data suppress a band plan with an explicit reason. An offline radio
+that is nobody's configured neighbour is left out and named as a data gap. A candidate list is a controller policy
+set rather than a per-radio regulatory guarantee, so every result is labelled a **candidate proposal**.
+Re-run after any channel change: DFS moves and channel-specific transmit-power caps can change the evidence.
+`--extended --no-scan` prints the unavailable reason for both bands.
 
 ## 9. Airtime and Clients
 

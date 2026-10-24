@@ -17,9 +17,13 @@ def recommend_band_min_rssi(
     ap: AccessPoint, band: Band, corridor: Corridor, tx_eff_dbm: int, rf: RfSettings
 ) -> Recommendation:
     radio = ap.radio(band)
+    stats = ap.stats(band)
     enabled = radio is not None and radio.min_rssi_enabled
     current = radio.min_rssi_dbm if radio is not None and enabled else None
-    derived = recommend_min_rssi(corridor, tx_eff_dbm, rf.client_tx_dbm, rf.min_rssi_offset_db)
+    assumed_client_tx = rf.client_tx_assumption(
+        band, stats.channel if stats is not None else None, stats.width_mhz if stats is not None else None
+    )
+    derived = recommend_min_rssi(corridor, tx_eff_dbm, assumed_client_tx, rf.min_rssi_offset_db)
     recommended = min(max(derived, MIN_RSSI_MIN_DBM), MIN_RSSI_MAX_DBM)
     if not enabled:
         kind, reason = RecommendationKind.CONDITIONAL, "disabled; the value to use if enabled"
@@ -54,7 +58,11 @@ def min_rssi_before_roaming(
     set, converted back to the downlink, so a value moved into the controller's range is judged as set."""
     if band is not Band.GHZ_5 or min_rssi.kind is RecommendationKind.CONDITIONAL:
         return None
-    min_rssi_downlink = min_rssi.recommended + (tx_eff_dbm - rf.client_tx_dbm)
+    stats = ap.stats(band)
+    assumed_client_tx = rf.client_tx_assumption(
+        band, stats.channel if stats is not None else None, stats.width_mhz if stats is not None else None
+    )
+    min_rssi_downlink = min_rssi.recommended + (tx_eff_dbm - assumed_client_tx)
     if coverage_gap:
         message = (
             "Minimum RSSI is enabled on a radio with a coverage gap; the hard disconnect would fire before any "

@@ -106,6 +106,27 @@ def test_the_interface_toggle_brings_the_scan_interface_up_and_restores_it(fresh
     assert fresh_ap.exec_ap("sh", "-c", "test -e /run/ifstate/apclii0.up", check=False).returncode == 1
 
 
+@pytest.mark.security("T18")
+def test_serving_phy_power_table_is_read_only_and_distinct_from_the_scan_interface(
+    fresh_ap: Harness, tmp_path: Path
+) -> None:
+    fresh_ap.set_knob("power-u7", True)
+    port = fresh_ap.dropbear_port
+    result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port))
+    power = result.power_5g
+    assert power is not None and power.phy_index == 1 and power.current_frequency_mhz == 5500
+    assert dict(power.limits)[36] == 23.0 and dict(power.limits)[100] == 30.0
+    assert fresh_ap.toggles() == []
+
+
+def test_unknown_active_ap_frequency_does_not_misattribute_a_different_phy(fresh_ap: Harness, tmp_path: Path) -> None:
+    fresh_ap.set_knob("power-u7", True)
+    fresh_ap.set_knob("missing-ap-freq", True)
+    port = fresh_ap.dropbear_port
+    result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port))
+    assert result.power_5g is None
+
+
 def test_a_wrong_password_is_an_authentication_failure(fresh_ap: Harness, tmp_path: Path) -> None:
     port = fresh_ap.dropbear_port
     with pytest.raises(SshAuthenticationError, match="authentication failed"):

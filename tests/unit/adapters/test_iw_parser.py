@@ -52,6 +52,37 @@ def test_sample_output_parses_both_bands_and_the_meta_block() -> None:
     assert (
         result.meta.model_name == "U6 Lite" and result.meta.dfs_cac_5g == "ready" and result.meta.watchdog == "timeout"
     )
+    assert result.power_5g is None
+
+
+def test_power_section_parses_only_bounded_serving_phy_values() -> None:
+    power = b"""===POWER5G===
+STATUS=ok
+PHY_INDEX=2
+CURRENT_FREQ_MHZ=5260
+\t* 5260 MHz [52] (23.0 dBm) (no IR, radar detection)
+\t* 5280 MHz [56] (23.0 dBm)
+\t* 5300 MHz [60] (23.0 dBm)
+\t* 5320 MHz [64] (23.0 dBm)
+\t* 5600 MHz [120] (30.0 dBm) (no IR, radar detection)
+"""
+    parsed = parse_scan_output(SAMPLE + power).power_5g
+    assert parsed is not None and parsed.phy_index == 2 and parsed.current_frequency_mhz == 5260
+    assert parsed.limits[-1] == (120, 30.0)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"STATUS=unknown\n",
+        b"STATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n\t* 5260 MHz [52] (0.0 dBm)\n",
+        b"STATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n\t* 5260 MHz [52] (23.0 dBm)\n\t* 5260 MHz [52] (30.0 dBm)\n",
+        b"STATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n\t* 5260 MHz [52] (23.0 dBm)\nINJECTED\n",
+    ],
+)
+def test_inconsistent_power_section_is_unknown_without_invalidating_neighbour_scan(body: bytes) -> None:
+    parsed = parse_scan_output(SAMPLE + b"===POWER5G===\n" + body)
+    assert parsed.power_5g is None and parsed.band(Band.GHZ_5) is not None
 
 
 def test_the_strongest_reading_wins_for_a_repeated_bssid_even_if_it_carries_no_frequency() -> None:
@@ -209,3 +240,37 @@ def test_readings_after_a_non_ok_status_are_not_readings() -> None:
     result = parse_scan_output(text)
     assert result.bands[0].status is BandScanStatus.FAILED and result.bands[0].readings == ()
     assert result.bands[1].status is BandScanStatus.INTERFACE_DOWN and result.bands[1].readings == ()
+
+
+POWER_HEAD = b"STATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n"
+ROW_52 = b"\t* 5260 MHz [52] (23.0 dBm)\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        POWER_HEAD + b"\t* 5260 MHz [52] (41.0 dBm)\n",
+        POWER_HEAD + b"\t* 5265 MHz [52] (23.0 dBm)\n",
+        POWER_HEAD + b"\t* 5280 MHz [56] (23.0 dBm)\n",
+        POWER_HEAD + ROW_52 + b"\t* 5825 MHz [165] (disabled)\n",
+        b"STATUS=ok\nCURRENT_FREQ_MHZ=5260\n" + ROW_52 * 2,
+        b"STATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=4900\n" + ROW_52,
+        POWER_HEAD + b"".join(f"\t* {5000 + 5 * c} MHz [{c}] (23.0 dBm)\n".encode() for c in range(36, 36 + 65)),
+    ],
+)
+def test_every_inconsistent_or_unbounded_power_table_is_unknown(body: bytes) -> None:
+    parsed = parse_scan_output(SAMPLE + b"===POWER5G===\n" + body)
+    assert parsed.power_5g is None and parsed.band(Band.GHZ_5) is not None
+
+
+def test_a_doubled_power_section_is_unknown_and_keeps_the_scan() -> None:
+    section = b"===POWER5G===\n" + POWER_HEAD + ROW_52
+    parsed = parse_scan_output(SAMPLE + section + section)
+    assert parsed.power_5g is None and parsed.band(Band.GHZ_5) is not None
+    assert parse_scan_output(SAMPLE + section).power_5g is not None
+
+
+def test_a_decimal_megahertz_table_from_a_newer_iw_is_read() -> None:
+    body = POWER_HEAD + b"\t* 5260.0 MHz [52] (23.0 dBm) (no IR, radar detection)\n"
+    parsed = parse_scan_output(SAMPLE + b"===POWER5G===\n" + body).power_5g
+    assert parsed is not None and parsed.limits == ((52, 23.0),)

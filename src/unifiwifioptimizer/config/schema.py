@@ -55,7 +55,8 @@ SSH_KEYS = frozenset(
 SITE_KEYS = frozenset({"ssh", "environment", "scan_passes", "wlans", "neighbors"})
 RF_KEYS = frozenset(
     {
-        "client_tx_dbm", "noise_floor_dbm", "required_snr_db", "min_rssi_offset_db", "roam_offset_db",
+        "client_tx_dbm", "client_tx_dbm_5g_upper", "noise_floor_dbm", "required_snr_db",
+        "min_rssi_offset_db", "roam_offset_db",
         "roam_margin_db", "roam_floor_dbm", "roam_ceiling_dbm",
     }
 )  # fmt: skip
@@ -422,12 +423,18 @@ def _rf(value: Value) -> RfSettings:
         )
     except ValueError as exc:
         raise ConfigError(path, str(exc)) from None
+    upper_client_tx: int | None = None
+    if "client_tx_dbm_5g_upper" in mapping:
+        if mapping["client_tx_dbm_5g_upper"] is None:
+            raise ConfigError(f"{path}.client_tx_dbm_5g_upper", "expected an integer")
+        upper_client_tx = _integer(mapping, path, "client_tx_dbm_5g_upper", CLIENT_TX_RANGE, DEFAULT_CLIENT_TX_DBM)
     return RfSettings(
         cell_edge=CellEdge(
             noise_floor_dbm=_integer(mapping, path, "noise_floor_dbm", NOISE_FLOOR_RANGE, DEFAULT_NOISE_FLOOR_DBM),
             required_snr_db=_integer(mapping, path, "required_snr_db", SNR_RANGE, DEFAULT_REQUIRED_SNR_DB),
         ),
         client_tx_dbm=_integer(mapping, path, "client_tx_dbm", CLIENT_TX_RANGE, DEFAULT_CLIENT_TX_DBM),
+        client_tx_dbm_5g_upper=upper_client_tx,
         min_rssi_offset_db=_integer(mapping, path, "min_rssi_offset_db", DB_TUNABLE_RANGE, DEFAULT_MIN_RSSI_OFFSET_DB),
         roaming=roaming,
     )

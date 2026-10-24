@@ -35,6 +35,7 @@ class ApRoamingDetail:
     weakest_rssi_dbm: int
     source: ReadingSource
     recommendation: RoamingRecommendation
+    assumed_client_tx_dbm: int | None = None
 
     @property
     def cap(self) -> RoamingCap:
@@ -156,7 +157,11 @@ def roaming_target(
         if weakest is None or tx_eff is None:
             incomplete.append(f"{name}: no effective 5 GHz power reported")
             continue
-        recommendation = recommend_roaming(corridor_5g, weakest.rssi_dbm, tx_eff, rf.client_tx_dbm, rf.roaming)
+        stats = ap.stats(Band.GHZ_5)
+        assumed_client_tx = rf.client_tx_assumption(
+            Band.GHZ_5, stats.channel if stats is not None else None, stats.width_mhz if stats is not None else None
+        )
+        recommendation = recommend_roaming(corridor_5g, weakest.rssi_dbm, tx_eff, assumed_client_tx, rf.roaming)
         details.append(
             ApRoamingDetail(
                 ap=name,
@@ -164,6 +169,7 @@ def roaming_target(
                 weakest_rssi_dbm=weakest.rssi_dbm,
                 source=weakest.source,
                 recommendation=recommendation,
+                assumed_client_tx_dbm=assumed_client_tx if rf.client_tx_dbm_5g_upper is not None else None,
             )
         )
     if not details or incomplete:

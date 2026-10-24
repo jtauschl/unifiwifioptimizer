@@ -1,6 +1,7 @@
 """The remote scan script's output, turned into a `ScanPass`: total over any content, strict on structure.
 
-The script prints three sections (`===2GHZ===`, `===5GHZ===`, `===META===`); each band section starts
+The script prints three required sections (`===2GHZ===`, `===5GHZ===`, `===META===`) and an optional
+`===POWER5G===` section; each band section starts
 with `STATUS=<status>` and optionally `IFACE=<name>`, followed by the filtered `iw dev … scan` lines
 (`BSS <mac>(on <iface>) …`, `freq: <MHz>`, `signal: <dBm> dBm`, `SSID: <text>`). Anything else inside a
 band section is ignored — an access point is not a trusted party and firmware adds lines freely — while a
@@ -12,7 +13,7 @@ import re
 
 from unifiwifioptimizer.domain.errors import ScanParseError
 from unifiwifioptimizer.domain.models import Band
-from unifiwifioptimizer.domain.scan import BandScan, BandScanStatus, ScanMeta, ScanPass, ScanReading
+from unifiwifioptimizer.domain.scan import BandScan, BandScanStatus, PhyChannelPower, ScanMeta, ScanPass, ScanReading
 
 MAX_READINGS_PER_BAND = 2000
 MAX_SSID_BYTES = 32
@@ -24,6 +25,7 @@ FREQUENCY_RANGE_MHZ = range(2400, 7200)
 SECTION_2G = "===2GHZ==="
 SECTION_5G = "===5GHZ==="
 SECTION_META = "===META==="
+SECTION_POWER_5G = "===POWER5G==="
 _SECTIONS = {SECTION_2G: Band.GHZ_2, SECTION_5G: Band.GHZ_5}
 
 _BSS_RE = re.compile(r"BSS ([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})(?:\(on (\S+)\))?")
@@ -35,6 +37,10 @@ _IFACE_RE = re.compile(r"[A-Za-z0-9._-]{1,15}")
 _IW_ESCAPE_RE = re.compile(r"\\x([0-9a-fA-F]{2})|\\(.)")
 _DFS_STATES = frozenset({"active", "ready", "unknown"})
 _WATCHDOGS = frozenset({"timeout", "watcher"})
+_PHY_RE = re.compile(r"PHY_INDEX=(\d{1,3})")
+_CURRENT_FREQ_RE = re.compile(r"CURRENT_FREQ_MHZ=(\d{4})")
+_POWER_RE = re.compile(r"\s*\* (\d{4})(?:\.0)? MHz \[(\d{1,3})\] \((\d{1,2}(?:\.\d)?) dBm\)(.*)")
+MAX_POWER_ROWS = 64
 
 
 def parse_scan_output(data: bytes) -> ScanPass:
@@ -42,14 +48,23 @@ def parse_scan_output(data: bytes) -> ScanPass:
     up to the point where they are counted; everything shown later is re-decoded with replacement."""
     sections = _split_sections(data.decode("utf-8", errors="surrogateescape"))
     bands = tuple(_parse_band(band, sections[marker]) for marker, band in _SECTIONS.items())
-    return ScanPass(bands=bands, meta=_parse_meta(sections[SECTION_META]))
+    return ScanPass(
+        bands=bands,
+        meta=_parse_meta(sections[SECTION_META]),
+        power_5g=_parse_power_5g(sections.get(SECTION_POWER_5G)),
+    )
 
 
 def _split_sections(text: str) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {}
     current: list[str] | None = None
     for line in text.splitlines():
-        if line in _SECTIONS or line == SECTION_META:
+        if line in _SECTIONS or line in (SECTION_META, SECTION_POWER_5G):
+            if line == SECTION_POWER_5G and line in sections:
+                # The power table is optional evidence: a doubled section is unknown, not a failed scan.
+                sections[line] = ["STATUS=unknown"]
+                current = []
+                continue
             if line in sections:
                 raise ScanParseError(f"section {line} appears twice")
             current = sections[line] = []
@@ -61,6 +76,32 @@ def _split_sections(text: str) -> dict[str, list[str]]:
         if marker not in sections:
             raise ScanParseError(f"section {marker} missing")
     return sections
+
+
+def _parse_power_5g(lines: list[str] | None) -> PhyChannelPower | None:
+    if lines is None or len(lines) < 4 or len(lines) > MAX_POWER_ROWS + 3 or lines[0] != "STATUS=ok":
+        return None
+    phy = _PHY_RE.fullmatch(lines[1])
+    current = _CURRENT_FREQ_RE.fullmatch(lines[2])
+    if phy is None or current is None:
+        return None
+    current_mhz = int(current.group(1))
+    if not 5000 < current_mhz < 5900:
+        return None
+    limits: dict[int, float] = {}
+    for line in lines[3:]:
+        match = _POWER_RE.fullmatch(line)
+        if match is None:
+            return None
+        freq, channel, dbm = int(match.group(1)), int(match.group(2)), float(match.group(3))
+        if freq != 5000 + 5 * channel or not 5000 < freq < 5900 or not 0 < dbm <= 40 or channel in limits:
+            return None
+        limits[channel] = dbm
+    if not limits or current_mhz not in {5000 + 5 * channel for channel in limits}:
+        return None
+    return PhyChannelPower(
+        phy_index=int(phy.group(1)), current_frequency_mhz=current_mhz, limits=tuple(sorted(limits.items()))
+    )
 
 
 def _parse_band(band: Band, lines: list[str]) -> BandScan:

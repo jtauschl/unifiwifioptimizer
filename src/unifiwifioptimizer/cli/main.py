@@ -40,7 +40,7 @@ from unifiwifioptimizer.domain.fingerprints import format_fingerprint
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
 from unifiwifioptimizer.report.skeleton import render_skeleton
-from unifiwifioptimizer.report.text import render_report, render_site, render_sites
+from unifiwifioptimizer.report.text import render_report, render_site, render_sites, render_summary
 
 PROG = "unifiwifioptimizer"
 
@@ -93,6 +93,14 @@ def build_parser() -> argparse.ArgumentParser:
                 "--site", action="append", default=[], metavar="ID", help="only this configured site (repeatable)"
             )
             sub.add_argument("--json", action="store_true", help="print one JSON document instead of the text report")
+            sub.add_argument(
+                "--extended", action="store_true", help="propose a bounded site-wide channel plan from existing scans"
+            )
+            sub.add_argument(
+                "--details",
+                action="store_true",
+                help="print the full text evidence instead of the summary (ignored with --json)",
+            )
             sub.add_argument(
                 "--no-scan", action="store_true", help="analyse the controller side only, no neighbour scans"
             )
@@ -271,19 +279,24 @@ def _run(args: argparse.Namespace) -> ExitCode:
     client, dump = _client(loaded, args)
     # One environment for the version check and the scans, so `ssh -V` judges the `ssh` the scan will run.
     environ = dict(os.environ)
-    result = run_analysis(
-        loaded,
-        profiles,
-        client,
-        lambda: OpenSshScanner(_known_hosts_store(args, environ), environ=environ),
-        SystemClock(),
-        time.sleep,
-        StderrProgress(),
-        sites=args.site or None,
-        with_clients=args.clients,
-        skip_scan=args.no_scan,
-        environment_check=lambda: check_openssh_version(environ),
-    )
+    progress = StderrProgress()
+    try:
+        result = run_analysis(
+            loaded,
+            profiles,
+            client,
+            lambda: OpenSshScanner(_known_hosts_store(args, environ), environ=environ),
+            SystemClock(),
+            time.sleep,
+            progress,
+            sites=args.site or None,
+            with_clients=args.clients,
+            skip_scan=args.no_scan,
+            extended=args.extended,
+            environment_check=lambda: check_openssh_version(environ),
+        )
+    finally:
+        progress.finish()
     if dump is not None:
         for report in result.reports:
             dump.write(f"s/{report.site_id}/run", report)
@@ -291,7 +304,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
         print(render_json(result.reports), end="")
     else:
         for report in result.reports:
-            print(render_report(report), end="")
+            print(render_report(report) if args.details else render_summary(report), end="")
     return exit_code_for_run(result)
 
 

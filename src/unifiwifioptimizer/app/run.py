@@ -115,6 +115,7 @@ def run_analysis(
     sites: Sequence[str] | None = None,
     with_clients: bool = False,
     skip_scan: bool = False,
+    extended: bool = False,
     environment_check: EnvironmentCheck | None = None,
 ) -> RunResult:
     selected = select_sites(loaded, sites)
@@ -164,6 +165,7 @@ def run_analysis(
                 scan_passes=item.config.scan_passes,
                 wlan_profiles=item.config.wlans,
                 profiles=profiles,
+                extended=extended,
             )
         )
         reports.append(report)

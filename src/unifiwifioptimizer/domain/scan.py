@@ -58,11 +58,21 @@ class ScanMeta:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class PhyChannelPower:
+    """One serving PHY's per-20 MHz `iw` ceiling; its conducted-power meaning needs calibration."""
+
+    phy_index: int
+    current_frequency_mhz: int
+    limits: tuple[tuple[int, float], ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ScanPass:
     """One SSH call on one access point: both bands plus the metadata block."""
 
     bands: tuple[BandScan, ...]
     meta: ScanMeta
+    power_5g: PhyChannelPower | None = None
 
     def band(self, band: Band) -> BandScan | None:
         return next((b for b in self.bands if b.band is band), None)

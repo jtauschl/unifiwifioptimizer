@@ -82,6 +82,8 @@ class Radio:
 
 # The controller's radio state while a 5 GHz radio runs its DFS channel availability check.
 DFS_WAIT_STATE = "DFS_WAIT"
+# The controller endpoint of the site settings; its field problems say a setting such as Channel AI is uncertain.
+SETTINGS_ENDPOINT = "rest/setting"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

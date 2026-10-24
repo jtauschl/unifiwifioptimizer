@@ -1,6 +1,6 @@
 """Report values: what the analysis and the compliance engine produce and the renderers print."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -8,6 +8,7 @@ from types import MappingProxyType
 
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
+    ChannelPlanMethod,
     MissDirection,
     MissingReason,
     NeighbourMarker,
@@ -63,6 +64,13 @@ class Finding:
     peers: tuple[str, ...] = ()
 
 
+class Deferral(StrEnum):
+    """Why advice is provisional: it rests on a setting that another recommendation changes first."""
+
+    CHANNEL_PLAN = "channel_plan"
+    TX_CHANGE = "tx_change"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CheckResult:
     code: str
@@ -71,7 +79,11 @@ class CheckResult:
     detail: str
     expected: str | None = None
     actual: str | None = None
+    deferred_by: Deferral | None = None
 
+
+# The limit of every channel plan, said once per band: beacon observations show presence, not airtime.
+BEACON_EVIDENCE_GAP = "scan beacons do not establish channel airtime or absence on unsurveyed channels"
 
 # The two radio settings a recommendation can address.
 TX_POWER = "tx_power"
@@ -97,10 +109,15 @@ class Recommendation:
     unverified_headroom: bool = False
     # The corridor-derived value when `recommended` was moved into the range the controller accepts.
     derived_dbm: int | None = None
+    deferred_by: Deferral | None = None
 
     @property
     def is_change(self) -> bool:
         return self.kind is RecommendationKind.CHANGE
+
+    @property
+    def is_actionable(self) -> bool:
+        return self.is_change and self.deferred_by is None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -154,6 +171,7 @@ class RfSummary:
     roam_margin_db: int
     roam_floor_dbm: int
     roam_ceiling_dbm: int
+    client_tx_dbm_5g_upper: int | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -222,6 +240,7 @@ class BandReport:
     airtime: AirtimeReport | None
     clients: ClientReport | None
     foreign: ForeignReport | None
+    assumed_client_tx_dbm: int | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -247,6 +266,7 @@ class RoamingApDetail:
     uplink_dbm: int
     cap: RoamingCap
     raw_cap_dbm: int | None
+    assumed_client_tx_dbm: int | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -301,6 +321,62 @@ class ScanSummary:
         object.__setattr__(self, "successes_by_ap", MappingProxyType(dict(self.successes_by_ap)))
 
 
+class ChannelPlanStatus(StrEnum):
+    UNAVAILABLE = "unavailable"
+    NO_IMPROVEMENT = "no_improvement"
+    RECOMMENDED = "recommended"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ChannelAssignment:
+    ap: str
+    current: int
+    proposed: int
+    width_mhz: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PowerOpportunity:
+    ap: str
+    current_channel: int
+    candidate_channel: int
+    current_dbm: int
+    candidate_ceiling_dbm: int
+    overlapping_peers: int
+    cac_seconds: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BandChannelPlan:
+    band: Band
+    status: ChannelPlanStatus
+    reason: str | None
+    method: ChannelPlanMethod | None
+    assignments: tuple[ChannelAssignment, ...]
+    own_conflicts_before: int | None
+    own_conflicts_after: int | None
+    own_pressure_before: int | None
+    own_pressure_after: int | None
+    foreign_overlaps_before: int | None
+    foreign_overlaps_after: int | None
+    data_gaps: tuple[str, ...]
+    power_opportunities: tuple[PowerOpportunity, ...] = ()
+    possible_power_pressure_after: int | None = None
+
+    @property
+    def has_changes(self) -> bool:
+        return self.status is ChannelPlanStatus.RECOMMENDED and any(a.current != a.proposed for a in self.assignments)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ExtendedChannelPlan:
+    bands: tuple[BandChannelPlan, ...]
+
+    @property
+    def has_changes(self) -> bool:
+        return any(b.has_changes for b in self.bands)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SiteReport:
     """Everything the renderers print for one site; the flat views are derived from the nested blocks so
@@ -326,6 +402,7 @@ class SiteReport:
     host_key_failed_ap_count: int
     # Whether neighbour scans ran for this site (False under `--no-scan` and for a controller-only site).
     scanning: bool
+    extended_channel_plan: ExtendedChannelPlan | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "corridors", MappingProxyType(dict(self.corridors)))
@@ -346,13 +423,40 @@ class SiteReport:
         return tuple(c for e in self.compliance.evaluations for c in e.checks)
 
     @property
+    def actionable_changes(self) -> int:
+        return sum(1 for r in self.recommendations if r.is_actionable)
+
+    @property
     def pending_tx_changes(self) -> int:
-        return sum(1 for r in self.recommendations if r.setting == TX_POWER and r.is_change)
+        """Transmit-power changes that can be applied now."""
+        return sum(1 for r in self.recommendations if r.setting == TX_POWER and r.is_actionable)
+
+    def pending_5g_tx_changes_of(self, aps: Collection[str]) -> int:
+        """5 GHz transmit-power changes that can be applied now on the given access points."""
+        return sum(
+            1
+            for r in self.recommendations
+            if r.setting == TX_POWER and r.band is Band.GHZ_5 and r.is_actionable and r.subject in aps
+        )
+
+    @property
+    def failed_checks(self) -> int:
+        """Failed WLAN checks that can be fixed now."""
+        return sum(1 for c in self.checks if c.status is CheckStatus.FAILED and c.deferred_by is None)
+
+    @property
+    def waiting_items(self) -> int:
+        """Changes and failed checks that wait for another change to be applied first."""
+        return sum(1 for r in self.recommendations if r.is_change and r.deferred_by is not None) + sum(
+            1 for c in self.checks if c.status is CheckStatus.FAILED and c.deferred_by is not None
+        )
 
     @property
     def has_changes(self) -> bool:
-        return any(r.is_change for r in self.recommendations) or any(
-            c.status is CheckStatus.FAILED for c in self.checks
+        return (
+            (self.extended_channel_plan is not None and self.extended_channel_plan.has_changes)
+            or any(r.is_change for r in self.recommendations)
+            or any(c.status is CheckStatus.FAILED for c in self.checks)
         )
 
     @property

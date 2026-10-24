@@ -133,7 +133,7 @@ For a complete step-by-step example, see [docs/WALKTHROUGH.md](https://github.co
 
    `trust-host-keys` asks per access point before it stores a key. `--yes` skips the question for a key that matches a configured pin or the fingerprint the controller reports; `--accept-unverified` skips it for a key nothing can verify (trust on first use). Without a terminal it declines every question it would ask, so only keys covered by `--yes` or `--accept-unverified` are stored; a declined key does not change the exit code. It exits 5 when an access point failed (a key that does not match or differs from the stored one, a public address, a failed key scan); a name that is not on the controller is reported and exits 0.
 
-8. If you want a controller baseline first, let UniFi handle channel planning (for example Channel AI).
+8. Establish a channel baseline with Channel AI, or inspect the optional `run --extended` candidate proposal after a scan.
 9. Fix per-WLAN profile deviations first.
 10. Apply the per-AP RF recommendations that make sense for your site.
 11. Re-test with real clients.
@@ -146,7 +146,7 @@ unifiwifioptimizer [--version] [--config-file PATH] [--dump-api DIR] [--profiles
 
 | Subcommand | Purpose |
 |---|---|
-| `run [--site ID]... [--json] [--no-scan] [--clients] [--known-hosts PATH]` | analyse every configured site (or the listed ones) and print recommendations |
+| `run [--site ID]... [--json] [--details] [--no-scan] [--clients] [--extended] [--known-hosts PATH]` | analyse every configured site (or the listed ones) and print recommendations |
 | `sites` | list the sites the controller exposes |
 | `site <site>` | show one site's access points and WLANs |
 | `config <site>` / `config --profiles` | print a configuration skeleton for a site, or the effective WLAN profiles |
@@ -164,9 +164,15 @@ unifiwifioptimizer run --site default     # one configured site (repeatable)
 unifiwifioptimizer run --no-scan          # controller side only: WLAN checks and the controller's view of every radio
 unifiwifioptimizer run --clients          # add the associated clients per radio (signal counts, no identities; scanned radios only)
 unifiwifioptimizer run --json             # one JSON document for every site (`schema_version` 1)
+unifiwifioptimizer run --extended         # add a bounded, read-only site-wide channel proposal
+unifiwifioptimizer run --details          # full WLAN, RF and per-radio evidence
 ```
 
 `--no-scan` is the natural first run: it needs no SSH access and no stored host keys. A scanning run needs `trust-host-keys` first and OpenSSH 8.4 or newer on the host. By default scans run site after site and access point after access point (`ssh.scan_concurrency` allows more at once); an access point the controller reports as disconnected is not contacted.
+
+The text report is a concise decision view: the settings to apply, the WiFi findings to investigate, each access point's current channels and effective transmit powers, and the gaps in the evidence. `--details` prints the complete report, including every WLAN check, neighbour reading and RF assumption. `--json` keeps its schema and is not affected by `--details`. An interactive terminal shows scan progress on one updating stderr line; redirected output shows only site milestones and failures.
+
+`--extended` evaluates 2.4 and 5 GHz channel assignments jointly from the scans already made. It reports the residual own-AP overlap and the data gaps, and says when the evidence is too incomplete to propose channels. The result is a candidate based on AP-to-AP beacon readings, not a throughput or airtime prediction, and it never changes a controller setting. A proposed channel move belongs to the complete site-wide plan: apply the channel assignments, then run the tool again before using power or Minimum RSSI advice on that band. After a transmit-power change, run it again before setting Minimum RSSI from the newly observed effective power. An Auto radio assigned its observed channel must be pinned to that channel to keep a proposed layout. With `--no-scan`, both band plans are reported as unavailable.
 
 Each site report provides the values you use as the basis for your UniFi WLAN and access point configuration:
 
@@ -260,6 +266,7 @@ Keys (every key not listed is an error):
 | `rf.noise_floor_dbm` | Receiver noise floor, default -92 |
 | `rf.required_snr_db` | SNR required at the cell edge, default 25 |
 | `rf.client_tx_dbm` | Typical client transmit power for the uplink conversion, default 14 |
+| `rf.client_tx_dbm_5g_upper` | Optional assumed client power for 5 GHz blocks wholly within channels 100–140, 0..30 dBm; otherwise `rf.client_tx_dbm` applies |
 | `rf.min_rssi_offset_db` | Distance of Minimum RSSI below the roaming trigger, default 5 |
 | `rf.roam_offset_db` | Shift of the Roaming Assistant threshold, default 0 |
 | `rf.roam_margin_db` | Margin of the Roaming Assistant threshold below a weak neighbour, default 5 |

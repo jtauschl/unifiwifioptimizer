@@ -122,6 +122,11 @@ def test_blacklisted_channels_are_advisories_with_the_band_channel_width_key() -
     assert advisory.subject == "AP-2" and "channel 3/20 MHz" in advisory.message
     wider = with_stats(ap_named(SNAP, "AP-2"), Band.GHZ_2, channel=3, width_mhz=40)
     assert by_code(analyse_channels(with_ap(SNAP, wider), None, {}, AI), "channel_in_blacklist") == []
+    five = replace(AI, blacklist=AI.blacklist | {(Band.GHZ_5, 56, 20)})
+    advisories = by_code(analyse_channels(SNAP, None, {}, five), "channel_in_blacklist")
+    assert [(finding.subject, finding.band) for finding in advisories] == [("AP-2", Band.GHZ_5)]
+    disjoint = replace(AI, blacklist=AI.blacklist | {(Band.GHZ_5, 132, 20)})
+    assert by_code(analyse_channels(SNAP, None, {}, disjoint), "channel_in_blacklist") == []
 
 
 def test_cochannel_heard_covers_unconfigured_pairs_at_the_cca_level() -> None:

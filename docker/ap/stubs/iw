@@ -34,14 +34,41 @@ phy#1
 		type monitor
 EOF
   ;;
-"dev ra0 info ") printf 'Interface ra0\n\ttype AP\n\twiphy 0\n\tchannel 6 (2437 MHz), width: 20 MHz\n' ;;
+"dev ra0 info ")
+  if [ -e /run/stub/missing-ap-freq ]; then
+    printf 'Interface ra0\n\ttype AP\n\twiphy 0\n'
+  else
+    printf 'Interface ra0\n\ttype AP\n\twiphy 0\n\tchannel 6 (2437 MHz), width: 20 MHz\n'
+  fi
+  ;;
 "dev apcli0 info ") printf 'Interface apcli0\n\ttype managed\n\twiphy 0\n\tchannel 6 (2437 MHz), width: 20 MHz\n' ;;
 "dev rai0 info ") printf 'Interface rai0\n\ttype AP\n\twiphy 1\n\tchannel 100 (5500 MHz), width: 80 MHz\n' ;;
 "dev apclii0 info ") printf 'Interface apclii0\n\ttype managed\n\twiphy 1\n\tchannel 100 (5500 MHz), width: 80 MHz\n' ;;
 "dev mon0 info ") printf 'Interface mon0\n\ttype monitor\n\twiphy 1\n' ;;
 "dev "*" info ") exit 1 ;;
 "phy phy0 info ") printf 'Wiphy phy0\n\tFrequencies:\n\t\t* 2412 MHz [1]\n\t\t* 2437 MHz [6]\n\t\t* 2462 MHz [11]\n' ;;
-"phy phy1 info ") printf 'Wiphy phy1\n\tFrequencies:\n\t\t* 5180 MHz [36]\n\t\t* 5500 MHz [100]\n' ;;
+"phy phy1 info ")
+  if [ -e /run/stub/power-u7 ]; then
+    cat <<'EOF'
+Wiphy phy1
+	Frequencies:
+		* 5180 MHz [36] (23.0 dBm)
+		* 5200 MHz [40] (23.0 dBm)
+		* 5220 MHz [44] (23.0 dBm)
+		* 5240 MHz [48] (23.0 dBm)
+		* 5260 MHz [52] (23.0 dBm) (no IR, radar detection)
+		* 5280 MHz [56] (23.0 dBm) (no IR, radar detection)
+		* 5300 MHz [60] (23.0 dBm) (no IR, radar detection)
+		* 5320 MHz [64] (23.0 dBm) (no IR, radar detection)
+		* 5500 MHz [100] (30.0 dBm) (no IR, radar detection)
+		* 5520 MHz [104] (30.0 dBm) (no IR, radar detection)
+		* 5540 MHz [108] (30.0 dBm) (no IR, radar detection)
+		* 5560 MHz [112] (30.0 dBm) (no IR, radar detection)
+EOF
+  else
+    printf 'Wiphy phy1\n\tFrequencies:\n\t\t* 5180 MHz [36]\n\t\t* 5500 MHz [100]\n'
+  fi
+  ;;
 "dev apcli0 scan " | "dev apclii0 scan ")
   iface="$2"
   state_up "$iface" || {

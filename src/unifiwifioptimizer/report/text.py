@@ -3,7 +3,8 @@ read in terminals and pasted into tickets alike; `--json` exists for machines.""
 
 import re
 import textwrap
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Callable, Mapping
 
 from unifiwifioptimizer.app.use_cases import SiteOverview, SitesOverview
 from unifiwifioptimizer.compliance.rules import RULE_BY_CODE
@@ -16,14 +17,19 @@ from unifiwifioptimizer.domain.analysis import (
     RoamingCap,
     WlanRoamingStatus,
 )
-from unifiwifioptimizer.domain.models import DeviceState, FieldProblem, TxPowerMode
+from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, TxPowerMode
 from unifiwifioptimizer.domain.report import (
+    BEACON_EVIDENCE_GAP,
     MIN_RSSI,
     TX_POWER,
     ApReport,
+    BandChannelPlan,
     BandReport,
+    ChannelAssignment,
+    ChannelPlanStatus,
     CheckResult,
     CheckStatus,
+    Deferral,
     Finding,
     NeighbourRow,
     Recommendation,
@@ -137,8 +143,8 @@ SCOPE_NOTE = (
     "Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It cannot "
     "see non-WiFi RF interference (BLE/Zigbee/microwave -- needs a spectrum analyzer), per-client MCS or retry "
     "statistics, real client roaming timing, or packet captures. Neighbour RSSI is an AP-to-AP beacon reading; "
-    "client thresholds are converted to the uplink the controller evaluates with a typical client power "
-    "(`rf.client_tx_dbm`), so a client with a weaker radio is still worse off than the corridor suggests. "
+    "client thresholds are converted to the uplink the controller evaluates with {client_power}, "
+    "so a client with a weaker radio is still worse off than the corridor suggests. "
     "Recommendations are static-analysis heuristics, not runtime KPIs."
 )
 
@@ -177,9 +183,22 @@ def _environment(report: SiteReport) -> list[str]:
         lines.append(
             f"  {f'Target RSSI @ neighbour {band.label}:':<{LABEL}} {corridor.low_dbm} dBm to {corridor.high_dbm} dBm"
         )
-    lines += [
+    min_rssi_line = (
         f"  {'Minimum RSSI:':<{LABEL}} corridor floor - {rf.min_rssi_offset_db} dB, on the uplink "
-        f"(client {rf.client_tx_dbm} dBm)",
+        f"(client {rf.client_tx_dbm} dBm)"
+    )
+    if rf.client_tx_dbm_5g_upper is not None:
+        min_rssi_line = (
+            f"  {'Minimum RSSI:':<{LABEL}} corridor floor - {rf.min_rssi_offset_db} dB, on the uplink "
+            "(assumed client TX by channel)"
+        )
+    lines.append(min_rssi_line)
+    if rf.client_tx_dbm_5g_upper is not None:
+        lines.append(
+            f"  {'Assumed client TX:':<{LABEL}} base {rf.client_tx_dbm} dBm; "
+            f"5 GHz blocks within ch 100-140 {rf.client_tx_dbm_5g_upper} dBm"
+        )
+    lines += [
         f"  {'':<{LABEL}} Ubiquiti: for high density; {MIN_RSSI_VENDOR_START_DBM} dBm as a home/office start",
         f"  {'Roaming trigger bounds:':<{LABEL}} {rf.roam_floor_dbm} dBm .. {rf.roam_ceiling_dbm} dBm "
         f"(margin {rf.roam_margin_db} dB)",
@@ -187,6 +206,12 @@ def _environment(report: SiteReport) -> list[str]:
         "",
     ]
     return lines
+
+
+_WAITS_FOR = {
+    Deferral.CHANNEL_PLAN: "provisional: re-run after the channel changes are applied",
+    Deferral.TX_CHANGE: "provisional: re-run after the transmit-power changes are applied",
+}
 
 
 def _check_line(check: CheckResult) -> list[str]:
@@ -199,6 +224,9 @@ def _check_line(check: CheckResult) -> list[str]:
     lines = [f"    {mark} {check_label(check.code):<{LABEL}} {safe_text(value or '', 80)}"]
     if check.status is CheckStatus.FAILED and check.detail:
         lines.append(f"        {safe_text(check.detail, 100)}")
+    if check.deferred_by is not None:
+        lines.append(f"        {_WAITS_FOR[check.deferred_by]}")
+        return lines
     path = ui_path(check.code)
     if check.status is CheckStatus.FAILED and path is not None:
         lines.append(f"        → {path}")
@@ -235,6 +263,11 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
         return []
     lines: list[str] = []
     for detail in summary.per_ap:
+        if detail.assumed_client_tx_dbm is not None:
+            lines.append(
+                f"        {name(detail.ap)}: derived {detail.uplink_dbm} dBm on the uplink "
+                f"(assumed client TX {detail.assumed_client_tx_dbm} dBm)"
+            )
         if detail.cap is RoamingCap.NONE:
             continue
         where = f"weakest neighbour {name(detail.weakest_peer)} at {detail.weakest_rssi_dbm} dBm"
@@ -262,9 +295,9 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
         lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons]
     if summary.tx_change_pending:
         lines.append(
-            f"        Note: {report.pending_tx_changes} pending transmit-power change(s) on this site; apply those "
-            "first "
-            "and re-run; the threshold follows the effective power"
+            f"        Note: {report.pending_5g_tx_changes_of(summary.broadcasting)} pending 5 GHz transmit-power "
+            "change(s) on the access points of this WLAN; apply those first and re-run; the threshold follows the "
+            "effective power"
         )
     return lines
 
@@ -344,7 +377,12 @@ def _band(band: BandReport) -> list[str]:
         for rec in band.recommendations:
             label = SETTING_LABEL.get(rec.setting, rec.setting)
             value = _tx_value(rec) if rec.setting == TX_POWER else _min_rssi_value(rec)
+            if rec.setting == MIN_RSSI and band.assumed_client_tx_dbm is not None:
+                value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
             lines.append(f"    {KIND_MARK[rec.kind]} {label:<{NAME}} {value}")
+            if rec.deferred_by is not None:
+                lines.append(f"        {_WAITS_FOR[rec.deferred_by]}")
+                continue
             path = ui_path(rec.setting)
             if rec.is_change and path is not None:
                 lines.append(f"        → {path}")
@@ -401,6 +439,144 @@ def _ap(ap: ApReport) -> list[str]:
     return lines
 
 
+def _setup_current_tx(band: BandReport) -> str:
+    tx = band.tx
+    if tx.effective_dbm is None:
+        return "effective power unavailable"
+    value = f"{tx.effective_dbm} dBm effective"
+    if tx.mode is not None and tx.mode is not TxPowerMode.CUSTOM:
+        value += f" ({tx.mode.value} mode)"
+    if tx.configured_dbm is not None and tx.configured_dbm != tx.effective_dbm:
+        value += f", configured {tx.configured_dbm} dBm"
+        if tx.mode is not None and tx.mode is not TxPowerMode.CUSTOM:
+            value += " is stale"
+        elif tx.effective_max_verified:
+            value += " (regulatory cap)"
+    return value
+
+
+def _setup_current_min_rssi(rec: Recommendation | None) -> str:
+    if rec is None:
+        return "state unavailable"
+    if rec.kind is RecommendationKind.CONDITIONAL:
+        return "disabled"
+    return f"enabled at {rec.current} dBm" if rec.current is not None else "state unavailable"
+
+
+def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssignment | None) -> list[str]:
+    channel = "auto" if band.channel is None else str(band.channel)
+    width = f"{band.width_mhz} MHz" if band.width_mhz is not None else "width unknown"
+    observed = f"ch {channel}/{width}"
+    if band.channel_auto and band.channel is not None:
+        observed += " (auto)"
+    if band.configured_channel is not None and band.configured_channel != band.channel:
+        observed += f", configured ch {band.configured_channel}"
+    if plan.status is ChannelPlanStatus.UNAVAILABLE:
+        channel_value = f"{observed}; plan unavailable"
+    elif plan.status is ChannelPlanStatus.NO_IMPROVEMENT:
+        channel_value = f"{observed}; no channel change proposed"
+    else:
+        if assignment is None:
+            channel_value = f"{observed}; not in site-wide plan"
+        elif assignment.current != assignment.proposed:
+            target = f"ch {assignment.proposed}/{assignment.width_mhz} MHz"
+            channel_value = f"{observed} → {'set fixed ' if band.channel_auto else ''}{target} (site-wide candidate)"
+        elif band.channel_auto:
+            channel_value = f"{observed}; set fixed ch {assignment.proposed} to keep the site-wide plan"
+        else:
+            channel_value = f"{observed}; keep in site-wide plan"
+    lines = [f"    {band.band.label}", f"      {'Channel':<{NAME}} {channel_value}"]
+    recs = {rec.setting: rec for rec in band.recommendations}
+    tx_rec = recs.get(TX_POWER)
+    min_rec = recs.get(MIN_RSSI)
+    current_tx = _setup_current_tx(band)
+    if tx_rec is None:
+        tx_value = f"{current_tx}; no recommendation"
+    elif tx_rec.deferred_by is Deferral.CHANNEL_PLAN:
+        tx_value = f"{current_tx}; reassess after channel changes"
+    elif tx_rec.kind is RecommendationKind.CHANGE:
+        action = _tx_value(tx_rec)
+        if not action.startswith("set to "):
+            action = f"set to {action}"
+        tx_value = f"{current_tx}; {action}"
+    elif tx_rec.kind is RecommendationKind.CONFIRMED:
+        tx_value = f"{current_tx}; keep current"
+    else:
+        tx_value = f"{current_tx}; no change: {safe_text(tx_rec.reason, 100)}"
+    if min_rec is None:
+        min_value = "state unavailable; no recommendation"
+    elif min_rec.deferred_by is Deferral.CHANNEL_PLAN:
+        min_value = f"{_setup_current_min_rssi(min_rec)}; reassess after channel changes"
+    elif min_rec.deferred_by is Deferral.TX_CHANGE:
+        min_value = f"{_setup_current_min_rssi(min_rec)}; reassess after the TX change"
+    else:
+        min_value = _min_rssi_value(min_rec)
+        if band.assumed_client_tx_dbm is not None:
+            min_value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
+    lines += [
+        f"      {'Transmit Power':<{NAME}} {tx_value}",
+        f"      {'Minimum RSSI':<{NAME}} {min_value}",
+    ]
+    return lines
+
+
+def _ap_setup(report: SiteReport) -> list[str]:
+    plan = report.extended_channel_plan
+    if plan is None:
+        return []
+    by_band = {item.band: item for item in plan.bands}
+    by_ap_band = {(item.band, assignment.ap): assignment for item in plan.bands for assignment in item.assignments}
+    changed_bands = {item.band for item in plan.bands if item.has_changes}
+    pending_tx = any(
+        rec.setting == TX_POWER and rec.is_actionable
+        for ap in report.aps
+        for band in ap.bands
+        for rec in band.recommendations
+    )
+    lines = [RULE, "  AP setup — current snapshot", RULE, ""]
+    if changed_bands:
+        labels = ", ".join(item.band.label for item in plan.bands if item.band in changed_bands)
+        advice = "TX or Minimum RSSI"
+        if Band.GHZ_5 in changed_bands:
+            advice = "TX, Minimum RSSI or WLAN Roaming Assistant"
+        lines.append(
+            f"  Apply the complete site-wide candidate channel assignment for {labels}, then re-run before "
+            f"using {advice} advice on those bands."
+        )
+    if pending_tx:
+        lines.append("  After a TX change, re-run before setting Minimum RSSI from the new effective power.")
+    if changed_bands or pending_tx:
+        lines.append("")
+    for item in plan.bands:
+        if item.status is ChannelPlanStatus.UNAVAILABLE:
+            lines.append(f"  {item.band.label} channel plan unavailable: {safe_text(item.reason or '', LINE_MAX)}")
+        elif item.status is ChannelPlanStatus.NO_IMPROVEMENT:
+            lines.append(f"  {item.band.label}: no measured own-AP channel improvement")
+    if any(item.status is not ChannelPlanStatus.RECOMMENDED for item in plan.bands):
+        lines.append("")
+    for ap in report.aps:
+        model = f" ({safe_text(ap.model)})" if ap.model is not None else ""
+        lines.append(f"  AP {name(ap.name)}{model}  MAC {ap.mac}")
+        if ap.state is DeviceState.DISCONNECTED:
+            lines.append("    offline — no radio statistics")
+        for band in ap.bands:
+            band_plan = by_band.get(band.band)
+            if band_plan is not None:
+                lines += _setup_band(band, band_plan, by_ap_band.get((band.band, ap.name)))
+        if not ap.bands:
+            lines.append("    no evaluated radios")
+        for finding in ap.findings:
+            if finding.code == "band_detected_not_evaluated" and finding.band is not None:
+                lines.append(f"    {finding.band.label} detected, not evaluated")
+        lines.append("")
+    for device in report.unparsable:
+        label = name(device.name) if device.name is not None else (device.mac or "unknown device")
+        lines.append(f"  {label}: setup unavailable ({safe_text(device.reason, 120)})")
+    if report.unparsable:
+        lines.append("")
+    return lines
+
+
 def _groups(report: SiteReport) -> list[str]:
     reported = [g for g in report.groups if not g.clean]
     if not reported:
@@ -441,23 +617,334 @@ def _scan(report: SiteReport) -> list[str]:
     return lines
 
 
+def _channel_plan(report: SiteReport) -> list[str]:
+    plan = report.extended_channel_plan
+    if plan is None:
+        return []
+    lines = [RULE, "  Extended channel plan", RULE, ""]
+    for band in plan.bands:
+        if band.status is ChannelPlanStatus.UNAVAILABLE:
+            lines += [f"  {band.band.label}: unavailable — {safe_text(band.reason or '', LINE_MAX)}", ""]
+            continue
+        label = (
+            "candidate recommendation"
+            if band.status is ChannelPlanStatus.RECOMMENDED
+            else "no measured own-AP improvement"
+        )
+        lines.append(f"  {band.band.label}: {label} ({band.method} search)")
+        lines.append(
+            f"    Consequential own AP overlaps: {band.own_conflicts_before} → {band.own_conflicts_after}; "
+            f"signal proxy: {band.own_pressure_before} → {band.own_pressure_after}"
+        )
+        lines.append(
+            f"    Visible foreign BSS overlaps: {band.foreign_overlaps_before} → {band.foreign_overlaps_after}"
+        )
+        if (
+            band.possible_power_pressure_after is not None
+            and band.own_pressure_after is not None
+            and band.possible_power_pressure_after > band.own_pressure_after
+        ):
+            lines.append(
+                f"    Possible pressure with higher channel power: up to {band.possible_power_pressure_after} "
+                "(ceiling, not measured)"
+            )
+        for assignment in band.assignments:
+            lines.append(
+                f"    {name(assignment.ap)}: ch {assignment.current} → {assignment.proposed} "
+                f"({assignment.width_mhz} MHz)"
+            )
+        for opportunity in band.power_opportunities:
+            cac = f", DFS CAC {opportunity.cac_seconds} s" if opportunity.cac_seconds is not None else ""
+            lines.append(
+                f"    Downlink power trial for {name(opportunity.ap)}: ch {opportunity.current_channel} "
+                f"→ {opportunity.candidate_channel}, current {opportunity.current_dbm} dBm, "
+                f"candidate ceiling {opportunity.candidate_ceiling_dbm} dBm "
+                f"(up to +{opportunity.candidate_ceiling_dbm - opportunity.current_dbm} dB; "
+                f"{opportunity.overlapping_peers} measured AP overlap(s){cac})"
+            )
+        if band.power_opportunities:
+            lines.append("    Trial only: AP TX does not improve client uplink; verify both directions after a change.")
+        for gap in band.data_gaps:
+            lines.append(f"    Note: {safe_text(gap, LINE_MAX)}")
+        lines.append("")
+    lines.append("  Re-run after a channel change; DFS moves and channel-specific power limits can change the result.")
+    lines.append("")
+    return lines
+
+
 def _footer(report: SiteReport) -> list[str]:
     lines: list[str] = []
+    changes = report.actionable_changes
     pending = report.pending_tx_changes
-    changes = sum(1 for r in report.recommendations if r.is_change)
-    failed = sum(1 for c in report.checks if c.status is CheckStatus.FAILED)
+    failed = report.failed_checks
+    waiting = report.waiting_items
+    channel_change = report.extended_channel_plan is not None and report.extended_channel_plan.has_changes
     if changes or failed:
         lines.append(
             f"  {changes} pending setting change(s) ({pending} transmit power) and {failed} failed WLAN check(s). "
             "After applying changes, run the tool again."
         )
-    else:
-        lines.append("  No changes recommended.")
+    if channel_change:
+        lines.append("  A site-wide channel change is proposed above; apply it and run the tool again.")
+    if waiting:
+        lines.append(f"  {waiting} further item(s) wait for the changes above; run the tool again after applying them.")
+    if not changes and not failed and not channel_change and not waiting:
+        if any(f.severity in (Severity.ADVISORY, Severity.WARNING, Severity.ERROR) for f in report.findings):
+            lines.append("  No setting changes recommended; RF findings above still need review.")
+        else:
+            lines.append("  No changes recommended.")
     if report.partial_reasons:
         reasons = ", ".join(r.value.replace("_", " ") for r in report.partial_reasons)
         lines.append(f"  Partial result ({reasons}); the exit code says so.")
-    lines += ["", f"  {SCOPE_NOTE}", ""]
+    client_power = "a typical client power (`rf.client_tx_dbm`)"
+    if report.rf.client_tx_dbm_5g_upper is not None:
+        client_power = "an assumed client power (`rf.client_tx_dbm` or `rf.client_tx_dbm_5g_upper` by channel)"
+    lines += ["", f"  {SCOPE_NOTE.format(client_power=client_power)}", ""]
     return lines
+
+
+class _Labels:
+    """How the summary names an access point: the shortened name, plus the MAC's last bytes when two names
+    shorten to the same text (the summary has no MAC column to tell them apart)."""
+
+    def __init__(self, report: SiteReport) -> None:
+        shortened = {ap.name: name(ap.name) for ap in report.aps}
+        counts = Counter(shortened.values())
+        self._labels = {
+            ap.name: shortened[ap.name] if counts[shortened[ap.name]] == 1 else f"{shortened[ap.name]} [{ap.mac[-5:]}]"
+            for ap in report.aps
+        }
+
+    def __call__(self, ap_name: str) -> str:
+        return self._labels.get(ap_name) or name(ap_name)
+
+
+def _summary_actions(report: SiteReport, label: Callable[[str], str]) -> list[str]:
+    actions: list[str] = []
+    changed_bands: set[Band] = set()
+    plan = report.extended_channel_plan
+    auto_radios = {(ap.name, band.band): band.channel_auto for ap in report.aps for band in ap.bands}
+    if plan is not None:
+        for band_plan in plan.bands:
+            if not band_plan.has_changes:
+                continue
+            changed_bands.add(band_plan.band)
+            actions.append(
+                f"Candidate channel plan, {band_plan.band.label} ({band_plan.method} search): own AP overlaps "
+                f"{band_plan.own_conflicts_before} → {band_plan.own_conflicts_after}, signal proxy "
+                f"{band_plan.own_pressure_before} → {band_plan.own_pressure_after}"
+            )
+            for item in band_plan.assignments:
+                auto = auto_radios.get((item.ap, band_plan.band), False)
+                if item.current != item.proposed:
+                    pin = "set fixed " if auto else ""
+                    actions.append(
+                        f"  {label(item.ap)}: {pin}ch {item.current} → {item.proposed} ({item.width_mhz} MHz)"
+                    )
+                elif auto:
+                    actions.append(
+                        f"  {label(item.ap)}: set fixed ch {item.proposed} ({item.width_mhz} MHz) to keep the plan"
+                    )
+            if band_plan.own_conflicts_after:
+                actions.append(f"  {band_plan.own_conflicts_after} own AP overlap(s) remain after this plan.")
+    tx_changes = [
+        rec
+        for ap in report.aps
+        for band in ap.bands
+        for rec in band.recommendations
+        if rec.setting == TX_POWER and rec.is_actionable
+    ]
+    for rec in tx_changes:
+        band_label = f" {rec.band.label}" if rec.band is not None else ""
+        target = _tx_value(rec)
+        if not target.startswith("set to "):
+            target = f"set to {target}"
+        actions.append(f"{label(rec.subject)}{band_label} TX: {target}")
+    for ap in report.aps:
+        for band in ap.bands:
+            for rec in band.recommendations:
+                if rec.setting == MIN_RSSI and rec.is_actionable:
+                    actions.append(f"{label(rec.subject)} {band.band.label} Minimum RSSI: {_min_rssi_value(rec)}")
+    for evaluation in report.compliance.evaluations:
+        for check in evaluation.checks:
+            if check.status is not CheckStatus.FAILED or check.deferred_by is not None:
+                continue
+            actual = f" (current {safe_text(check.actual, 48)})" if check.actual is not None else ""
+            expected = check.expected or check.detail or "review with --details"
+            actions.append(
+                f"WLAN {name(evaluation.wlan)} · {check_label(check.code)}: {safe_text(expected, 80)}{actual}"
+            )
+    if changed_bands:
+        actions.append("Re-run after channel changes before setting power or roaming thresholds on those bands.")
+    if tx_changes:
+        actions.append("Re-run after TX changes before setting dependent roaming thresholds.")
+    return actions
+
+
+_SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.ADVISORY: 2, Severity.INFO: 3}
+
+
+def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[str]:
+    coverage: dict[tuple[Band | None, tuple[str, str]], Severity] = {}
+    overlap: dict[tuple[Band | None, tuple[str, str]], Severity] = {}
+    reuse: dict[Band, Severity] = {}
+    other: list[Finding] = []
+    for finding in report.findings:
+        if finding.severity not in (Severity.ADVISORY, Severity.WARNING, Severity.ERROR):
+            continue
+        if finding.code == "neighbours_asymmetric":
+            continue
+        if finding.code in ("coverage_gap", "cochannel_heard", "channel_overlap") and finding.peers:
+            target = coverage if finding.code == "coverage_gap" else overlap
+            for peer in finding.peers:
+                key = (finding.band, (min(finding.subject, peer), max(finding.subject, peer)))
+                if key not in target or _SEVERITY_ORDER[finding.severity] < _SEVERITY_ORDER[target[key]]:
+                    target[key] = finding.severity
+        elif finding.code == "channel_reuse_infeasible" and finding.band is not None:
+            reuse[finding.band] = finding.severity
+        else:
+            other.append(finding)
+    lines: list[str] = ["· Neighbour RF was not evaluated without a scan."] if report.scan.skipped else []
+    if report.extended_channel_plan is not None:
+        unchanged = [
+            plan.band.label
+            for plan in report.extended_channel_plan.bands
+            if plan.status is ChannelPlanStatus.NO_IMPROVEMENT
+        ]
+        if unchanged:
+            lines.append(f"· Channel plan: no measured improvement on {', '.join(unchanged)} at current widths.")
+    for band in Band:
+        pairs = sorted((pair, severity) for (found_band, pair), severity in coverage.items() if found_band is band)
+        if pairs:
+            members = ", ".join(f"{label(a)} / {label(b)}" for (a, b), _ in pairs)
+            mark = SEVERITY_MARK[min((s for _, s in pairs), key=_SEVERITY_ORDER.__getitem__)]
+            lines.append(f"{mark} {band.label} coverage/roaming gaps: {members}; verify with clients.")
+    for band in Band:
+        pairs = sorted((pair, severity) for (found_band, pair), severity in overlap.items() if found_band is band)
+        if pairs:
+            members = ", ".join(f"{label(a)} / {label(b)}" for (a, b), _ in pairs)
+            mark = SEVERITY_MARK[min((s for _, s in pairs), key=_SEVERITY_ORDER.__getitem__)]
+            lines.append(f"{mark} {band.label} channel overlap: {members}.")
+    for band in sorted(reuse, key=lambda value: value.value):
+        lines.append(
+            f"{SEVERITY_MARK[reuse[band]]} {band.label} cannot give every neighbouring AP a distinct channel "
+            "in the current plan."
+        )
+    other.sort(key=lambda finding: _SEVERITY_ORDER[finding.severity])
+    for finding in other[:6]:
+        band_label = f" {finding.band.label}" if finding.band is not None else ""
+        lines.append(
+            f"{SEVERITY_MARK[finding.severity]} {label(finding.subject)}{band_label}: "
+            f"{safe_text(finding.message, LINE_MAX)}"
+        )
+    if len(other) > 6:
+        lines.append(f"· {len(other) - 6} further findings: run with --details.")
+    return lines
+
+
+def _summary_radio(band: BandReport | None) -> str:
+    if band is None:
+        return "—"
+    if band.outcome is BandTxOutcome.OFFLINE:
+        return "offline"
+    channel = f"ch {band.channel}" if band.channel is not None else "ch ?"
+    width = f"/{band.width_mhz}" if band.width_mhz is not None else ""
+    power = f" · TX {band.tx.effective_dbm} dBm" if band.tx.effective_dbm is not None else ""
+    return f"{channel}{width}{power}"
+
+
+def _summary_ap_setup(report: SiteReport, label: Callable[[str], str]) -> list[str]:
+    bands = [band for band in Band if any(item.band is band for ap in report.aps for item in ap.bands)]
+    lines = ["  AP setup (current):"]
+    if not report.aps:
+        return [*lines, "    No access points returned by the controller."]
+    for ap in report.aps:
+        if ap.state is DeviceState.DISCONNECTED:
+            lines.append(f"    {label(ap.name):<24} offline".rstrip())
+            continue
+        radios = {item.band: item for item in ap.bands}
+        values = "  |  ".join(f"{band.label} {_summary_radio(radios.get(band))}" for band in bands)
+        lines.append(f"    {label(ap.name):<24} {values}".rstrip())
+    return lines
+
+
+def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[str]:
+    lines: list[str] = []
+    if report.scan.skipped:
+        lines.append("Neighbour scans skipped; RF recommendations are unavailable.")
+    else:
+        successes = sum(report.scan.successes_by_ap.values())
+        expected = len(report.scan.scanned) * report.scan.passes
+        lines.append(f"Scan: {len(report.scan.scanned)} APs, {successes}/{expected} passes successful.")
+    for ap_name, failures in report.scan.failures_by_ap.items():
+        if failures:
+            kinds = ", ".join(sorted({kind.value for kind in failures}))
+            lines.append(f"Scan failed on {label(ap_name)}: {len(failures)} pass(es) ({kinds}).")
+    for ap_name in report.scan.unknown_names:
+        lines.append(f"Configured neighbour {label(ap_name)} is absent from the controller.")
+    if report.partial_reasons:
+        reasons = ", ".join(r.value.replace("_", " ") for r in report.partial_reasons)
+        lines.append(f"Partial result ({reasons}); the exit code says so.")
+    unevaluated = sorted(
+        {check_label(c.code) for c in report.checks if c.status in (CheckStatus.INCOMPLETE, CheckStatus.NOT_EVALUABLE)}
+    )
+    if unevaluated:
+        lines.append(f"WLAN checks that could not be evaluated: {', '.join(unevaluated)}.")
+    if report.field_problems:
+        lines.append(f"{len(report.field_problems)} controller fields could not be used.")
+    if report.unparsable:
+        lines.append(f"{len(report.unparsable)} controller devices could not be evaluated.")
+    asymmetric = sum(1 for finding in report.site_findings if finding.code == "neighbours_asymmetric")
+    if asymmetric:
+        lines.append(f"{asymmetric} neighbour links are configured in one direction; both are evaluated.")
+    if report.extended_channel_plan is not None:
+        gaps = {
+            gap for plan in report.extended_channel_plan.bands for gap in plan.data_gaps if gap != BEACON_EVIDENCE_GAP
+        }
+        lines.extend(safe_text(gap, LINE_MAX) for gap in sorted(gaps))
+        unavailable: dict[str, list[str]] = {}
+        for plan in report.extended_channel_plan.bands:
+            if plan.status is ChannelPlanStatus.UNAVAILABLE:
+                unavailable.setdefault(plan.reason or "unknown reason", []).append(plan.band.label)
+        lines.extend(
+            f"Channel plan unavailable ({', '.join(bands)}): {safe_text(reason, LINE_MAX)}"
+            for reason, bands in unavailable.items()
+        )
+    if not report.scan.skipped:
+        lines.append("AP beacon readings do not establish client roaming or channel airtime.")
+    return lines
+
+
+def render_summary(report: SiteReport, width: int | None = WIDTH) -> str:
+    """A short decision view of the same structured report used by the complete text and JSON views."""
+    label = _Labels(report)
+    actions = _summary_actions(report, label)
+    findings = _summary_findings(report, label)
+    lines: list[str] = [
+        "",
+        f"  Site {name(report.site_id)} ({name(report.site_name)}) · {len(report.aps)} APs · "
+        f"{report.captured_at.isoformat(timespec='minutes')}",
+        "",
+        "  Apply now:",
+    ]
+    if actions:
+        lines.extend(f"    {action}" for action in actions)
+    else:
+        lines.append("    No safe configuration changes recommended.")
+    lines += ["", "  WiFi assessment:"]
+    if findings:
+        lines.extend(f"    {finding}" for finding in findings)
+    else:
+        empty_result = (
+            "No RF findings in available data; see Data quality." if report.partial else "No actionable RF findings."
+        )
+        lines.append(f"    {empty_result}")
+    lines += ["", *_summary_ap_setup(report, label), "", "  Data quality:"]
+    lines.extend(f"    {item}" for item in _summary_evidence(report, label))
+    lines += ["", "  Full evidence: run with --details.", ""]
+    if width is None:
+        return "\n".join(lines) + "\n"
+    return "\n".join(_fold(line, width) for line in lines) + "\n"
 
 
 def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
@@ -472,11 +959,13 @@ def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
         lines.append(_finding_line(finding, "  ", with_subject=True))
     if report.site_findings:
         lines.append("")
+    lines += _ap_setup(report)
     lines += _wlans(report)
     for ap in report.aps:
         lines += _ap(ap)
     lines += _groups(report)
     lines += _scan(report)
+    lines += _channel_plan(report)
     if report.unparsable:
         for device in report.unparsable:
             label = safe_text(device.name) if device.name is not None else (device.mac or "unknown device")

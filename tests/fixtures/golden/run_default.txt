@@ -61,8 +61,8 @@
           neighbour, fix placement
         AP-3: no reading of neighbour AP-4 (not sighted)
         AP-4: no reading of neighbour AP-3 (not sighted)
-        Note: 4 pending transmit-power change(s) on this site; apply those first and re-run; the
-          threshold follows the effective power
+        Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN; apply
+          those first and re-run; the threshold follows the effective power
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Standard)
@@ -114,6 +114,7 @@
                                the demonstrated power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   · airtime: utilisation 4 %, self rx/tx 0/0 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -75 dBm), 0 on an overlapping channel
@@ -137,6 +138,7 @@
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -70 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   · airtime: utilisation 12 %, self rx/tx 1/1 %, retries 10.9 %, 3 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
@@ -176,6 +178,7 @@
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   · airtime: utilisation 30 %, self rx/tx 0/3 %, retries 0 %, 0 client(s)
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
@@ -214,6 +217,7 @@
                                power is unverified
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   · airtime: utilisation 11 %, self rx/tx 0/0 %, retries 20.8 %, 7 client(s)
 

@@ -62,6 +62,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
 )
 from unifiwifioptimizer.domain.errors import SchemaError
 from unifiwifioptimizer.domain.models import (
+    SETTINGS_ENDPOINT,
     SITE_ID_RE,
     SSH_USER_RE,
     AccessPoint,
@@ -107,7 +108,6 @@ SETTING_KEYS = frozenset({"radio_ai", "country", "connectivity", "mgmt"})
 DEVICES_ENDPOINT = "stat/device"
 WLANS_ENDPOINT = "rest/wlanconf"
 AP_GROUPS_ENDPOINT = "v2/apgroups"
-SETTINGS_ENDPOINT = "rest/setting"
 CLIENTS_ENDPOINT = "stat/sta"
 SITES_ENDPOINT = "self/sites"
 # The controller's device `state` is a small enumeration; anything outside stays an unread field.
@@ -432,10 +432,16 @@ def parse_ap_groups(payload: Json, observe: Observer | None = None) -> ParsedLis
 
 def blacklist_entry(entry: Fields) -> tuple[Band, int, int] | None:
     radio, channel, width = entry.raw("radio"), entry.raw("channel"), entry.raw("channel_width")
-    if not (isinstance(radio, str) and radio in RADIO_BANDS and isinstance(channel, str) and isinstance(width, str)):
+    if not (isinstance(radio, str) and radio in RADIO_BANDS):
         return None
-    channel_number, width_mhz = small_int(channel), small_int(width)
-    if channel_number is None or channel_number not in CHANNEL_RANGE or width_mhz not in WIDTHS_MHZ:
+    channel_number = small_int(channel) if isinstance(channel, str) else channel
+    width_mhz = width_value(width)
+    if (
+        isinstance(channel_number, bool)
+        or not isinstance(channel_number, int)
+        or channel_number not in CHANNEL_RANGE
+        or width_mhz is None
+    ):
         return None
     return RADIO_BANDS[radio], channel_number, width_mhz
 

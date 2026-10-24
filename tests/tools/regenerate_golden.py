@@ -5,12 +5,13 @@ renderers, then review the diff of tests/fixtures/golden/ like any other change.
 """
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from tests.unit.analysis.builders import golden_input
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.report.json import render_json
-from unifiwifioptimizer.report.text import render_report
+from unifiwifioptimizer.report.text import render_report, render_summary
 
 GOLDEN = Path(__file__).parents[1] / "fixtures" / "golden"
 
@@ -20,7 +21,10 @@ def main() -> int:
     GOLDEN.mkdir(exist_ok=True)
     (GOLDEN / "run_default.txt").write_text(render_report(report), encoding="utf-8")
     (GOLDEN / "run_default.json").write_text(render_json([report]), encoding="utf-8")
-    print(f"wrote {GOLDEN / 'run_default.txt'} and {GOLDEN / 'run_default.json'}")
+    (GOLDEN / "run_summary.txt").write_text(render_summary(report), encoding="utf-8")
+    extended = analyze_site(replace(golden_input(), extended=True))
+    (GOLDEN / "run_summary_extended.txt").write_text(render_summary(extended), encoding="utf-8")
+    print(f"wrote the four golden files in {GOLDEN}")
     return 0
 
 

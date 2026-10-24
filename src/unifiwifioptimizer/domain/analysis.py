@@ -6,6 +6,11 @@ compute them (the report is data; `rf` and `analysis` import this module, never 
 from enum import StrEnum
 
 
+class ChannelPlanMethod(StrEnum):
+    EXACT = "exact"
+    HEURISTIC = "heuristic"
+
+
 class ReadingSource(StrEnum):
     """`MEASURED`: the peer's scan heard this access point. `RECIPROCITY`: the peer did not, but this access
     point heard the peer, and the reverse reading is predicted from the power difference (same path loss in

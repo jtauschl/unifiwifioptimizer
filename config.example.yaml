@@ -59,7 +59,10 @@ sites:
       YOUR_AP2: [YOUR_AP1, YOUR_AP3]
       YOUR_AP3: [YOUR_AP2]
 
-# RF model tunables, shared by all sites. Every key is optional; the values shown are the defaults.
+# RF model tunables, shared by all sites. Every key is optional; the values shown in the block are the defaults.
+# One key has no default and is not part of the block: an assumed client transmit power for 5 GHz radios whose
+# block lies wholly in channels 100..140 (add it under `rf:`; everywhere else client_tx_dbm applies):
+#   client_tx_dbm_5g_upper: 20 # example value, 0..30
 # rf:
 #   noise_floor_dbm: -92      # receiver noise floor, -105..-80
 #   required_snr_db: 25       # SNR at the cell edge, 10..40

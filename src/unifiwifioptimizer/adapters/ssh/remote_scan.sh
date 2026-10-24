@@ -9,6 +9,7 @@
 #   ===2GHZ===  STATUS=<ok|no_radio|interface_down|empty|failed> [IFACE=<name>] <filtered iw lines>
 #   ===5GHZ===  same
 #   ===META===  MODEL_NAME=… DFS_CAC_5G=<active|ready|unknown> WATCHDOG=<timeout|watcher>
+#   ===POWER5G=== STATUS=<ok|unknown> [PHY_INDEX=N CURRENT_FREQ_MHZ=N <bounded iw frequency lines>]
 # No file is written anywhere on the access point; everything lives in shell variables.
 
 SCAN_ATTEMPTS="${SCAN_ATTEMPTS:-1}"
@@ -281,6 +282,50 @@ model_name() {
   printf '%s\n' "$_model" | tr '\t\r\n' '   ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//'
 }
 
+# Read only the PHY that actually serves an UP 5 GHz AP interface. Some devices expose another PHY with
+# a different regulatory table; a conflicting AP interface or an unreported current frequency is unknown.
+serving_power_5g() {
+  _serving_phy=""
+  _serving_freq=""
+  for _iface in $(list_ifaces); do
+    [ "$(iface_type "$_iface")" = "AP" ] || continue
+    iface_is_up "$_iface" || continue
+    _freq=$(iface_freq "$_iface")
+    if [ -z "$_freq" ]; then
+      echo "STATUS=unknown"
+      return 0
+    fi
+    [ "$_freq" -gt 5000 ] && [ "$_freq" -lt 5900 ] || continue
+    _wiphy=$(iface_wiphy "$_iface")
+    case "$_wiphy" in '' | *[!0-9]*)
+      echo "STATUS=unknown"
+      return 0
+      ;;
+    esac
+    if [ -n "$_serving_phy" ] && { [ "$_wiphy" != "$_serving_phy" ] || [ "$_freq" != "$_serving_freq" ]; }; then
+      echo "STATUS=unknown"
+      return 0
+    fi
+    _serving_phy="$_wiphy"
+    _serving_freq="$_freq"
+  done
+  if [ -z "$_serving_phy" ]; then
+    echo "STATUS=unknown"
+    return 0
+  fi
+  if ! _limits=$(phy_info "$_serving_phy" | awk '$1 == "*" && $2 + 0 > 5000 && $2 + 0 < 5900 && /dBm/ { print; n++; if (n > 64) exit 1 }'); then
+    echo "STATUS=unknown"
+    return 0
+  fi
+  if [ -z "$_limits" ]; then
+    echo "STATUS=unknown"
+    return 0
+  fi
+  echo "STATUS=ok"
+  printf 'PHY_INDEX=%s\nCURRENT_FREQ_MHZ=%s\n' "$_serving_phy" "$_serving_freq"
+  printf '%s\n' "$_limits"
+}
+
 echo "===2GHZ==="
 scan_band 2g
 restore_toggled
@@ -291,3 +336,5 @@ echo "===META==="
 printf 'MODEL_NAME=%s\n' "$(model_name)"
 printf 'DFS_CAC_5G=%s\n' "$(dfs_cac_state_5g)"
 printf 'WATCHDOG=%s\n' "$WATCHDOG"
+echo "===POWER5G==="
+serving_power_5g

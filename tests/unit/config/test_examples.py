@@ -66,6 +66,7 @@ DOCUMENTED_RF = {
     "noise_floor_dbm": (-105, -80),
     "required_snr_db": (10, 40),
     "client_tx_dbm": (0, 30),
+    "client_tx_dbm_5g_upper": (0, 30),
     "min_rssi_offset_db": (0, 30),
     "roam_offset_db": (0, 30),
     "roam_margin_db": (0, 30),

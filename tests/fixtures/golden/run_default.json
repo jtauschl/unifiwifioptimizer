@@ -154,6 +154,7 @@
                   "code": "min_rssi",
                   "current": null,
                   "current_mode": null,
+                  "deferred_by": "tx_change",
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
@@ -261,6 +262,7 @@
                   "code": "min_rssi",
                   "current": null,
                   "current_mode": null,
+                  "deferred_by": "tx_change",
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
@@ -463,6 +465,7 @@
                   "code": "min_rssi",
                   "current": null,
                   "current_mode": null,
+                  "deferred_by": "tx_change",
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
@@ -650,6 +653,7 @@
                   "code": "min_rssi",
                   "current": null,
                   "current_mode": null,
+                  "deferred_by": "tx_change",
                   "derived_dbm": null,
                   "kind": "conditional",
                   "reason": "disabled; the value to use if enabled",
@@ -1365,6 +1369,7 @@
             "code": "min_rssi",
             "current": null,
             "current_mode": null,
+            "deferred_by": "tx_change",
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
@@ -1391,6 +1396,7 @@
             "code": "min_rssi",
             "current": null,
             "current_mode": null,
+            "deferred_by": "tx_change",
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
@@ -1443,6 +1449,7 @@
             "code": "min_rssi",
             "current": null,
             "current_mode": null,
+            "deferred_by": "tx_change",
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
@@ -1495,6 +1502,7 @@
             "code": "min_rssi",
             "current": null,
             "current_mode": null,
+            "deferred_by": "tx_change",
             "derived_dbm": null,
             "kind": "conditional",
             "reason": "disabled; the value to use if enabled",
@@ -1529,7 +1537,8 @@
             "subject": "AP-4",
             "unverified_headroom": false
           }
-        ]
+        ],
+        "waiting_items": 0
       },
       "environment": {
         "delta_db": 6.21,
@@ -1694,7 +1703,7 @@
           ],
           "status": "incomplete",
           "threshold_dbm": null,
-          "tx_change_pending": true,
+          "tx_change_pending": false,
           "wlan": "SSID-3"
         },
         {
@@ -1734,7 +1743,7 @@
           ],
           "status": "incomplete",
           "threshold_dbm": null,
-          "tx_change_pending": true,
+          "tx_change_pending": false,
           "wlan": "SSID-4"
         },
         {
@@ -1774,7 +1783,7 @@
           ],
           "status": "incomplete",
           "threshold_dbm": null,
-          "tx_change_pending": true,
+          "tx_change_pending": false,
           "wlan": "SSID-5"
         }
       ],

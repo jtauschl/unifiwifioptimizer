@@ -19,6 +19,7 @@ from unifiwifioptimizer.config.schema import Config
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
     ControllerError,
+    ScanError,
     SchemaError,
     TlsError,
     TlsPinMismatchError,
@@ -389,16 +390,39 @@ def run_faked(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_without_scan_prints_the_text_report(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["run", "--no-scan"]) == ExitCode.OK
     captured = capsys.readouterr()
-    assert "Site       default" in captured.out and "neighbour scans skipped" in captured.out
-    assert "Transmit Power" not in captured.out and "WLAN       SSID-1" in captured.out
+    assert "Site default" in captured.out and "Neighbour scans skipped" in captured.out
+    assert "Neighbour RF was not evaluated" in captured.out
+    assert "Apply now:" in captured.out and "AP setup (current):" in captured.out
+    assert "WLAN       SSID-1" not in captured.out
     assert "analysing site default" in captured.err and "scanning" not in captured.err
 
 
+def test_run_details_retains_the_complete_text_report(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["run", "--no-scan", "--details"]) == ExitCode.OK
+    out = capsys.readouterr().out
+    assert "Site       default" in out and "WLAN       SSID-1" in out
+    assert "AP setup (current):" not in out
+
+
 def test_run_json_prints_one_document(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["run", "--no-scan", "--json"]) == ExitCode.OK
+    assert cli.main(["run", "--no-scan", "--json", "--details"]) == ExitCode.OK
     document = json.loads(capsys.readouterr().out)
     assert document["schema_version"] == 1 and [s["site_id"] for s in document["sites"]] == ["default"]
     assert document["sites"][0]["scan"]["skipped"] is True
+
+
+def test_extended_no_scan_prints_unavailable_bands_in_text_and_json(
+    run_faked: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["run", "--extended", "--no-scan"]) == ExitCode.OK
+    text = capsys.readouterr().out
+    assert "Channel plan unavailable (2.4 GHz, 5 GHz)" in text and "neighbour scan was not run" in text
+    assert "Extended channel plan" not in text
+    assert cli.main(["run", "--extended", "--no-scan", "--details"]) == ExitCode.OK
+    assert "Extended channel plan" in capsys.readouterr().out
+    assert cli.main(["run", "--extended", "--no-scan", "--json"]) == ExitCode.OK
+    site = json.loads(capsys.readouterr().out)["sites"][0]
+    assert [band["status"] for band in site["extended_channel_plan"]["bands"]] == ["unavailable", "unavailable"]
 
 
 def test_run_refuses_an_unknown_site_selector(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
@@ -498,3 +522,26 @@ def test_run_exits_7_on_an_old_openssh_before_touching_the_controller_or_the_pas
     )
     assert cli.main(["run"]) == ExitCode.ENVIRONMENT
     assert "OpenSSH 8.3 found; 8.4 or newer is required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [(ScanError("scan broke"), ExitCode.UNEXPECTED_ERROR), (KeyboardInterrupt(), ExitCode.INTERRUPTED)],
+)
+def test_run_ends_the_progress_line_before_any_error_is_printed(
+    run_faked: None, monkeypatch: pytest.MonkeyPatch, raised: BaseException, expected: ExitCode
+) -> None:
+    events: list[str] = []
+
+    class Recorder:
+        def finish(self) -> None:
+            events.append("finish")
+
+    def failing(*args: object, **kwargs: object) -> None:
+        raise raised
+
+    monkeypatch.setattr(cli, "StderrProgress", Recorder)
+    monkeypatch.setattr(cli, "run_analysis", failing)
+    code = cli.main(["run", "--no-scan"])
+    assert events == ["finish"]
+    assert code == expected

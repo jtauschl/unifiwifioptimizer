@@ -7,15 +7,35 @@ from pathlib import Path
 
 import pytest
 
+from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
-from unifiwifioptimizer.domain.analysis import PartialReason, ReadingSource, RoamingCap, WlanRoamingStatus
-from unifiwifioptimizer.domain.models import Band, FieldProblem, MgmtSettings, UnparsableDevice
-from unifiwifioptimizer.domain.report import Recommendation, RecommendationKind, RoamingApDetail, WlanRoamingSummary
+from unifiwifioptimizer.domain.analysis import (
+    ChannelPlanMethod,
+    PartialReason,
+    ReadingSource,
+    RoamingCap,
+    WlanRoamingStatus,
+)
+from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, MgmtSettings, UnparsableDevice
+from unifiwifioptimizer.domain.report import (
+    BandChannelPlan,
+    ChannelAssignment,
+    ChannelPlanStatus,
+    CheckStatus,
+    Deferral,
+    ExtendedChannelPlan,
+    Recommendation,
+    RecommendationKind,
+    RoamingApDetail,
+    SiteReport,
+    WlanRoamingSummary,
+)
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind
 from unifiwifioptimizer.domain.secrets import Secret
 from unifiwifioptimizer.report.json import SCHEMA_VERSION, plain, render_json
 from unifiwifioptimizer.report.safe_text import INVISIBLE_LEADERS, REPORT_MARKS, safe_line_start
-from unifiwifioptimizer.report.text import _fold, _min_rssi_value, render_report
+from unifiwifioptimizer.report.text import _fold, _min_rssi_value, render_report, render_summary
+from unifiwifioptimizer.rf.settings import RfSettings
 
 from ..analysis.builders import ap_named, golden_input, with_ap
 
@@ -30,6 +50,221 @@ def test_the_text_report_matches_the_golden_file() -> None:
     assert render_report(REPORT) == expected
 
 
+def test_the_default_summary_matches_the_golden_file() -> None:
+    expected = (GOLDEN_DIR / "run_summary.txt").read_text(encoding="utf-8")
+    assert render_summary(REPORT) == expected
+
+
+def test_the_extended_summary_matches_the_golden_file() -> None:
+    expected = (GOLDEN_DIR / "run_summary_extended.txt").read_text(encoding="utf-8")
+    assert render_summary(analyze_site(replace(golden_input(), extended=True))) == expected
+
+
+def test_summary_separates_changes_findings_and_current_ap_setup() -> None:
+    text = render_summary(REPORT)
+    assert text.index("Apply now:") < text.index("WiFi assessment:") < text.index("AP setup (current):")
+    assert "AP-1 5 GHz TX:" in text and "AP-2 2.4 GHz TX: set to 10 dBm" in text
+    assert "coverage/roaming gaps:" in text
+    assert "Re-run after TX changes" in text and "Partial result" in text
+    assert "Neighbour AP:" not in text and "Environment" not in text and "Recommendations:" not in text
+
+
+def test_summary_says_no_setting_changes_without_hiding_diagnostic_findings() -> None:
+    aps = tuple(
+        replace(
+            ap,
+            bands=tuple(
+                replace(
+                    band,
+                    recommendations=tuple(replace(rec, kind=RecommendationKind.HELD) for rec in band.recommendations),
+                )
+                for band in ap.bands
+            ),
+        )
+        for ap in REPORT.aps
+    )
+    evaluations = tuple(
+        replace(evaluation, checks=tuple(replace(check, status=CheckStatus.PASSED) for check in evaluation.checks))
+        for evaluation in REPORT.compliance.evaluations
+    )
+    report = replace(REPORT, aps=aps, compliance=replace(REPORT.compliance, evaluations=evaluations))
+    text = render_summary(report)
+    assert "No safe configuration changes recommended." in text and "coverage/roaming gaps:" in text
+    assert "No actionable RF findings." not in text
+    assert len(text.splitlines()) <= 30
+    assert "No setting changes recommended; RF findings above still need review." in render_report(report)
+
+
+def test_summary_does_not_call_a_partial_result_clean() -> None:
+    aps = tuple(
+        replace(ap, findings=(), bands=tuple(replace(band, findings=()) for band in ap.bands)) for ap in REPORT.aps
+    )
+    evaluations = tuple(replace(item, findings=()) for item in REPORT.compliance.evaluations)
+    report = replace(
+        REPORT,
+        aps=aps,
+        site_findings=(),
+        compliance=replace(REPORT.compliance, findings=(), evaluations=evaluations),
+    )
+    assert report.partial
+    assert "No RF findings in available data; see Data quality." in render_summary(report)
+
+
+def test_summary_names_scan_failures_and_missing_configured_aps() -> None:
+    scan = replace(
+        REPORT.scan,
+        failures_by_ap={"AP-2": (ScanFailureKind.TIMEOUT, ScanFailureKind.TIMEOUT)},
+        unknown_names=("AP-missing",),
+    )
+    text = render_summary(replace(REPORT, scan=scan))
+    assert "Scan failed on AP-2: 2 pass(es) (timeout)." in text
+    assert "Configured neighbour AP-missing is absent from the controller." in text
+
+
+def test_summary_keeps_independent_roaming_actions_after_a_24ghz_tx_change() -> None:
+    aps = tuple(
+        replace(
+            ap,
+            bands=tuple(
+                replace(
+                    band,
+                    recommendations=tuple(
+                        replace(rec, kind=RecommendationKind.HELD, deferred_by=None)
+                        if rec.setting == "tx_power" and band.band is Band.GHZ_5
+                        else replace(rec, kind=RecommendationKind.CHANGE, deferred_by=None)
+                        if rec.setting == "min_rssi" and band.band is Band.GHZ_5 and ap.name == "AP-1"
+                        else rec
+                        for rec in band.recommendations
+                    ),
+                )
+                for band in ap.bands
+            ),
+        )
+        for ap in REPORT.aps
+    )
+    evaluations = tuple(
+        replace(
+            item,
+            checks=tuple(
+                replace(check, status=CheckStatus.FAILED) if check.code == "roaming_assistant" else check
+                for check in item.checks
+            ),
+        )
+        for item in REPORT.compliance.evaluations
+    )
+    # The 2.4 GHz power changes of AP-2..AP-4 stay; no 5 GHz power changes, so nothing in 5 GHz waits.
+    marked = _with_plan(None, replace(REPORT, aps=aps, compliance=replace(REPORT.compliance, evaluations=evaluations)))
+    assert not any(
+        rec.deferred_by for ap in marked.aps for b in ap.bands if b.band is Band.GHZ_5 for rec in b.recommendations
+    )
+    assert not any(check.deferred_by for check in marked.checks)
+    text = render_summary(marked)
+    assert "AP-1 5 GHz Minimum RSSI:" in text
+    assert "WLAN SSID-1 · Roaming Assistant:" in text
+
+
+def _plan(*assignments: ChannelAssignment, after: int = 0) -> ExtendedChannelPlan:
+    return ExtendedChannelPlan(
+        bands=(
+            BandChannelPlan(
+                band=Band.GHZ_5,
+                status=ChannelPlanStatus.RECOMMENDED,
+                reason=None,
+                method=ChannelPlanMethod.EXACT,
+                assignments=assignments,
+                own_conflicts_before=1,
+                own_conflicts_after=after,
+                own_pressure_before=10,
+                own_pressure_after=0,
+                foreign_overlaps_before=2,
+                foreign_overlaps_after=2,
+                data_gaps=(),
+            ),
+        )
+    )
+
+
+def _with_plan(plan: ExtendedChannelPlan | None, report: SiteReport = REPORT) -> SiteReport:
+    deferred = apply_deferrals(
+        report.aps,
+        report.compliance,
+        {summary.wlan: summary.broadcasting for summary in report.roaming},
+        {evaluation.wlan for evaluation in report.compliance.evaluations},
+        plan,
+    )
+    return replace(report, aps=deferred.aps, compliance=deferred.compliance, extended_channel_plan=plan)
+
+
+def _apply_now(report: SiteReport) -> list[str]:
+    return render_summary(report, width=None).split("  Apply now:\n")[1].split("\n\n")[0].splitlines()
+
+
+def test_summary_labels_the_candidate_plan_pins_auto_radios_and_defers_power_on_a_changed_band() -> None:
+    plan = _plan(
+        ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80),
+        ChannelAssignment(ap="AP-2", current=60, proposed=60, width_mhz=80),
+    )
+    lines = _apply_now(_with_plan(plan))
+    # AP-1 (5 GHz, Auto) must be pinned or the controller may move it again; AP-2 stays where it is and is silent;
+    # no 5 GHz TX action of the moved band is offered.
+    assert lines[:2] == [
+        "    Candidate channel plan, 5 GHz (exact search): own AP overlaps 1 → 0, signal proxy 10 → 0",
+        "      AP-1: set fixed ch 44 → 100 (80 MHz)",
+    ]
+    assert not any("AP-1 5 GHz TX" in line or "AP-2: ch" in line for line in lines)
+    assert "    Re-run after channel changes before setting power or roaming thresholds on those bands." in lines
+
+
+def test_summary_pins_an_auto_radio_that_keeps_its_channel_and_names_remaining_overlaps() -> None:
+    plan = _plan(
+        ChannelAssignment(ap="AP-1", current=44, proposed=44, width_mhz=80),
+        ChannelAssignment(ap="AP-2", current=60, proposed=100, width_mhz=80),
+        after=2,
+    )
+    lines = _apply_now(_with_plan(plan))
+    assert lines[1:4] == [
+        "      AP-1: set fixed ch 44 (80 MHz) to keep the plan",
+        "      AP-2: ch 60 → 100 (80 MHz)",
+        "      2 own AP overlap(s) remain after this plan.",
+    ]
+
+
+def test_summary_tells_access_points_apart_when_their_shortened_names_collide() -> None:
+    long_a, long_b = "Building-A-Floor-2-Corridor-East", "Building-A-Floor-2-Corridor-West"
+    renamed = tuple(
+        replace(ap, name=long_name, mac=f"02:00:00:00:{index:02x}:{index:02x}")
+        for index, (ap, long_name) in enumerate(zip(REPORT.aps[:2], (long_a, long_b), strict=True), start=1)
+    )
+    text = render_summary(replace(REPORT, aps=(*renamed, *REPORT.aps[2:])), width=None)
+    assert "Building-A-Floor-2-Corr… [01:01]" in text and "Building-A-Floor-2-Corr… [02:02]" in text
+    assert "    AP-3                     2.4 GHz" in text and "AP-3 [" not in text
+
+
+def test_summary_marks_severity_and_says_what_could_not_be_evaluated() -> None:
+    text = render_summary(REPORT, width=None)
+    assert "* 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients." in text
+    assert "WLAN checks that could not be evaluated: Roaming Assistant." in text
+    assert "Partial result (band empty); the exit code says so." in text
+
+
+def test_summary_shows_an_offline_access_point_as_offline() -> None:
+    offline = replace(REPORT.aps[0], state=DeviceState.DISCONNECTED, bands=())
+    table = render_summary(replace(REPORT, aps=(offline, *REPORT.aps[1:])), width=None)
+    assert "    AP-1                     offline" in table.splitlines()
+
+
+def test_the_footer_counts_only_advice_that_can_be_applied_now() -> None:
+    plan = _plan(ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80))
+    moved = _with_plan(plan)
+    text = render_report(moved, width=None)
+    waiting = [r for r in moved.recommendations if r.is_change and r.deferred_by is not None]
+    # Golden site: four power changes, one of them on the moved 5 GHz band; the channel move waits for nothing.
+    assert [r.subject for r in waiting] == ["AP-1"] and waiting[0].setting == "tx_power"
+    assert "3 pending setting change(s) (3 transmit power) and 5 failed WLAN check(s)." in text
+    assert "1 further item(s) wait for the changes above" in text
+    assert moved.pending_tx_changes == 3 and moved.waiting_items == 1
+
+
 def test_the_json_report_matches_the_golden_file_and_pins_the_schema_version() -> None:
     expected = (GOLDEN_DIR / "run_default.json").read_text(encoding="utf-8")
     text = render_json([REPORT])
@@ -39,6 +274,22 @@ def test_the_json_report_matches_the_golden_file_and_pins_the_schema_version() -
     site = document["sites"][0]
     assert site["derived"]["pending_tx_changes"] == REPORT.pending_tx_changes
     assert site["aps"][0]["bands"][0]["outcome"] == "in_corridor" and site["scan"]["passes"] == 3
+
+
+def test_configured_upper_client_tx_is_labelled_per_ap_in_text_and_json() -> None:
+    inp = replace(golden_input(), rf=RfSettings(client_tx_dbm=18, client_tx_dbm_5g_upper=20))
+    report = analyze_site(inp)
+    encoded = json.loads(render_json([report]))["sites"][0]
+    assert encoded["rf"]["client_tx_dbm"] == 18 and encoded["rf"]["client_tx_dbm_5g_upper"] == 20
+    bands = {ap["name"]: {band["band"]: band for band in ap["bands"]} for ap in encoded["aps"]}
+    assert bands["AP-1"]["5g"]["assumed_client_tx_dbm"] == 18
+    assert bands["AP-3"]["5g"]["assumed_client_tx_dbm"] == 20
+    assert bands["AP-3"]["2g"]["assumed_client_tx_dbm"] == 18
+    assert all(detail["assumed_client_tx_dbm"] in (18, 20) for wlan in encoded["roaming"] for detail in wlan["per_ap"])
+    text = render_report(report, width=None)
+    assert "Assumed client TX:" in text and "5 GHz blocks within ch 100-140 20 dBm" in text
+    assert "assumed client TX 18 dBm" in text and "assumed client TX 20 dBm" in text
+    assert "`rf.client_tx_dbm_5g_upper` by channel" in text
 
 
 @pytest.mark.security("T12")
@@ -57,6 +308,8 @@ def test_external_names_are_sanitised_per_token_not_truncated_as_a_line() -> Non
     # A composed line keeps its tail: the receiver-offset line of AP-1 ends with the sanitised peer in brackets.
     offset_lines = [line for line in text.splitlines() if "disagree by" in line]
     assert any(f"[{safe}" in line and line.endswith("]") for line in offset_lines)
+    summary = render_summary(report, width=None)
+    assert RLO not in summary and "\x1b" not in summary and safe in summary
 
 
 @pytest.mark.security("T11")
@@ -76,7 +329,9 @@ def test_no_secret_plaintext_reaches_either_output() -> None:
         ssh_enabled=True, ssh_password_auth_enabled=True, ssh_user="admin", ssh_password=Secret("s3cr3t-pl41n")
     )
     report = analyze_site(replace(inp, snapshot=replace(inp.snapshot, mgmt=mgmt)))
-    assert "s3cr3t-pl41n" not in render_report(report) and "s3cr3t-pl41n" not in render_json([report])
+    assert "s3cr3t-pl41n" not in render_report(report)
+    assert "s3cr3t-pl41n" not in render_summary(report)
+    assert "s3cr3t-pl41n" not in render_json([report])
 
 
 def test_one_json_document_for_several_sites() -> None:
@@ -86,20 +341,25 @@ def test_one_json_document_for_several_sites() -> None:
 
 def test_the_pending_tx_note_appears_on_a_roaming_check_when_a_5_ghz_change_is_pending() -> None:
     text = render_report(REPORT)
+    # Four power changes on the site, one of them in 5 GHz: only that one moves the threshold.
     assert REPORT.pending_tx_changes == 4
-    assert f"Note: {REPORT.pending_tx_changes} pending transmit-power change(s)" in text
+    assert text.count("Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN") == 1
 
 
 def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
     # The incomplete roaming verdict is printed, and the note follows it.
     text = render_report(REPORT)
-    assert "Roaming Assistant" in text and "threshold not available" in text and "pending transmit-power change" in text
+    assert (
+        "Roaming Assistant" in text
+        and "threshold not available" in text
+        and "pending 5 GHz transmit-power change" in text
+    )
 
 
 def test_tx_pending_note_absent_when_no_pending() -> None:
     # Without a pending 5 GHz change the note does not appear.
     report = analyze_site(golden_input(skip_scan=True))
-    assert report.pending_tx_changes == 0 and "pending transmit-power change" not in render_report(report)
+    assert report.pending_tx_changes == 0 and "pending 5 GHz transmit-power change" not in render_report(report)
 
 
 def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
@@ -323,3 +583,49 @@ def test_a_min_rssi_moved_into_the_controller_range_names_the_derived_value() ->
         "(-90..-67 dBm)"
     )
     assert _min_rssi_value(replace(conditional, derived_dbm=None)) == "disabled (if enabled: -67 dBm on the uplink)"
+
+
+def test_the_json_report_carries_the_same_deferrals_and_counts_as_the_text() -> None:
+    moved = _with_plan(_plan(ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80)))
+    site = json.loads(render_json([moved]))["sites"][0]
+    marked = {
+        (r["subject"], r["band"], r["code"]): r["deferred_by"]
+        for r in site["derived"]["recommendations"]
+        if r.get("deferred_by") is not None
+    }
+    # Every 5 GHz verdict of the moved band waits for the plan; the 2.4 GHz Minimum RSSI of the APs that change
+    # their 2.4 GHz power waits for that power.
+    assert marked == {
+        **{
+            (ap, "5g", code): "channel_plan"
+            for ap in ("AP-1", "AP-2", "AP-3", "AP-4")
+            for code in ("tx_power", "min_rssi")
+        },
+        **{(ap, "2g", "min_rssi"): "tx_change" for ap in ("AP-2", "AP-3", "AP-4")},
+    }
+    assert site["derived"]["pending_tx_changes"] == 3 and site["derived"]["waiting_items"] == 1
+    assert "3 pending setting change(s) (3 transmit power)" in render_report(moved, width=None)
+
+
+def test_the_detailed_text_marks_deferred_advice_as_provisional_and_offers_no_ui_path_for_it() -> None:
+    plan = _plan(ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80))
+    evaluations = tuple(
+        replace(
+            evaluation,
+            checks=tuple(
+                replace(check, status=CheckStatus.FAILED) if check.code == "roaming_assistant" else check
+                for check in evaluation.checks
+            ),
+        )
+        for evaluation in REPORT.compliance.evaluations
+    )
+    moved = _with_plan(plan, replace(REPORT, compliance=replace(REPORT.compliance, evaluations=evaluations)))
+    deferred = [r for r in moved.recommendations if r.deferred_by is not None]
+    deferred_checks = [c for c in moved.checks if c.deferred_by is not None]
+    assert deferred and deferred_checks
+    lines = render_report(moved, width=None).splitlines()
+    marks = [i for i, line in enumerate(lines) if "provisional: re-run after the channel changes" in line]
+    assert len(marks) == len([r for r in deferred if r.deferred_by is Deferral.CHANNEL_PLAN]) + len(
+        [c for c in deferred_checks if c.deferred_by is Deferral.CHANNEL_PLAN]
+    )
+    assert all(not lines[i + 1].lstrip().startswith("→") for i in marks)

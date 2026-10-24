@@ -107,6 +107,26 @@ def candidate_set(band: Band, channel_ai: ChannelAiSettings | None) -> frozenset
     return CLEAN_2G_CHANNELS if band is Band.GHZ_2 else None
 
 
+def channel_blacklisted(band: Band, channel: int, width_mhz: int, ai: ChannelAiSettings | None) -> bool:
+    if ai is None:
+        return False
+    if band is Band.GHZ_2:
+        return (band, channel, width_mhz) in ai.blacklist
+    try:
+        block = channel_block_5g(channel, width_mhz)
+    except ValueError:
+        return False
+    for listed_band, listed_channel, listed_width in ai.blacklist:
+        if listed_band is not band:
+            continue
+        try:
+            if block.overlaps(channel_block_5g(listed_channel, listed_width)):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def colour_count(band: Band, candidates: frozenset[int], width_mhz: int) -> int:
     """How many mutually non-overlapping channels of `width_mhz` the candidate set offers."""
     if band is Band.GHZ_2:
@@ -199,7 +219,7 @@ def analyse_channels(
             )
         if ai_on and ap.mac in excluded:
             findings.append(_finding(Severity.INFO, "channel_ai_excluded", name, band, "excluded from Channel AI"))
-        if channel_ai is not None and (band, geometry.channel, geometry.width_mhz) in channel_ai.blacklist:
+        if channel_blacklisted(band, geometry.channel, geometry.width_mhz, channel_ai):
             findings.append(
                 _finding(
                     Severity.ADVISORY,

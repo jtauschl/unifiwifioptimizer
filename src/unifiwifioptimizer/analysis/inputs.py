@@ -26,3 +26,4 @@ class SiteAnalysisInput:
     scan_passes: int
     wlan_profiles: Mapping[str, str]
     profiles: ProfileSet
+    extended: bool = False
