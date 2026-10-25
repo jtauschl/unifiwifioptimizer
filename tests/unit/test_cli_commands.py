@@ -1,6 +1,8 @@
 """The read-only subcommands through `main`, with the configuration and the controller faked."""
 
 import argparse
+import contextlib
+import io
 import json
 import subprocess
 from collections.abc import Iterator
@@ -545,3 +547,34 @@ def test_run_ends_the_progress_line_before_any_error_is_printed(
     code = cli.main(["run", "--no-scan"])
     assert events == ["finish"]
     assert code == expected
+
+
+class _Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def _run_on_terminal(argv: list[str]) -> str:
+    out = _Terminal()
+    with contextlib.redirect_stdout(out):
+        assert cli.main(argv) == ExitCode.OK
+    return out.getvalue()
+
+
+def test_run_colours_the_marks_on_a_terminal_and_never_in_redirected_output(
+    run_faked: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert "\x1b[31m✗\x1b[0m" in _run_on_terminal(["run", "--no-scan"])
+    assert cli.main(["run", "--no-scan"]) == ExitCode.OK
+    assert "\x1b" not in capsys.readouterr().out
+
+
+def test_run_leaves_the_terminal_output_plain_for_no_color_and_for_json(
+    run_faked: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert "\x1b" not in _run_on_terminal(["run", "--no-scan"])
+    monkeypatch.delenv("NO_COLOR")
+    assert "\x1b" not in _run_on_terminal(["run", "--no-scan", "--json"])

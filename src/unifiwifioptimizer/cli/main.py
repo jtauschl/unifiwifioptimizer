@@ -37,6 +37,7 @@ from unifiwifioptimizer.domain.errors import (
     UwoError,
 )
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
+from unifiwifioptimizer.report.color import colourise, wants_colour
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
 from unifiwifioptimizer.report.skeleton import render_skeleton
@@ -303,8 +304,9 @@ def _run(args: argparse.Namespace) -> ExitCode:
     if args.json:
         print(render_json(result.reports), end="")
     else:
+        paint = colourise if wants_colour(sys.stdout, environ) else str
         for report in result.reports:
-            print(render_report(report) if args.details else render_overview(report), end="")
+            print(paint(render_report(report) if args.details else render_overview(report)), end="")
     return exit_code_for_run(result)
 
 
