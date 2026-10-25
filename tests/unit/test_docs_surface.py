@@ -48,7 +48,7 @@ def test_the_readme_key_table_lists_every_key_the_schema_accepts_and_no_other() 
 ROOT = Path(__file__).resolve().parents[2]
 WALKTHROUGH = ROOT / "docs" / "WALKTHROUGH.md"
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "run_default.txt"
-SUMMARY_GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "run_summary.txt"
+OVERVIEW_GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "run_overview.txt"
 BLOCK = re.compile(r"<!-- source: (?P<source>[\w-]+) -->\n```(?P<lang>\w+)\n(?P<body>.*?)\n```", re.DOTALL)
 ELISION = "[…]"
 WHOLE = {"sites": ["sites"], "site": ["site", "default"], "skeleton": ["config", "default"]}
@@ -104,7 +104,7 @@ def segments_of(body: str) -> list[list[str]]:
     return [segment for segment in segments if segment]
 
 
-EXPECTED_BLOCKS = {"sites": 1, "site": 1, "skeleton": 1, "config": 1, "no-scan": 2, "golden": 5, "summary": 1}
+EXPECTED_BLOCKS = {"sites": 1, "site": 1, "skeleton": 1, "config": 1, "no-scan": 2, "golden": 5, "overview": 1}
 
 
 def test_every_output_block_of_the_walkthrough_carries_a_known_marker_and_is_checked() -> None:
@@ -154,8 +154,8 @@ def test_every_excerpt_of_the_full_run_is_verbatim_golden_output_in_order() -> N
 
 
 def test_the_default_view_in_the_walkthrough_is_the_tools_default_output() -> None:
-    (body,) = [body for source, body in walkthrough_blocks() if source == "summary"]
-    assert body.splitlines() == SUMMARY_GOLDEN.read_text(encoding="utf-8").strip("\n").splitlines()
+    (body,) = [body for source, body in walkthrough_blocks() if source == "overview"]
+    assert body.splitlines() == OVERVIEW_GOLDEN.read_text(encoding="utf-8").strip("\n").splitlines()
 
 
 def command_lines(path: Path) -> list[list[str]]:

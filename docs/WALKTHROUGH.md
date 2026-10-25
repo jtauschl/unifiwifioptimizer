@@ -149,7 +149,7 @@ sites:
 
 ## 4. Run the Controller-Side Analysis
 
-`run --no-scan` needs no SSH access: it checks the WLAN settings and shows the access points as the controller reports them. The examples below use `--details` to show the complete evidence; the default text output is a concise decision view.
+`run --no-scan` needs no SSH access: it checks the WLAN settings and shows the access points as the controller reports them. The examples below use `--details` to show the complete evidence; the default text output lists the WLANs and the access points as the controller UI does.
 
 ```bash
 unifiwifioptimizer run --no-scan --details
@@ -205,38 +205,132 @@ Then run the full analysis. Scans run one access point at a time and take a whil
 unifiwifioptimizer run
 ```
 
-The default output is a concise decision view: what to apply now, what the scan suggests, the current setup and the data quality:
+The default output lists the WLANs and the access points the way the controller UI does, then the RF notes and the data quality:
 
-<!-- source: summary -->
+<!-- source: overview -->
 ```text
-  Site default (Site-1) · 4 APs · 2026-10-12T20:00+00:00
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Site       default  (Site-1), 2026-10-12T20:00+00:00
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Apply now:
-    AP-1 5 GHz TX: set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above the
-      demonstrated power is unverified
-    AP-2 2.4 GHz TX: set to 10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated
-      power is unverified
-    AP-3 2.4 GHz TX: set to 17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated
-      power is unverified
-    AP-4 2.4 GHz TX: set to 17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated
-      power is unverified
-    WLAN SSID-1 · Minimum Data Rate 5 GHz: 12 Mbps (current 24 Mbps)
-    WLAN SSID-1 · Multicast to Unicast: Enabled (current Disabled)
-    WLAN SSID-1 · DTIM Mode: Default (current Custom)
-    WLAN SSID-2 · WLAN Enabled: Enabled (current Disabled)
-    WLAN SSID-3 · WLAN Enabled: Enabled (current Disabled)
-    Re-run after TX changes before setting dependent roaming thresholds.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-1  (profile Throughput)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  WiFi assessment:
+    ✓ WiFi Band                          2.4 GHz, 5 GHz
+    ✓ Fast Roaming                       Enabled
+    ✓ Minimum Data Rate Mode             Manual
+    ✓ Minimum Data Rate 2.4 GHz          12 Mbps
+    ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
+    ✓ Multicast and Broadcast Blocker    Disabled
+    ✗ Multicast to Unicast               Enabled (currently Disabled)
+    ✓ Proxy ARP                          Enabled
+    ✓ Security Protocol                  WPA2/WPA3
+    ✓ PMF                                Optional
+    ✓ Hide WiFi Name                     Disabled
+    ✓ Client Device Isolation            Disabled
+    ✓ SAE Anti-clogging                  5
+    ✓ SAE Sync Time                      5
+    ✓ MLO                                Disabled
+    ✓ Band Steering                      Enabled
+    ✓ BSS Transition                     Enabled
+    ✓ UAPSD                              Disabled
+    ✗ DTIM Mode                          Default (currently Custom)
+        → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
+    ✓ Group Rekey Interval               3600 s
+    ✓ Show Access Point Name in Beacon   Disabled
+    ✓ 802.11b Support                    Disabled
+    ? Roaming Assistant                  threshold not available without neighbour data
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-2  (profile Standard)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✗ WLAN Enabled                       Enabled (currently Disabled)
+        the WLAN is disabled on the controller
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WLAN       SSID-3  (profile Hotspot)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✗ WLAN Enabled                       Enabled (currently Disabled)
+        the WLAN is disabled on the controller
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-1 (UAL6)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz
+    · Channel Width                      20 MHz
+    · Channel                            6 (auto)
+    ✓ Transmit Power                     17 dBm effective (auto mode), configured 6 dBm is stale
+    · Minimum RSSI                       disabled (if enabled: -81 dBm on the uplink)
+
+  5 GHz
+    · Channel Width                      80 MHz
+    · Channel                            44 (auto)
+    ✗ Transmit Power                     set to Custom, 23 dBm (raise by 3 dB from 20 dBm) —
+                                         headroom above the demonstrated power is unverified
+    · Minimum RSSI                       disabled (if enabled: -78 dBm on the uplink)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-2 (UAPA693)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz
+    · Channel Width                      20 MHz
+    · Channel                            1
+    ✗ Transmit Power                     set to 10 dBm (raise by 4 dB from 6 dBm) — headroom above
+                                         the demonstrated power is unverified
+    · Minimum RSSI                       disabled (if enabled: -70 dBm on the uplink)
+
+  5 GHz
+    · Channel Width                      80 MHz
+    · Channel                            60, DFS
+    - Transmit Power                     18 dBm effective, configured 24 dBm (regulatory cap); no
+                                         change: at the effective maximum
+    · Minimum RSSI                       disabled (if enabled: -76 dBm on the uplink)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-3 (UAL6)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz
+    · Channel Width                      20 MHz
+    · Channel                            6
+    ✗ Transmit Power                     set to 17 dBm (raise by 6 dB from 11 dBm) — headroom above
+                                         the demonstrated power is unverified
+    · Minimum RSSI                       disabled (if enabled: -75 dBm on the uplink)
+
+  5 GHz
+    · Channel Width                      80 MHz
+    · Channel                            104, DFS
+    - Transmit Power                     23 dBm effective; no change: at the effective maximum,
+                                         neighbour unsighted
+    · Minimum RSSI                       disabled (if enabled: -81 dBm on the uplink)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AP         AP-4 (UAPA693)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.4 GHz
+    · Channel Width                      20 MHz
+    · Channel                            11
+    ✗ Transmit Power                     set to 17 dBm (raise by 7 dB from 10 dBm) — headroom above
+                                         the demonstrated power is unverified
+    · Minimum RSSI                       disabled (if enabled: -74 dBm on the uplink)
+
+  5 GHz
+    · Channel Width                      80 MHz
+    · Channel                            40
+    - Transmit Power                     18 dBm effective, configured 24 dBm (regulatory cap); no
+                                         change: at the effective maximum, neighbour unsighted
+    · Minimum RSSI                       disabled (if enabled: -76 dBm on the uplink)
+
+  Notes:
     * 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients.
     * AP-4 2.4 GHz: the scan saw nothing on this band; restart the radio or the access point before
       trusting any conclusion
-
-  AP setup (current):
-    AP-1                     2.4 GHz ch 6/20 · TX 17 dBm  |  5 GHz ch 44/80 · TX 20 dBm
-    AP-2                     2.4 GHz ch 1/20 · TX 6 dBm  |  5 GHz ch 60/80 · TX 18 dBm
-    AP-3                     2.4 GHz ch 6/20 · TX 11 dBm  |  5 GHz ch 104/80 · TX 23 dBm
-    AP-4                     2.4 GHz ch 11/20 · TX 10 dBm  |  5 GHz ch 40/80 · TX 18 dBm
 
   Data quality:
     Scan: 4 APs, 12/12 passes successful.
@@ -245,6 +339,8 @@ The default output is a concise decision view: what to apply now, what the scan 
     3 neighbour links are configured in one direction; both are evaluated.
     AP beacon readings do not establish client roaming or channel airtime.
 
+  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
+    run the tool again.
   Full evidence: run with --details.
 ```
 

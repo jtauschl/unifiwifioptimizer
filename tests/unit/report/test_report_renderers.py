@@ -34,7 +34,8 @@ from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind
 from unifiwifioptimizer.domain.secrets import Secret
 from unifiwifioptimizer.report.json import SCHEMA_VERSION, plain, render_json
 from unifiwifioptimizer.report.safe_text import INVISIBLE_LEADERS, REPORT_MARKS, safe_line_start
-from unifiwifioptimizer.report.text import _fold, _min_rssi_value, render_report, render_summary
+from unifiwifioptimizer.report.text import _fold, _min_rssi_value, render_overview, render_report
+from unifiwifioptimizer.report.ui_paths import HINTED, UI_PATHS, ui_hint
 from unifiwifioptimizer.rf.settings import RfSettings
 
 from ..analysis.builders import ap_named, golden_input, with_ap
@@ -50,26 +51,48 @@ def test_the_text_report_matches_the_golden_file() -> None:
     assert render_report(REPORT) == expected
 
 
-def test_the_default_summary_matches_the_golden_file() -> None:
-    expected = (GOLDEN_DIR / "run_summary.txt").read_text(encoding="utf-8")
-    assert render_summary(REPORT) == expected
+def test_the_default_overview_matches_the_golden_file() -> None:
+    expected = (GOLDEN_DIR / "run_overview.txt").read_text(encoding="utf-8")
+    assert render_overview(REPORT) == expected
 
 
-def test_the_extended_summary_matches_the_golden_file() -> None:
-    expected = (GOLDEN_DIR / "run_summary_extended.txt").read_text(encoding="utf-8")
-    assert render_summary(analyze_site(replace(golden_input(), extended=True))) == expected
+def test_the_extended_overview_matches_the_golden_file() -> None:
+    expected = (GOLDEN_DIR / "run_overview_extended.txt").read_text(encoding="utf-8")
+    assert render_overview(analyze_site(replace(golden_input(), extended=True))) == expected
 
 
-def test_summary_separates_changes_findings_and_current_ap_setup() -> None:
-    text = render_summary(REPORT)
-    assert text.index("Apply now:") < text.index("WiFi assessment:") < text.index("AP setup (current):")
-    assert "AP-1 5 GHz TX:" in text and "AP-2 2.4 GHz TX: set to 10 dBm" in text
-    assert "coverage/roaming gaps:" in text
-    assert "Re-run after TX changes" in text and "Partial result" in text
-    assert "Neighbour AP:" not in text and "Environment" not in text and "Recommendations:" not in text
+def _section(text: str, start: str, end: str) -> list[str]:
+    return text.split(start, 1)[1].split(end, 1)[0].splitlines()
 
 
-def test_summary_says_no_setting_changes_without_hiding_diagnostic_findings() -> None:
+def test_overview_lists_the_wlans_before_the_access_points_and_the_radio_rows_in_ui_order() -> None:
+    text = render_overview(REPORT, width=None)
+    assert text.index("WLAN       SSID-1") < text.index("AP         AP-1") < text.index("Data quality:")
+    rows = [
+        line.split()[1] if line.split()[0] in "·✓✗-" else line.strip() for line in _section(text, "  5 GHz\n", "\n\n")
+    ]
+    assert rows[:4] == ["Channel", "Channel", "Transmit", "Minimum"]
+    assert "Neighbour AP:" not in text and "Recommendations:" not in text and "Environment" not in text
+
+
+def test_overview_names_the_ui_path_only_where_the_setting_is_hard_to_find() -> None:
+    text = render_overview(REPORT, width=None)
+    assert "→ WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period" in text
+    assert "Minimum Data Rate → 5 GHz slider" not in text and "→ AP settings" not in text
+    assert (
+        "Multicast to Unicast" in text
+        and "→ WLAN edit → Advanced → Hi-Capacity Tuning → Multicast to Unicast" not in text
+    )
+    assert "→ WLAN edit" in render_report(REPORT) and "→ AP settings" in render_report(REPORT)
+
+
+def test_the_hinted_settings_are_known_ui_paths_and_the_radio_rows_are_not_among_them() -> None:
+    assert set(UI_PATHS) >= HINTED
+    assert not {"tx_power", "min_rssi"} & HINTED
+    assert ui_hint("dtim_mode") == UI_PATHS["dtim_mode"] and ui_hint("tx_power") is None
+
+
+def test_overview_says_no_changes_without_hiding_diagnostic_findings() -> None:
     aps = tuple(
         replace(
             ap,
@@ -88,14 +111,13 @@ def test_summary_says_no_setting_changes_without_hiding_diagnostic_findings() ->
         for evaluation in REPORT.compliance.evaluations
     )
     report = replace(REPORT, aps=aps, compliance=replace(REPORT.compliance, evaluations=evaluations))
-    text = render_summary(report)
-    assert "No safe configuration changes recommended." in text and "coverage/roaming gaps:" in text
-    assert "No actionable RF findings." not in text
-    assert len(text.splitlines()) <= 30
+    text = render_overview(report)
+    assert "Notes:" in text and "coverage/roaming gaps:" in text
+    assert "No changes recommended in the available data; see Data quality." in text
     assert "No setting changes recommended; RF findings above still need review." in render_report(report)
 
 
-def test_summary_does_not_call_a_partial_result_clean() -> None:
+def test_overview_does_not_call_a_partial_result_clean() -> None:
     aps = tuple(
         replace(ap, findings=(), bands=tuple(replace(band, findings=()) for band in ap.bands)) for ap in REPORT.aps
     )
@@ -107,21 +129,23 @@ def test_summary_does_not_call_a_partial_result_clean() -> None:
         compliance=replace(REPORT.compliance, findings=(), evaluations=evaluations),
     )
     assert report.partial
-    assert "No RF findings in available data; see Data quality." in render_summary(report)
+    text = render_overview(report)
+    assert "Partial result (band empty); the exit code says so." in text
+    assert "Notes:" not in text
 
 
-def test_summary_names_scan_failures_and_missing_configured_aps() -> None:
+def test_overview_names_scan_failures_and_missing_configured_aps() -> None:
     scan = replace(
         REPORT.scan,
         failures_by_ap={"AP-2": (ScanFailureKind.TIMEOUT, ScanFailureKind.TIMEOUT)},
         unknown_names=("AP-missing",),
     )
-    text = render_summary(replace(REPORT, scan=scan))
+    text = render_overview(replace(REPORT, scan=scan))
     assert "Scan failed on AP-2: 2 pass(es) (timeout)." in text
     assert "Configured neighbour AP-missing is absent from the controller." in text
 
 
-def test_summary_keeps_independent_roaming_actions_after_a_24ghz_tx_change() -> None:
+def test_overview_keeps_5ghz_advice_actionable_after_a_24ghz_tx_change() -> None:
     aps = tuple(
         replace(
             ap,
@@ -158,9 +182,9 @@ def test_summary_keeps_independent_roaming_actions_after_a_24ghz_tx_change() -> 
         rec.deferred_by for ap in marked.aps for b in ap.bands if b.band is Band.GHZ_5 for rec in b.recommendations
     )
     assert not any(check.deferred_by for check in marked.checks)
-    text = render_summary(marked)
-    assert "AP-1 5 GHz Minimum RSSI:" in text
-    assert "WLAN SSID-1 · Roaming Assistant:" in text
+    text = render_overview(marked)
+    assert "provisional" not in text
+    assert "✗ Minimum RSSI" in text and "✗ Roaming Assistant" in text
 
 
 def _plan(*assignments: ChannelAssignment, after: int = 0) -> ExtendedChannelPlan:
@@ -195,62 +219,74 @@ def _with_plan(plan: ExtendedChannelPlan | None, report: SiteReport = REPORT) ->
     return replace(report, aps=deferred.aps, compliance=deferred.compliance, extended_channel_plan=plan)
 
 
-def _apply_now(report: SiteReport) -> list[str]:
-    return render_summary(report, width=None).split("  Apply now:\n")[1].split("\n\n")[0].splitlines()
+def _ap_block(text: str, ap: str) -> str:
+    after = text.split(f"  AP         {ap}", 1)[1].split("\n", 2)[2]
+    return after.split("\n━━━", 1)[0]
 
 
-def test_summary_labels_the_candidate_plan_pins_auto_radios_and_defers_power_on_a_changed_band() -> None:
+def _ap_rows(text: str, ap: str, band: str) -> list[str]:
+    return _section(_ap_block(text, ap), f"  {band}\n", "\n\n")
+
+
+def test_overview_labels_the_candidate_plan_pins_auto_radios_and_defers_power_on_a_changed_band() -> None:
     plan = _plan(
         ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80),
         ChannelAssignment(ap="AP-2", current=60, proposed=60, width_mhz=80),
     )
-    lines = _apply_now(_with_plan(plan))
-    # AP-1 (5 GHz, Auto) must be pinned or the controller may move it again; AP-2 stays where it is and is silent;
-    # no 5 GHz TX action of the moved band is offered.
-    assert lines[:2] == [
-        "    Candidate channel plan, 5 GHz (exact search): own AP overlaps 1 → 0, signal proxy 10 → 0",
-        "      AP-1: set fixed ch 44 → 100 (80 MHz)",
+    text = render_overview(_with_plan(plan), width=None)
+    assert _section(text, "  Channel plan\n", "\n\n") == [
+        "    5 GHz (exact search): own AP overlaps 1 → 0, signal proxy 10 → 0",
+        "    Apply the complete assignment for 5 GHz, then re-run before setting transmit power, Minimum RSSI or "
+        "Roaming Assistant there.",
     ]
-    assert not any("AP-1 5 GHz TX" in line or "AP-2: ch" in line for line in lines)
-    assert "    Re-run after channel changes before setting power or roaming thresholds on those bands." in lines
+    # AP-1 (5 GHz, Auto) must be pinned or the controller may move it again; AP-2 stays where it is.
+    rows = _ap_rows(text, "AP-1", "5 GHz")
+    assert "    ✗ Channel                            44 (auto) → set fixed 100 (site-wide candidate)" in rows
+    assert "        provisional: re-run after the channel changes are applied" in rows
+    assert any(
+        "Channel" in row and row.startswith("    ✓") and "keep in site-wide plan" in row
+        for row in _ap_rows(text, "AP-2", "5 GHz")
+    )
 
 
-def test_summary_pins_an_auto_radio_that_keeps_its_channel_and_names_remaining_overlaps() -> None:
+def test_overview_pins_an_auto_radio_that_keeps_its_channel_and_names_remaining_overlaps() -> None:
     plan = _plan(
         ChannelAssignment(ap="AP-1", current=44, proposed=44, width_mhz=80),
         ChannelAssignment(ap="AP-2", current=60, proposed=100, width_mhz=80),
         after=2,
     )
-    lines = _apply_now(_with_plan(plan))
-    assert lines[1:4] == [
-        "      AP-1: set fixed ch 44 (80 MHz) to keep the plan",
-        "      AP-2: ch 60 → 100 (80 MHz)",
-        "      2 own AP overlap(s) remain after this plan.",
-    ]
+    text = render_overview(_with_plan(plan), width=None)
+    assert "    ✗ Channel                            44 (auto); set fixed 44 to keep the site-wide plan" in _ap_rows(
+        text, "AP-1", "5 GHz"
+    )
+    assert "    ✗ Channel                            60, DFS → 100 (site-wide candidate)" in _ap_rows(
+        text, "AP-2", "5 GHz"
+    )
+    assert "      2 own AP overlap(s) remain after this plan." in text
 
 
-def test_summary_tells_access_points_apart_when_their_shortened_names_collide() -> None:
+def test_overview_tells_access_points_apart_when_their_shortened_names_collide() -> None:
     long_a, long_b = "Building-A-Floor-2-Corridor-East", "Building-A-Floor-2-Corridor-West"
     renamed = tuple(
         replace(ap, name=long_name, mac=f"02:00:00:00:{index:02x}:{index:02x}")
         for index, (ap, long_name) in enumerate(zip(REPORT.aps[:2], (long_a, long_b), strict=True), start=1)
     )
-    text = render_summary(replace(REPORT, aps=(*renamed, *REPORT.aps[2:])), width=None)
+    text = render_overview(replace(REPORT, aps=(*renamed, *REPORT.aps[2:])), width=None)
     assert "Building-A-Floor-2-Corr… [01:01]" in text and "Building-A-Floor-2-Corr… [02:02]" in text
-    assert "    AP-3                     2.4 GHz" in text and "AP-3 [" not in text
+    assert "  AP         AP-3 (UAL6)" in text and "AP-3 [" not in text
 
 
-def test_summary_marks_severity_and_says_what_could_not_be_evaluated() -> None:
-    text = render_summary(REPORT, width=None)
+def test_overview_marks_severity_and_says_what_could_not_be_evaluated() -> None:
+    text = render_overview(REPORT, width=None)
     assert "* 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients." in text
     assert "WLAN checks that could not be evaluated: Roaming Assistant." in text
     assert "Partial result (band empty); the exit code says so." in text
 
 
-def test_summary_shows_an_offline_access_point_as_offline() -> None:
+def test_overview_shows_an_offline_access_point_as_offline() -> None:
     offline = replace(REPORT.aps[0], state=DeviceState.DISCONNECTED, bands=())
-    table = render_summary(replace(REPORT, aps=(offline, *REPORT.aps[1:])), width=None)
-    assert "    AP-1                     offline" in table.splitlines()
+    table = render_overview(replace(REPORT, aps=(offline, *REPORT.aps[1:])), width=None)
+    assert "    offline — no radio statistics" in _ap_block(table, "AP-1")
 
 
 def test_the_footer_counts_only_advice_that_can_be_applied_now() -> None:
@@ -308,7 +344,7 @@ def test_external_names_are_sanitised_per_token_not_truncated_as_a_line() -> Non
     # A composed line keeps its tail: the receiver-offset line of AP-1 ends with the sanitised peer in brackets.
     offset_lines = [line for line in text.splitlines() if "disagree by" in line]
     assert any(f"[{safe}" in line and line.endswith("]") for line in offset_lines)
-    summary = render_summary(report, width=None)
+    summary = render_overview(report, width=None)
     assert RLO not in summary and "\x1b" not in summary and safe in summary
 
 
@@ -330,7 +366,7 @@ def test_no_secret_plaintext_reaches_either_output() -> None:
     )
     report = analyze_site(replace(inp, snapshot=replace(inp.snapshot, mgmt=mgmt)))
     assert "s3cr3t-pl41n" not in render_report(report)
-    assert "s3cr3t-pl41n" not in render_summary(report)
+    assert "s3cr3t-pl41n" not in render_overview(report)
     assert "s3cr3t-pl41n" not in render_json([report])
 
 

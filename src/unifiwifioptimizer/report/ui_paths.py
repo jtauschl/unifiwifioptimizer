@@ -50,5 +50,35 @@ UI_PATHS: Mapping[str, str] = {
 }
 
 
+# Settings whose place a reader cannot guess from the label: the label differs from the UI's, the switch sits behind
+# another one, or the toggle has side effects. Everything else sits where the report's own row order puts it.
+HINTED = frozenset(
+    {
+        "roaming_assistant",
+        "roaming_assistant_6g",
+        "minrate_mode",
+        "multicast_broadcast_blocker",
+        "mlo",
+        "dtim_mode",
+        "dtim_24",
+        "dtim_5",
+        "dtim_6",
+        "iot_dtim_lock",
+        "iot_channel_lock",
+        "enhanced_iot",
+        "b_supported",
+        "dns_assistance_mode",
+        "mdns_proxy_mode",
+        "ppsk",
+        "wpa3_enhanced_192",
+    }
+)
+
+
 def ui_path(code: str) -> str | None:
     return UI_PATHS.get(code)
+
+
+def ui_hint(code: str) -> str | None:
+    """The path of a setting that is hard to find; None for one whose row already says where it is."""
+    return UI_PATHS.get(code) if code in HINTED else None

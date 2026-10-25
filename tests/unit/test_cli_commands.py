@@ -390,10 +390,10 @@ def run_faked(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_without_scan_prints_the_text_report(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["run", "--no-scan"]) == ExitCode.OK
     captured = capsys.readouterr()
-    assert "Site default" in captured.out and "Neighbour scans skipped" in captured.out
+    assert "Site       default" in captured.out and "Neighbour scans skipped" in captured.out
     assert "Neighbour RF was not evaluated" in captured.out
-    assert "Apply now:" in captured.out and "AP setup (current):" in captured.out
-    assert "WLAN       SSID-1" not in captured.out
+    assert "WLAN       SSID-1" in captured.out and "AP         AP-1" in captured.out
+    assert "Neighbour AP:" not in captured.out and "Scope note" not in captured.out
     assert "analysing site default" in captured.err and "scanning" not in captured.err
 
 
@@ -401,7 +401,7 @@ def test_run_details_retains_the_complete_text_report(run_faked: None, capsys: p
     assert cli.main(["run", "--no-scan", "--details"]) == ExitCode.OK
     out = capsys.readouterr().out
     assert "Site       default" in out and "WLAN       SSID-1" in out
-    assert "AP setup (current):" not in out
+    assert "Scope note" in out and "Full evidence: run with --details." not in out
 
 
 def test_run_json_prints_one_document(run_faked: None, capsys: pytest.CaptureFixture[str]) -> None:

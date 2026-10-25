@@ -40,7 +40,7 @@ from unifiwifioptimizer.domain.fingerprints import format_fingerprint
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
 from unifiwifioptimizer.report.skeleton import render_skeleton
-from unifiwifioptimizer.report.text import render_report, render_site, render_sites, render_summary
+from unifiwifioptimizer.report.text import render_overview, render_report, render_site, render_sites
 
 PROG = "unifiwifioptimizer"
 
@@ -304,7 +304,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
         print(render_json(result.reports), end="")
     else:
         for report in result.reports:
-            print(render_report(report) if args.details else render_summary(report), end="")
+            print(render_report(report) if args.details else render_overview(report), end="")
     return exit_code_for_run(result)
 
 

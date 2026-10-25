@@ -292,7 +292,7 @@ levels differ. It is a simplified contention indicator, not a prediction of what
 
 ### Optional site-wide channel proposal (`run --extended`)
 
-The concise text report groups setting changes, RF findings, current AP channels and powers, and evidence gaps.
+The default text report lists the WLANs and then the access points the way the controller UI does, followed by the RF notes and the evidence gaps.
 `--details` retains the complete per-WLAN and per-radio evidence. The extended view displays a channel move only for a recommended
 site-wide assignment. When any radio on a band changes channel, the report defers power and Minimum RSSI advice
 for every AP on that band until a new run: effective TX limits and neighbour readings may change even on a radio
