@@ -880,21 +880,37 @@ def _overview_setting(rec: Recommendation | None, label: str, value: str) -> lis
     return lines
 
 
+def _overview_set_tx(band: BandReport) -> str:
+    """The transmit power as it is set, with the power the radio actually uses behind it."""
+    tx = band.tx
+    if tx.mode is None:
+        setting = f"{tx.configured_dbm} dBm" if tx.configured_dbm is not None else "setting unavailable"
+    elif tx.mode is TxPowerMode.CUSTOM:
+        setting = f"Custom, {tx.configured_dbm} dBm" if tx.configured_dbm is not None else "Custom"
+    else:
+        setting = tx.mode.value.capitalize()
+    effective = f"{tx.effective_dbm} dBm" if tx.effective_dbm is not None else "unavailable"
+    return f"{setting} (effective {effective})"
+
+
 def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: ChannelAssignment | None) -> list[str]:
     recs = {rec.setting: rec for rec in band.recommendations}
     tx_rec = recs.get(TX_POWER)
     min_rec = recs.get(MIN_RSSI)
-    current_tx = _setup_current_tx(band)
+    set_tx = _overview_set_tx(band)
     if tx_rec is None:
-        tx_value = f"{current_tx}; no recommendation"
+        tx_value = f"{set_tx}; no recommendation"
     elif tx_rec.kind is RecommendationKind.CHANGE:
-        tx_value = _tx_value(tx_rec)
-        if not tx_value.startswith("set to "):
-            tx_value = f"set to {tx_value}"
+        target = (
+            f"{tx_rec.recommended} dBm" if band.tx.mode is TxPowerMode.CUSTOM else f"Custom, {tx_rec.recommended} dBm"
+        )
+        tx_value = f"{set_tx} → {target}"
+        if tx_rec.unverified_headroom:
+            tx_value += " — headroom above the demonstrated power is unverified"
     elif tx_rec.kind is RecommendationKind.CONFIRMED:
-        tx_value = current_tx
+        tx_value = set_tx
     else:
-        tx_value = f"{current_tx}; no change: {safe_text(tx_rec.reason, 100)}"
+        tx_value = f"{set_tx}; no change: {safe_text(tx_rec.reason, 100)}"
     if min_rec is None:
         min_value = "state unavailable; no recommendation"
     else:
