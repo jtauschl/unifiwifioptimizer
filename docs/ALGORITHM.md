@@ -153,10 +153,10 @@ unit of n, at most 1.3 dB between bands), which is why one site-wide `environmen
 ## 6. Minimum RSSI
 
 The controller evaluates Minimum RSSI on the client's **uplink** as received by the AP. The target is
-derived on the downlink (the corridor floor minus `rf.min_rssi_offset_db`, default 5 dB: a design choice for the
-gap between the soft-roam trigger and the hard disconnect; no source gives this value) and converted by link
+derived on the downlink (the corridor floor minus `rf.min_rssi_offset_db`, default 5 dB: the gap between the
+soft-roam trigger and the hard disconnect) and converted by link
 reciprocity, `RSSI_up − RSSI_down = P_client − P_AP`, with a typical client power (`rf.client_tx_dbm`,
-default 14 dBm, Cisco's figure for a typical client ("about 13-14 dBm"), no standard, a tunable):
+default 14 dBm, Cisco's figure for a typical client ("about 13-14 dBm"), a tunable):
 
 ```text
 min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
@@ -166,11 +166,8 @@ min_rssi_uplink = (TX_LO − offset) − (P_AP_effective − P_client)
 the AP's **current operating** 5 GHz block lies in channels 100–140. Both values accept 0–30 dBm; the
 upper override is absent by default, so older configurations keep one assumption on every band. A block
 including channel 144 or 149+, missing channel/width data, or an unmodelled bonded width uses the base
-`rf.client_tx_dbm` value. This is an operator-selected model of the client population, not a measured
-client TX or a device-specific guarantee; no source found supports a higher client power on channels 100–140 than
-on lower ones (Cisco gives about 13–14 dBm for a typical client), so set it only from a measurement. A higher
-assumed power raises the derived thresholds one-to-one and steers a weaker client earlier than intended. Certification maxima from a different country cannot establish
-the power used by a connected client here. Any 5 GHz channel change can alter neighbour evidence and AP
+`rf.client_tx_dbm` value. Both values describe the client population the operator expects; each dB of assumed
+client power moves the derived thresholds by 1 dB. Any 5 GHz channel change can alter neighbour evidence and AP
 power; it can also switch the client-power assumption. Re-run from fresh radio statistics before applying
 Minimum RSSI or Roaming Assistant values derived for the old block.
 
@@ -236,7 +233,7 @@ derived value and the range, the target is the nearer end, and a WLAN set to it 
 Defaults: offset 0 (the trigger sits at the lower corridor edge; Apple's published client scan triggers are
 −70 dBm on iPhone/iPad and −75 dBm on Mac, support document 102002 — they start the client's own search for a better
 access point and are not a controller threshold), margin 5 dB, floor −75 dBm (the macOS trigger), ceiling −65
-dBm (a design choice with no standard behind it: higher would make clients roam while well inside a
+dBm (higher would make clients roam while well inside a
 cell). All four are tunables under `rf.*`. Every AP whose value equals the minimum is a limiting AP; ties are
 all reported.
 

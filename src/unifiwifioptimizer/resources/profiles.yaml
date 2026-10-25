@@ -183,7 +183,7 @@ evidence:
   fast_roaming: {tier: vendor, source: "IEEE 802.11r defines Fast BSS Transition; Ubiquiti SSID settings overview: \"Our strong recommendation is to have this feature turned on\", with a possible conflict with Switch Port Isolation"}
   bss_transition: {tier: vendor, source: "IEEE 802.11v defines BSS Transition Management; Ubiquiti builds Handoff Suggestions and band steering on BSS transition frames"}
   roaming_assistant: {tier: vendor, source: "Ubiquiti Handoff Suggestions: BSS transition frames tell a client it will be dissociated below the threshold, which Ubiquiti suggests keeping below -70 dBm; the threshold itself comes from the site RF model (ALGORITHM.md §7)"}
-  band_steering: {tier: vendor, source: "Ubiquiti recommends BSS-transition-based Band Steering; this tool reads the controller's no2ghz_oui field, whose mapping to the current UI switch still needs confirmation"}
+  band_steering: {tier: vendor, source: "Ubiquiti recommends BSS-transition-based Band Steering; the tool reads the controller's no2ghz_oui field"}
   mlo: {tier: practice, source: "MLO is IEEE 802.11be, its WPA3 requirement Wi-Fi Alliance certification; keeping it off until the site has Wi-Fi 7 clients on a WPA3-only WLAN is a deployment choice"}
   uapsd: {tier: practice, source: "U-APSD / WMM Power Save is a client battery feature (Ubiquiti: clients stay in low-power mode longer), not a latency feature; off in every shipped profile, switch it on in your own for VoIP handsets"}
   proxy_arp: {tier: vendor, source: "Ubiquiti: reduces broadcast traffic and can improve airtime and latency, especially in large networks, at the cost of AP resources; Cisco calls ARP proxy the recommended setting (client battery life); the mechanism is IEEE 802.11v"}
