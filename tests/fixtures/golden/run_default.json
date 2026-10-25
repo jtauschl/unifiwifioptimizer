@@ -80,6 +80,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 3,
                 "configured_dbm": 6,
                 "effective_dbm": 17,
                 "effective_max_dbm": 23,
@@ -165,6 +166,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 3,
                 "configured_dbm": 19,
                 "effective_dbm": 20,
                 "effective_max_dbm": 23,
@@ -273,6 +275,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 4,
                 "configured_dbm": 6,
                 "effective_dbm": 6,
                 "effective_max_dbm": 23,
@@ -379,6 +382,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 5,
                 "configured_dbm": 24,
                 "effective_dbm": 18,
                 "effective_max_dbm": 18,
@@ -476,6 +480,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 3,
                 "configured_dbm": 11,
                 "effective_dbm": 11,
                 "effective_max_dbm": 23,
@@ -571,6 +576,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 3,
                 "configured_dbm": 23,
                 "effective_dbm": 23,
                 "effective_max_dbm": 23,
@@ -664,6 +670,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 4,
                 "configured_dbm": 10,
                 "effective_dbm": 10,
                 "effective_max_dbm": 23,
@@ -750,6 +757,7 @@
                 }
               ],
               "tx": {
+                "antenna_gain_dbi": 5,
                 "configured_dbm": 24,
                 "effective_dbm": 18,
                 "effective_max_dbm": 18,

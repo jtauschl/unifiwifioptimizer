@@ -890,7 +890,12 @@ def _overview_set_tx(band: BandReport) -> str:
     else:
         setting = tx.mode.value.capitalize()
     effective = f"{tx.effective_dbm} dBm" if tx.effective_dbm is not None else "unavailable"
-    return f"{setting} (effective {effective})"
+    eirp = (
+        f", EIRP {tx.effective_dbm + tx.antenna_gain_dbi} dBm"
+        if tx.effective_dbm is not None and tx.antenna_gain_dbi is not None
+        else ""
+    )
+    return f"{setting} (effective {effective}{eirp})"
 
 
 def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: ChannelAssignment | None) -> list[str]:

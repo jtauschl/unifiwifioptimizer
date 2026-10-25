@@ -669,10 +669,13 @@ def test_the_detailed_text_marks_deferred_advice_as_provisional_and_offers_no_ui
 
 def test_the_transmit_power_row_shows_the_set_value_first_and_the_effective_power_behind_it() -> None:
     text = render_overview(REPORT, width=None)
-    assert "✓ Transmit Power                     Auto (effective 17 dBm)" in _ap_rows(text, "AP-1", "2.4 GHz")[2]
+    assert (
+        "✓ Transmit Power                     Auto (effective 17 dBm, EIRP 20 dBm)"
+        in _ap_rows(text, "AP-1", "2.4 GHz")[2]
+    )
     assert _ap_rows(text, "AP-2", "2.4 GHz")[2].startswith(
-        "    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm) → 10 dBm — headroom"
+        "    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm — headroom"
     )
     assert _ap_rows(text, "AP-1", "5 GHz")[2].startswith(
-        "    ✗ Transmit Power                     Auto (effective 20 dBm) → Custom, 23 dBm"
+        "    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm"
     )

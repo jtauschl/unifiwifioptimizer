@@ -263,14 +263,14 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            6 (auto)
-    ✓ Transmit Power                     Auto (effective 17 dBm)
+    ✓ Transmit Power                     Auto (effective 17 dBm, EIRP 20 dBm)
     · Minimum RSSI                       disabled (if enabled: -81 dBm on the uplink)
 
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            44 (auto)
-    ✗ Transmit Power                     Auto (effective 20 dBm) → Custom, 23 dBm — headroom above
-                                         the demonstrated power is unverified
+    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm —
+                                         headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -78 dBm on the uplink)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -280,15 +280,15 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            1
-    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm) → 10 dBm — headroom above
-                                         the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm —
+                                         headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -70 dBm on the uplink)
 
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            60, DFS
-    - Transmit Power                     Custom, 24 dBm (effective 18 dBm); no change: at the
-                                         effective maximum
+    - Transmit Power                     Custom, 24 dBm (effective 18 dBm, EIRP 23 dBm); no change:
+                                         at the effective maximum
     · Minimum RSSI                       disabled (if enabled: -76 dBm on the uplink)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -298,15 +298,15 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            6
-    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm) → 17 dBm — headroom above
-                                         the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm —
+                                         headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -75 dBm on the uplink)
 
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            104, DFS
-    - Transmit Power                     Custom, 23 dBm (effective 23 dBm); no change: at the
-                                         effective maximum, neighbour unsighted
+    - Transmit Power                     Custom, 23 dBm (effective 23 dBm, EIRP 26 dBm); no change:
+                                         at the effective maximum, neighbour unsighted
     · Minimum RSSI                       disabled (if enabled: -81 dBm on the uplink)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -316,15 +316,15 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            11
-    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm) → 17 dBm — headroom above
-                                         the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm —
+                                         headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -74 dBm on the uplink)
 
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            40
-    - Transmit Power                     Custom, 24 dBm (effective 18 dBm); no change: at the
-                                         effective maximum, neighbour unsighted
+    - Transmit Power                     Custom, 24 dBm (effective 18 dBm, EIRP 23 dBm); no change:
+                                         at the effective maximum, neighbour unsighted
     · Minimum RSSI                       disabled (if enabled: -76 dBm on the uplink)
 
   Notes:

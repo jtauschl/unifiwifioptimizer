@@ -11,6 +11,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 
 ### Added
 - A profile can pin `multicast_suppressor_mode` (`off`, `conservative`, `aggressive`; Multicast Suppression), and an information finding `advanced_set_to_auto` marks a WLAN whose Advanced switch is on Auto.
+- The transmit-power row of the default report shows the set value, the effective power and the EIRP (effective power plus the antenna gain the controller reports), e.g. `Auto (effective 17 dBm, EIRP 20 dBm)`.
 - The check marks of the text report are coloured on a terminal; redirected output, `--json`, `NO_COLOR` and `TERM=dumb` stay plain.
 - `run --details` prints the complete text evidence. An interactive terminal shows one updating scan line during a scan, which is ended before any error message.
 - An optional `rf.client_tx_dbm_5g_upper` assumption for current 5 GHz blocks within channels 100–140; Minimum RSSI and Roaming Assistant use each AP's assumed client power and show it when the override is configured.

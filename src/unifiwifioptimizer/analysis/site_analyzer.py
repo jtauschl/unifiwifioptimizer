@@ -126,9 +126,15 @@ def mesh_roles(snapshot: SiteSnapshot) -> MeshRoles:
     )
 
 
-def _tx_summary(result: BandTxResult) -> TxSummaryReport:
+def _antenna_gain(ap: AccessPoint, band: Band) -> int | None:
+    configured = ap.radio(band)
+    return configured.antenna_gain_dbi if configured is not None else None
+
+
+def _tx_summary(result: BandTxResult, antenna_gain_dbi: int | None) -> TxSummaryReport:
     s = result.summary
     return TxSummaryReport(
+        antenna_gain_dbi=antenna_gain_dbi,
         effective_dbm=s.effective_dbm,
         configured_dbm=s.configured_dbm,
         mode=s.mode,
@@ -369,7 +375,7 @@ def _band_report(
         configured_channel=geometry.configured_channel if geometry is not None else None,
         dfs=dfs,
         cac_seconds=cac,
-        tx=_tx_summary(tx),
+        tx=_tx_summary(tx, _antenna_gain(ap, band)),
         outcome=tx.outcome,
         weakest_dbm=tx.weakest_dbm,
         neighbours=_rows(cells, tx.markers),

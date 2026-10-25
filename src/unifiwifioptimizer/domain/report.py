@@ -187,6 +187,7 @@ class NeighbourRow:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TxSummaryReport:
+    antenna_gain_dbi: int | None
     effective_dbm: int | None
     configured_dbm: int | None
     mode: TxPowerMode | None
