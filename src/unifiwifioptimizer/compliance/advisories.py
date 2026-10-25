@@ -163,6 +163,21 @@ def mdns_proxy_with_isolation(profile: Profile, wlan: WlanConfig) -> Finding | N
     )
 
 
+def advanced_set_to_auto(profile: Profile, wlan: WlanConfig) -> Finding | None:
+    """The UI's Advanced switch: under Auto the UI shows no manual settings, so the stored values the other rows
+    report are not necessarily what an operator sees there."""
+    if wlan.setting_preference != "auto":
+        return None
+    return Finding(
+        severity=Severity.INFO,
+        code="advanced_set_to_auto",
+        message="Advanced is set to Auto in the controller UI; the rows above are the stored values and may not be "
+        "what the controller applies.",
+        subject=wlan.name,
+        band=None,
+    )
+
+
 def ppsk_requires_psk(profile: Profile, wlan: WlanConfig) -> Finding | None:
     """Private pre-shared keys ride on the WPA2 four-way handshake; WPA3-only (SAE) and Enterprise have none."""
     if wlan.private_preshared_keys_enabled is not True:
@@ -199,6 +214,7 @@ ADVISORIES: tuple[Advisory, ...] = (
     min_rate_2g,
     iot_locks_on_dual_band_wlan,
     mdns_proxy_with_isolation,
+    advanced_set_to_auto,
     ppsk_requires_psk,
     wpa3_192_requires_enterprise,
 )

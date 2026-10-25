@@ -531,6 +531,7 @@ WLAN_SPEC: Spec = {
     "dtim_mode": vocab("default", "custom"),
     "dns_assistance_mode": vocab("auto", "off", "custom"),
     "mdns_proxy_mode": vocab("off", "all", "custom"),
+    "multicast_suppressor_mode": vocab("off", "conservative", "aggressive"),
     "mac_filter_policy": vocab("allow", "deny"),
     "ap_group_mode": vocab("all", "custom"),
     "_id": object_id,

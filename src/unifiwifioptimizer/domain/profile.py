@@ -88,6 +88,7 @@ class EvidenceTier(StrEnum):
 
 DNS_ASSISTANCE_MODES = frozenset({"off", "auto", "custom"})
 MDNS_PROXY_MODES = frozenset({"off", "auto", "custom"})
+MULTICAST_SUPPRESSOR_MODES = frozenset({"off", "conservative", "aggressive"})
 # 6 and 9 Mbit/s are OFDM rates below the recommendation; unlike DSSS rates, they do not admit 802.11b clients.
 DSSS_RATES_KBPS = frozenset({1000, 2000, 5500, 11000})
 RECOMMENDED_MIN_RATE_2G_KBPS = 12000
@@ -137,6 +138,7 @@ class Profile:
     b_supported: bool | None = None
     dns_assistance_mode: str | None = None
     mdns_proxy_mode: str | None = None
+    multicast_suppressor_mode: str | None = None
     ppsk: bool | None = None
     wpa3_enhanced_192: bool | None = None
     evidence: Mapping[str, Evidence] = field(default_factory=dict)

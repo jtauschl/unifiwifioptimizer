@@ -21,7 +21,8 @@
 # - dtim_mode default|custom with dtim_24/dtim_5/dtim_6 when custom
 # - group_rekey_s: seconds, 0 = disabled; sae_anti_clogging/sae_sync_time: checked when the WLAN uses SAE
 # - optional keys, checked only when present: iot_dtim_lock, iot_channel_lock, enhanced_iot, b_supported,
-#   dns_assistance_mode (off|auto|custom), mdns_proxy_mode (off|auto|custom), ppsk, wpa3_enhanced_192
+#   dns_assistance_mode (off|auto|custom), mdns_proxy_mode (off|auto|custom),
+#   multicast_suppressor_mode (off|conservative|aggressive), ppsk, wpa3_enhanced_192
 
 profiles:
   # Everyday WLAN for phones and laptops across both bands.
@@ -208,5 +209,6 @@ evidence:
   b_supported: {tier: vendor, source: "Cisco Catalyst 9800 best practices: \"Disable all 11b rates, unless needed\"; this prevents 802.11b associations and DSSS rates, while legacy stations may add protection overhead"}
   dns_assistance_mode: {tier: vendor, source: "Ubiquiti DNS Assistance (Network Application 10.3)"}
   mdns_proxy_mode: {tier: practice, source: "mDNS proxy only where cross-VLAN discovery is wanted; never on isolated WLANs"}
+  multicast_suppressor_mode: {tier: practice, source: "Ubiquiti Hi-Capacity Tuning setting (Off, Conservative, Aggressive); a custom profile may pin it"}
   ppsk: {tier: vendor, source: "Ubiquiti Private Pre-Shared Keys: \"This option is WPA2 only, so it will not work on 6 GHz\"; whether a WPA2/WPA3 WLAN accepts it is not documented"}
   wpa3_enhanced_192: {tier: standard, source: "Wi-Fi Alliance WPA3-Enterprise 192-bit mode (CNSA suite), WPA3 Enterprise only"}

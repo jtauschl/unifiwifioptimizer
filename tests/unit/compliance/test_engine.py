@@ -88,7 +88,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "security_protocol",
             ],
             ["ap_name_in_beacon", "mlo", "multicast_broadcast_blocker"],
-            [],
+            ["advanced_set_to_auto"],
         ),
         "SSID-3": (
             [

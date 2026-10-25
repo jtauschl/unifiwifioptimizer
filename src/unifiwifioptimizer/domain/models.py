@@ -256,6 +256,8 @@ class WlanConfig:
     b_supported: bool | None
     dns_assistance_mode: str | None
     mdns_proxy_mode: str | None
+    multicast_suppressor_mode: str | None
+    setting_preference: str | None
     private_preshared_keys_enabled: bool | None
     mlo_enabled: bool | None
     hotspot2conf_enabled: bool | None

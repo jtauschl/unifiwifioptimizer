@@ -20,6 +20,7 @@ from unifiwifioptimizer.domain.models import Band
 from unifiwifioptimizer.domain.profile import (
     DNS_ASSISTANCE_MODES,
     MDNS_PROXY_MODES,
+    MULTICAST_SUPPRESSOR_MODES,
     DtimMode,
     Evidence,
     EvidenceTier,
@@ -58,6 +59,7 @@ OPTIONAL_BOOL_KEYS = ("iot_dtim_lock", "iot_channel_lock", "enhanced_iot", "b_su
 OPTIONAL_TEXT_KEYS: Mapping[str, frozenset[str]] = {
     "dns_assistance_mode": DNS_ASSISTANCE_MODES,
     "mdns_proxy_mode": MDNS_PROXY_MODES,
+    "multicast_suppressor_mode": MULTICAST_SUPPRESSOR_MODES,
 }
 REQUIRED_KEYS = frozenset(
     {
@@ -219,6 +221,7 @@ def parse_profile(name: str, value: Value, path: str) -> Profile:
         wpa3_enhanced_192=optional_flag("wpa3_enhanced_192"),
         dns_assistance_mode=optional_mode("dns_assistance_mode"),
         mdns_proxy_mode=optional_mode("mdns_proxy_mode"),
+        multicast_suppressor_mode=optional_mode("multicast_suppressor_mode"),
         evidence=parse_evidence(mapping[EVIDENCE_KEY], f"{path}.{EVIDENCE_KEY}") if EVIDENCE_KEY in mapping else {},
     )
 

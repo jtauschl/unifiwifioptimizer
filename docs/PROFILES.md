@@ -83,6 +83,7 @@ profiles:
 | `sae_anti_clogging`, `sae_sync_time` | `sae_anti_clogging`, `sae_sync` | checked only when the WLAN uses SAE (WPA3 or WPA2/WPA3 Personal) |
 | `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `b_supported`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
 | `dns_assistance_mode`, `mdns_proxy_mode` | the matching controller field | optional `off`, `auto`, `custom`; unset = not checked |
+| `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = not checked |
 
 A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A
 combination the controller did send but the tool has no name for (for example `wpapsk/wpa1`) is a
@@ -117,6 +118,7 @@ configuration:
 | `min_rate_2g_dsss`, `min_rate_2g_below_recommended` | the WLAN broadcasts on 2.4 GHz with a fixed (`manual`) minimum rate that is a DSSS rate or below 12 Mbit/s, and 802.11b support is known to be on; silent under `auto` and while `b_supported` is unknown |
 | `iot_locks_on_dual_band_wlan` | an IoT lock is on for a WLAN whose profile expects 5 or 6 GHz |
 | `mdns_proxy_with_isolation` | the mDNS proxy is on while clients are isolated |
+| `advanced_set_to_auto` | the WLAN's Advanced switch is on Auto (information; the stored values are reported as they are) |
 | `ppsk_requires_psk` | Private Pre-Shared Keys are on without a PSK handshake (WPA2 or WPA2/WPA3) |
 | `wpa3_192_requires_enterprise` | Enhanced 192-bit is on for anything but WPA3 Enterprise without transition (WPA2 Enterprise and WPA2/WPA3 Enterprise included) |
 

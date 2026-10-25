@@ -2,6 +2,7 @@
 
 from unifiwifioptimizer.compliance.advisories import (
     ADVISORIES,
+    advanced_set_to_auto,
     evaluate_advisories,
     fast_roaming_on_2g_only_wlan,
     fast_roaming_without_bss_transition,
@@ -188,6 +189,13 @@ def test_iot_locks_are_an_advisory_only_on_a_profile_that_expects_5_ghz() -> Non
     assert one is not None and one.message.startswith("IoT DTIM Lock enabled")
 
 
+def test_advanced_set_to_auto_is_information_only_under_auto() -> None:
+    finding = advanced_set_to_auto(profile(), wlan(setting_preference="auto"))
+    assert finding is not None and finding.severity is Severity.INFO and finding.code == "advanced_set_to_auto"
+    assert advanced_set_to_auto(profile(), wlan(setting_preference="manual")) is None
+    assert advanced_set_to_auto(profile(), wlan(setting_preference=None)) is None
+
+
 def test_mdns_proxy_with_isolation() -> None:
     assert mdns_proxy_with_isolation(profile(), wlan(l2_isolation=True, mdns_proxy_mode="auto")) is not None
     assert mdns_proxy_with_isolation(profile(), wlan(l2_isolation=True, mdns_proxy_mode="off")) is None
@@ -232,4 +240,4 @@ def test_wpa3_192_requires_wpa3_enterprise_without_transition() -> None:
 def test_a_compliant_throughput_wlan_raises_no_advisory_and_codes_are_unique() -> None:
     assert evaluate_advisories(profile(), throughput_wlan()) == ()
     codes = [a.__name__ for a in ADVISORIES]
-    assert len(set(codes)) == len(codes) == 9
+    assert len(set(codes)) == len(codes) == 10

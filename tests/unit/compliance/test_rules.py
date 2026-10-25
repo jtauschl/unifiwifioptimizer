@@ -63,6 +63,7 @@ STRICT = replace(
     b_supported=True,
     dns_assistance_mode="auto",
     mdns_proxy_mode="custom",
+    multicast_suppressor_mode="conservative",
     ppsk=False,
     wpa3_enhanced_192=True,
 )
@@ -74,6 +75,7 @@ STRICT_WLAN_FIELDS: dict[str, Any] = {
     "b_supported": True,
     "dns_assistance_mode": "auto",
     "mdns_proxy_mode": "custom",
+    "multicast_suppressor_mode": "conservative",
     "private_preshared_keys_enabled": False,
     "wpa3_enhanced_192": True,
 }
@@ -84,6 +86,7 @@ OPTIONAL_DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "b_supported": ({"b_supported": False}, "b_supported"),
     "dns_assistance_mode": ({"dns_assistance_mode": "off"}, "dns_assistance_mode"),
     "mdns_proxy_mode": ({"mdns_proxy_mode": "auto"}, "mdns_proxy_mode"),
+    "multicast_suppressor_mode": ({"multicast_suppressor_mode": "off"}, "multicast_suppressor_mode"),
     "ppsk": ({"private_preshared_keys_enabled": True}, "private_preshared_keys_enabled"),
     "wpa3_enhanced_192": ({"wpa3_enhanced_192": False}, "wpa3_enhanced_192"),
 }
@@ -228,6 +231,6 @@ def test_set_rules_accept_any_listed_value() -> None:
 
 def test_rule_codes_are_unique_grouped_and_labelled() -> None:
     codes = [rule.code for rule in RULES]
-    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 32
+    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 33
     assert all(rule.label and isinstance(rule.group, RuleGroup) for rule in RULES)
     assert set(DEVIATIONS) | set(OPTIONAL_DEVIATIONS) == set(codes) - {"dtim_6"}

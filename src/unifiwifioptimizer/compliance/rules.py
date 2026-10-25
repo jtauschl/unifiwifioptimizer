@@ -353,6 +353,13 @@ RULES: tuple[Rule, ...] = (
     _text_rule(
         "mdns_proxy_mode", "mDNS Proxy", RuleGroup.BEHAVIOUR, lambda p: p.mdns_proxy_mode, lambda w: w.mdns_proxy_mode
     ),
+    _text_rule(
+        "multicast_suppressor_mode",
+        "Multicast Suppression",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.multicast_suppressor_mode,
+        lambda w: w.multicast_suppressor_mode,
+    ),
 )
 
 RULE_BY_CODE: dict[str, Rule] = {rule.code: rule for rule in RULES}

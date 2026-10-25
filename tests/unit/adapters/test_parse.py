@@ -521,6 +521,13 @@ def test_wlan_enabled_defaults_to_true_and_optional_fields_to_none() -> None:
     assert parse.parse_wlan(Fields(wlan(enabled=False), "$")).enabled is False
 
 
+def test_the_wlan_advanced_switch_and_multicast_suppression_are_read_as_reported() -> None:
+    parsed = parse.parse_wlan(Fields(wlan(setting_preference="auto", multicast_suppressor_mode="conservative"), "$"))
+    assert (parsed.setting_preference, parsed.multicast_suppressor_mode) == ("auto", "conservative")
+    absent = parse.parse_wlan(Fields(wlan(), "$"))
+    assert absent.setting_preference is None and absent.multicast_suppressor_mode is None
+
+
 def test_parse_wlans_isolates_a_broken_record_and_collects_problems() -> None:
     result = parse.parse_wlans(envelope(wlan(dtim_ng=0), wlan(_id=None), wlan(group_rekey="never")))
     assert [w.dtim_ng for w in result.items] == [None, None]

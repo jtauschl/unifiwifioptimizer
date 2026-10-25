@@ -380,6 +380,8 @@ def parse_wlan(fields: Fields) -> WlanConfig:
         b_supported=fields.opt_bool("b_supported"),
         dns_assistance_mode=fields.opt_string("dns_assistance_mode", MAX_TOKEN_BYTES),
         mdns_proxy_mode=fields.opt_string("mdns_proxy_mode", MAX_TOKEN_BYTES),
+        multicast_suppressor_mode=fields.opt_string("multicast_suppressor_mode", MAX_TOKEN_BYTES),
+        setting_preference=fields.opt_string("setting_preference", MAX_TOKEN_BYTES),
         private_preshared_keys_enabled=fields.opt_bool("private_preshared_keys_enabled"),
         mlo_enabled=fields.opt_bool("mlo_enabled"),
         hotspot2conf_enabled=fields.opt_bool("hotspot2conf_enabled"),
