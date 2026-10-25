@@ -167,7 +167,9 @@ the AP's **current operating** 5 GHz block lies in channels 100–140. Both valu
 upper override is absent by default, so older configurations keep one assumption on every band. A block
 including channel 144 or 149+, missing channel/width data, or an unmodelled bonded width uses the base
 `rf.client_tx_dbm` value. This is an operator-selected model of the client population, not a measured
-client TX or a device-specific guarantee. Certification maxima from a different country cannot establish
+client TX or a device-specific guarantee; no source found supports a higher client power on channels 100–140 than
+on lower ones (Cisco gives about 13–14 dBm for a typical client), so set it only from a measurement. A higher
+assumed power raises the derived thresholds one-to-one and steers a weaker client earlier than intended. Certification maxima from a different country cannot establish
 the power used by a connected client here. Any 5 GHz channel change can alter neighbour evidence and AP
 power; it can also switch the client-power assumption. Re-run from fresh radio statistics before applying
 Minimum RSSI or Roaming Assistant values derived for the old block.
