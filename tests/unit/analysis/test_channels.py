@@ -151,7 +151,11 @@ def test_reuse_infeasible_over_the_union_graph() -> None:
     }
     analysis = analyse_channels(SNAP, site_scan(SNAP, passes), {}, AI_OFF)
     (advisory,) = by_code(analysis, "channel_reuse_infeasible")
-    assert advisory.peers == ("AP-1", "AP-2", "AP-3", "AP-4") and "3 available at 20 MHz" in advisory.message
+    assert advisory.peers == ("AP-1", "AP-2", "AP-3", "AP-4")
+    assert advisory.message == (
+        "4 access points that hear each other (AP-1, AP-2, AP-3, AP-4) cannot all get distinct channels: "
+        "only 3 of the 1/6/11 channels are usable, 4 would be needed; accept co-channel reuse"
+    )
     assert analysis.reuse_infeasible[Band.GHZ_2] == (frozenset(names),)
     # A triangle plus a pendant is 3-colourable: no advisory.
     chain = {"AP-1": frozenset({"AP-2", "AP-3"}), "AP-2": frozenset({"AP-3"}), "AP-4": frozenset({"AP-3"})}
@@ -272,6 +276,11 @@ def test_the_5_ghz_reuse_check_runs_with_a_list_and_is_skipped_and_named_at_site
     chain = {"AP-1": frozenset({"AP-2", "AP-3"}), "AP-2": frozenset({"AP-3"})}
     listed = analyse_channels(triangle, None, chain, AI_OFF)
     assert [f.band for f in by_code(listed, "channel_reuse_infeasible")] == [Band.GHZ_5]
+    assert by_code(listed, "channel_reuse_infeasible")[0].message == (
+        "3 access points that hear each other (AP-1, AP-2, AP-3) cannot all get distinct channels: the controller's "
+        "Channel AI list offers 2 160 MHz blocks, 3 would be needed; add channels to the Channel AI list, reduce "
+        "the width or accept co-channel reuse"
+    )
     assert len(listed.reuse_infeasible[Band.GHZ_5]) == 1
     assert by_code(listed, "channel_candidates_unknown") == []
     for channel_ai in (replace(AI_OFF, channels={}), None):

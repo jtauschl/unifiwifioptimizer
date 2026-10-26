@@ -140,6 +140,18 @@ def colour_count(band: Band, candidates: frozenset[int], width_mhz: int) -> int:
     return len(blocks)
 
 
+def _reuse_supply(band: Band, colours: int, width_mhz: int) -> str:
+    if band is Band.GHZ_2:
+        return f"only {colours} of the 1/6/11 channels {'is' if colours == 1 else 'are'} usable"
+    return f"the controller's Channel AI list offers {colours} {width_mhz} MHz block{'s' if colours != 1 else ''}"
+
+
+def _reuse_remedy(band: Band) -> str:
+    if band is Band.GHZ_2:
+        return "accept co-channel reuse"
+    return "add channels to the Channel AI list, reduce the width or accept co-channel reuse"
+
+
 def components(adjacency: Mapping[str, frozenset[str]]) -> list[frozenset[str]]:
     seen: set[str] = set()
     out: list[frozenset[str]] = []
@@ -331,12 +343,13 @@ def analyse_channels(
             if not channel_reuse_feasible(sub, colours):
                 infeasible[band].append(component)
                 members: list[str] = sorted(component)
+                needed = next(k for k in range(colours + 1, len(members) + 1) if channel_reuse_feasible(sub, k))
                 findings.append(
                     _finding(
                         Severity.ADVISORY, "channel_reuse_infeasible", members[0], band,
                         f"{len(members)} access points that hear each other ({', '.join(members)}) cannot all get "
-                        f"distinct channels from the {colours} available at {widest} MHz; reduce the width or accept "
-                        "co-channel reuse",
+                        f"distinct channels: {_reuse_supply(band, colours, widest)}, "
+                        f"{needed} would be needed; {_reuse_remedy(band)}",
                         members,
                     )
                 )  # fmt: skip

@@ -725,7 +725,7 @@ _SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.ADVISORY: 2,
 def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[str]:
     coverage: dict[tuple[Band | None, tuple[str, str]], Severity] = {}
     overlap: dict[tuple[Band | None, tuple[str, str]], Severity] = {}
-    reuse: dict[Band, Severity] = {}
+    reuse: dict[Band, Finding] = {}
     other: list[Finding] = []
     for finding in report.findings:
         if finding.severity not in (Severity.ADVISORY, Severity.WARNING, Severity.ERROR):
@@ -739,7 +739,7 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
                 if key not in target or _SEVERITY_ORDER[finding.severity] < _SEVERITY_ORDER[target[key]]:
                     target[key] = finding.severity
         elif finding.code == "channel_reuse_infeasible" and finding.band is not None:
-            reuse[finding.band] = finding.severity
+            reuse[finding.band] = finding
         else:
             other.append(finding)
     lines: list[str] = ["· Neighbour RF was not evaluated without a scan."] if report.scan.skipped else []
@@ -764,10 +764,8 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
             mark = SEVERITY_MARK[min((s for _, s in pairs), key=_SEVERITY_ORDER.__getitem__)]
             lines.append(f"{mark} {band.label} channel overlap: {members}.")
     for band in sorted(reuse, key=lambda value: value.value):
-        lines.append(
-            f"{SEVERITY_MARK[reuse[band]]} {band.label} cannot give every neighbouring AP a distinct channel "
-            "in the current plan."
-        )
+        finding = reuse[band]
+        lines.append(f"{SEVERITY_MARK[finding.severity]} {band.label}: {safe_text(finding.message, 4 * LINE_MAX)}")
     other.sort(key=lambda finding: _SEVERITY_ORDER[finding.severity])
     for finding in other[:6]:
         band_label = f" {finding.band.label}" if finding.band is not None else ""

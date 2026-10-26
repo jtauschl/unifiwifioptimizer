@@ -12,6 +12,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 ### Added
 - A profile can pin `multicast_suppressor_mode` (`off`, `conservative`, `aggressive`; Multicast Suppression), and an information finding `advanced_set_to_auto` marks a WLAN whose Advanced switch is on Auto.
 - The transmit-power row of the default report shows the set value, the effective power and the EIRP (effective power plus the antenna gain the controller reports), e.g. `Auto (effective 17 dBm, EIRP 20 dBm)`.
+- The channel-reuse finding names its cause and the remedy: with the controller's Channel AI list it states how many blocks of the widest width the list offers and how many the access points that hear each other would need, and tells you to add channels to the list, reduce the width or accept co-channel reuse; on 2.4 GHz only 1/6/11 count.
 - The WLAN rows of the text report follow the order and the wording of the controller's WLAN editor (Radio Band, Fast Roaming (802.11r), Handoff Suggestions (802.11v), Minimum Data Rate, Multicast Filtering, … Group Rekey Interval), so a setting sits where it does in the UI.
 - The check marks of the text report are coloured on a terminal; redirected output, `--json`, `NO_COLOR` and `TERM=dumb` stay plain.
 - `run --details` prints the complete text evidence. An interactive terminal shows one updating scan line during a scan, which is ended before any error message.

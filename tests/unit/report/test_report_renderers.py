@@ -24,9 +24,11 @@ from unifiwifioptimizer.domain.report import (
     CheckStatus,
     Deferral,
     ExtendedChannelPlan,
+    Finding,
     Recommendation,
     RecommendationKind,
     RoamingApDetail,
+    Severity,
     SiteReport,
     WlanRoamingSummary,
 )
@@ -679,3 +681,22 @@ def test_the_transmit_power_row_shows_the_set_value_first_and_the_effective_powe
     assert _ap_rows(text, "AP-1", "5 GHz")[2].startswith(
         "    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm"
     )
+
+
+def test_overview_states_the_channel_reuse_shortfall_with_the_channel_list_as_its_cause() -> None:
+    finding = Finding(
+        severity=Severity.ADVISORY,
+        code="channel_reuse_infeasible",
+        message="4 access points that hear each other (AP-1, AP-2) cannot all get distinct channels: the "
+        "controller's Channel AI list offers 2 80 MHz blocks, 3 would be needed; add channels to the Channel AI "
+        "list, reduce the width or accept co-channel reuse",
+        subject="AP-1",
+        band=Band.GHZ_5,
+        peers=("AP-1", "AP-2"),
+    )
+    text = render_overview(replace(REPORT, site_findings=(*REPORT.site_findings, finding)), width=None)
+    assert (
+        "    ! 5 GHz: 4 access points that hear each other (AP-1, AP-2) cannot all get distinct channels: the "
+        "controller's Channel AI list offers 2 80 MHz blocks, 3 would be needed; add channels to the Channel AI "
+        "list, reduce the width or accept co-channel reuse"
+    ) in text
