@@ -295,7 +295,9 @@ serving_power_5g() {
       echo "STATUS=unknown"
       return 0
     fi
-    [ "$_freq" -gt 5000 ] && [ "$_freq" -lt 5900 ] || continue
+    if [ "$_freq" -le 5000 ] || [ "$_freq" -ge 5900 ]; then
+      continue
+    fi
     _wiphy=$(iface_wiphy "$_iface")
     case "$_wiphy" in '' | *[!0-9]*)
       echo "STATUS=unknown"
