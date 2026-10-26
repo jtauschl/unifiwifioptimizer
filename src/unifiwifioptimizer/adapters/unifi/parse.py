@@ -29,6 +29,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     MAX_DEVICES,
     MAX_ID_BYTES,
     MAX_NAME_BYTES,
+    MAX_NETWORKS,
     MAX_OPTIMIZE_TARGETS,
     MAX_PASSWORD_BYTES,
     MAX_RADIOS_PER_DEVICE,
@@ -73,6 +74,7 @@ from unifiwifioptimizer.domain.models import (
     DevicesResult,
     FieldProblem,
     MgmtSettings,
+    Network,
     ParsedList,
     Radio,
     RadioStats,
@@ -108,6 +110,8 @@ SETTING_KEYS = frozenset({"radio_ai", "country", "connectivity", "mgmt"})
 DEVICES_ENDPOINT = "stat/device"
 WLANS_ENDPOINT = "rest/wlanconf"
 AP_GROUPS_ENDPOINT = "v2/apgroups"
+NETWORKS_ENDPOINT = "rest/networkconf"
+VLAN_RANGE = range(1, 4095)
 CLIENTS_ENDPOINT = "stat/sta"
 SITES_ENDPOINT = "self/sites"
 # The controller's device `state` is a small enumeration; anything outside stays an unread field.
@@ -389,6 +393,7 @@ def parse_wlan(fields: Fields) -> WlanConfig:
         is_guest=fields.opt_bool("is_guest"),
         ap_group_mode=fields.opt_string("ap_group_mode", MAX_TOKEN_BYTES),
         ap_group_ids=fields.opt_string_list("ap_group_ids", MAX_AP_GROUPS),
+        network_id=fields.opt_string("networkconf_id", MAX_ID_BYTES),
     )
 
 
@@ -424,6 +429,16 @@ def parse_ap_group(fields: Fields) -> ApGroup:
         name=fields.string("name"),
         device_macs=mac_set(fields, "device_macs", MAX_DEVICES),
     )
+
+
+def parse_network(fields: Fields) -> Network:
+    return Network(
+        id=fields.string("_id", MAX_ID_BYTES), name=fields.string("name"), vlan=fields.opt_integer("vlan", VLAN_RANGE)
+    )
+
+
+def parse_networks(payload: Json, observe: Observer | None = None) -> ParsedList[Network]:
+    return parse_isolated(data_list(payload, MAX_NETWORKS), "$.data", parse_network, NETWORKS_ENDPOINT, observe)
 
 
 def parse_ap_groups(payload: Json, observe: Observer | None = None) -> ParsedList[ApGroup]:

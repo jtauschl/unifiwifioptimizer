@@ -6,6 +6,7 @@ from unifiwifioptimizer.domain.models import (
     ApGroup,
     ClientSighting,
     DevicesResult,
+    Network,
     ParsedList,
     SettingsResult,
     Site,
@@ -23,6 +24,8 @@ class ControllerApi(Protocol):
     def wlans(self, site_id: str) -> ParsedList[WlanConfig]: ...
 
     def ap_groups(self, site_id: str) -> ParsedList[ApGroup]: ...
+
+    def networks(self, site_id: str) -> ParsedList[Network]: ...
 
     def settings(self, site_id: str) -> SettingsResult: ...
 

@@ -971,7 +971,9 @@
               }
             ],
             "findings": [],
+            "network": "Network-1",
             "profile": "Throughput",
+            "vlan": 40,
             "wlan": "SSID-1"
           },
           {
@@ -986,7 +988,9 @@
               }
             ],
             "findings": [],
+            "network": "Network-1",
             "profile": "Standard",
+            "vlan": 40,
             "wlan": "SSID-2"
           },
           {
@@ -1001,7 +1005,9 @@
               }
             ],
             "findings": [],
+            "network": "Network-1",
             "profile": "Hotspot",
+            "vlan": 40,
             "wlan": "SSID-3"
           }
         ],

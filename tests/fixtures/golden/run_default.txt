@@ -24,7 +24,7 @@
     [AP-4]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-1  (profile Throughput)
+  WLAN       SSID-1  (profile Throughput)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✓ Radio Band                         2.4 GHz, 5 GHz
@@ -65,7 +65,7 @@
     ✓ Show Access Point Name in Beacon   Disabled
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-2  (profile Standard)
+  WLAN       SSID-2  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)
@@ -73,7 +73,7 @@
         → WLAN edit → Enabled toggle
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-3  (profile Hotspot)
+  WLAN       SSID-3  (profile Hotspot)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)

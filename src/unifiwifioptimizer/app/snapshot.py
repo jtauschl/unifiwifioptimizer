@@ -10,9 +10,10 @@ def build_snapshot(api: ControllerApi, site: Site, clock: Clock, with_clients: b
     devices = api.devices(site.id)
     wlans = api.wlans(site.id)
     groups = api.ap_groups(site.id)
+    networks = api.networks(site.id)
     settings = api.settings(site.id)
     clients = api.clients(site.id) if with_clients else None
-    problems = devices.problems + wlans.problems + groups.problems + settings.problems
+    problems = devices.problems + wlans.problems + groups.problems + networks.problems + settings.problems
     if clients is not None:
         problems += clients.problems
     return SiteSnapshot(
@@ -22,6 +23,7 @@ def build_snapshot(api: ControllerApi, site: Site, clock: Clock, with_clients: b
         unparsable_devices=devices.unparsable,
         wlans=wlans.items,
         ap_groups=groups.items,
+        networks=networks.items,
         settings=settings.settings,
         mgmt=settings.mgmt,
         clients=clients.items if clients is not None else None,

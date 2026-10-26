@@ -117,6 +117,9 @@ class Anonymizer:
     def group_name(self, value: str) -> str:
         return self._map("group_name", value, lambda n: f"Group-{n}")
 
+    def network_name(self, value: str) -> str:
+        return self._map("network_name", value, lambda n: f"Network-{n}")
+
     def site_description(self, value: str) -> str:
         return self._map("site_description", value, lambda n: f"Site-{n}")
 
@@ -290,6 +293,9 @@ ip = _string_rule(Anonymizer.ip, _pattern_check(SYNTHETIC_IP_RE, "a TEST-NET-1 a
 ssid = _string_rule(Anonymizer.ssid, _pattern_check(re.compile(r"SSID-[0-9]+"), "a synthetic SSID"))
 ap_name = _string_rule(Anonymizer.ap_name, _pattern_check(re.compile(r"AP-[0-9]+"), "a synthetic AP name"))
 group_name = _string_rule(Anonymizer.group_name, _pattern_check(re.compile(r"Group-[0-9]+"), "a synthetic group name"))
+network_name = _string_rule(
+    Anonymizer.network_name, _pattern_check(re.compile(r"Network-[0-9]+"), "a synthetic network name")
+)
 site_description = _string_rule(
     Anonymizer.site_description, _pattern_check(re.compile(r"Site-[0-9]+"), "a synthetic site description")
 )
@@ -550,6 +556,13 @@ AP_GROUP_SPEC: Spec = {
     "for_wlanconf": keep,
     "device_macs": mac_list,
 }
+NETWORK_SPEC: Spec = {
+    "_id": object_id,
+    "name": network_name,
+    "purpose": vocab("corporate", "guest", "vlan-only", "wan", "remote-user-vpn", "vpn-client", "site-vpn"),
+    "vlan": keep,
+    "site_id": object_id,
+}
 # The controller's setting record names, closed so that free text cannot hide under `key`.
 SETTING_KEY = vocab(
     "auto_speedtest", "connectivity", "country", "dashboard", "device_supervision", "doh", "dpi", "element_adopt",
@@ -667,6 +680,8 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     Endpoint("stat_device_offline.json", None, nested(envelope(records(device_spec)))),
     Endpoint("list_wlanconf.json", "live_api_s_{site}_list_wlanconf.json", nested(envelope(list_of(WLAN_SPEC)))),
     Endpoint("apgroups.json", "live_v2_api_site_{site}_apgroups.json", list_of(AP_GROUP_SPEC)),
+    # Hand-written and only checked: its object ids must match the `networkconf_id` of `list_wlanconf.json`.
+    Endpoint("networkconf.json", None, nested(envelope(list_of(NETWORK_SPEC)))),
     Endpoint("rest_setting.json", "live_api_s_{site}_rest_setting.json", nested(envelope(records(setting_spec)))),
     Endpoint("stat_sta.json", "live_api_s_{site}_stat_sta.json", nested(envelope(records(client_spec)))),
     # `self/sites` has no live dump; the fixture is hand-written and only checked.

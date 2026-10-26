@@ -36,6 +36,7 @@ from unifiwifioptimizer.domain.report import (
     RecommendationKind,
     Severity,
     SiteReport,
+    WlanEvaluation,
     WlanRoamingSummary,
 )
 from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
@@ -239,6 +240,14 @@ def _finding_line(finding: Finding, indent: str = "    ", with_subject: bool = F
     return f"{indent}{SEVERITY_MARK[finding.severity]} {subject}{safe_text(finding.message, LINE_MAX)}{peers}"
 
 
+def _wlan_title(evaluation: WlanEvaluation) -> str:
+    title = f"{name(evaluation.wlan)}  (profile {name(evaluation.profile)})"
+    if evaluation.network is None:
+        return title
+    vlan = "untagged" if evaluation.vlan is None else f"VLAN {evaluation.vlan}"
+    return f"{title}  → network {name(evaluation.network)}, {vlan}"
+
+
 def _wlans(report: SiteReport) -> list[str]:
     lines: list[str] = []
     roaming = {r.wlan: r for r in report.roaming}
@@ -247,7 +256,7 @@ def _wlans(report: SiteReport) -> list[str]:
     if report.compliance.findings:
         lines.append("")
     for evaluation in report.compliance.evaluations:
-        lines += _header("WLAN", f"{name(evaluation.wlan)}  (profile {name(evaluation.profile)})")
+        lines += _header("WLAN", _wlan_title(evaluation))
         for check in in_ui_order(evaluation.checks, lambda item: item.code):
             lines += _check_line(check)
             if check.code == "roaming_assistant":
@@ -833,7 +842,7 @@ def _overview_wlans(report: SiteReport) -> list[str]:
     if report.compliance.findings:
         lines.append("")
     for evaluation in report.compliance.evaluations:
-        lines += _header("WLAN", f"{name(evaluation.wlan)}  (profile {name(evaluation.profile)})")
+        lines += _header("WLAN", _wlan_title(evaluation))
         for check in in_ui_order(evaluation.checks, lambda item: item.code):
             lines += _check_line(check, hints_only=True)
         for finding in evaluation.findings:

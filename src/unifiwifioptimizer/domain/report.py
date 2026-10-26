@@ -126,6 +126,9 @@ class WlanEvaluation:
     profile: str
     checks: tuple[CheckResult, ...]
     findings: tuple[Finding, ...]
+    # The network the WLAN is attached to; the VLAN is None for an untagged network.
+    network: str | None = None
+    vlan: int | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

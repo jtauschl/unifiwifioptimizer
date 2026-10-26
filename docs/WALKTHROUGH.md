@@ -173,13 +173,13 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
 
 <!-- source: no-scan -->
 ```text
-  WLAN       SSID-1  (profile Throughput)
+  WLAN       SSID-1  (profile Throughput)  → network Network-1, VLAN 40
 […]
     ✓ Fast Roaming (802.11r)             Enabled
     ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
         AP-1: no reading of neighbour AP-2 (scan skipped)
 […]
-  WLAN       SSID-2  (profile Standard)
+  WLAN       SSID-2  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)
@@ -212,7 +212,7 @@ The default output lists the WLANs and the access points the way the controller 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-1  (profile Throughput)
+  WLAN       SSID-1  (profile Throughput)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✓ Radio Band                         2.4 GHz, 5 GHz
@@ -241,14 +241,14 @@ The default output lists the WLANs and the access points the way the controller 
     ✓ Show Access Point Name in Beacon   Disabled
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-2  (profile Standard)
+  WLAN       SSID-2  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)
         the WLAN is disabled on the controller
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-3  (profile Hotspot)
+  WLAN       SSID-3  (profile Hotspot)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)

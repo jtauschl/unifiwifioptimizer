@@ -37,7 +37,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
 from unifiwifioptimizer.analysis.txpower import BandTxResult, analyse_band_tx, apply_mesh_guard
 from unifiwifioptimizer.compliance.engine import evaluate_site
 from unifiwifioptimizer.domain.analysis import BandTxOutcome, NeighbourMarker, PartialReason
-from unifiwifioptimizer.domain.models import AccessPoint, Band, DeviceState, Mac, SiteSnapshot
+from unifiwifioptimizer.domain.models import AccessPoint, Band, DeviceState, Mac, SiteSnapshot, WlanConfig
 from unifiwifioptimizer.domain.report import (
     AirtimeReport,
     ApReport,
@@ -53,6 +53,7 @@ from unifiwifioptimizer.domain.report import (
     RoamingApDetail,
     ScanSummary,
     Severity,
+    SiteCompliance,
     SiteReport,
     TxSummaryReport,
     WlanRoamingSummary,
@@ -124,6 +125,23 @@ def mesh_roles(snapshot: SiteSnapshot) -> MeshRoles:
     return MeshRoles(
         children=frozenset(children), parents=frozenset(parents), unresolved_children=frozenset(unresolved)
     )
+
+
+def _with_networks(compliance: SiteCompliance, snapshot: SiteSnapshot) -> SiteCompliance:
+    """Names the network each evaluated WLAN is attached to (the first WLAN of a name, as the compliance engine
+    reads it)."""
+    networks = {network.id: network for network in snapshot.networks}
+    first: dict[str, WlanConfig] = {}
+    for wlan in snapshot.wlans:
+        first.setdefault(wlan.name, wlan)
+    evaluations = []
+    for evaluation in compliance.evaluations:
+        config = first.get(evaluation.wlan)
+        network = networks.get(config.network_id) if config is not None and config.network_id is not None else None
+        evaluations.append(
+            replace(evaluation, network=network.name, vlan=network.vlan) if network is not None else evaluation
+        )
+    return replace(compliance, evaluations=tuple(evaluations))
 
 
 def _antenna_gain(ap: AccessPoint, band: Band) -> int | None:
@@ -435,7 +453,9 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     corridors = {band: corridor_for(band, inp.environment, inp.rf.cell_edge) for band in EVALUATED_BANDS}
     channels = analyse_channels(snapshot, scan, inp.neighbours, snapshot.settings.channel_ai)
     targets = roaming_targets(snapshot, matrix, corridors[Band.GHZ_5], inp.rf)
-    compliance = evaluate_site(snapshot.wlans, inp.wlan_profiles, inp.profiles, thresholds_for_compliance(targets))
+    compliance = _with_networks(
+        evaluate_site(snapshot.wlans, inp.wlan_profiles, inp.profiles, thresholds_for_compliance(targets)), snapshot
+    )
     roles = mesh_roles(snapshot)
     aps_by_name = {ap.name: ap for ap in snapshot.access_points}
     unparsable_names = {d.name for d in snapshot.unparsable_devices if d.name is not None}

@@ -265,6 +265,7 @@ class WlanConfig:
     is_guest: bool | None
     ap_group_mode: str | None
     ap_group_ids: tuple[str, ...]
+    network_id: str | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -272,6 +273,15 @@ class ApGroup:
     id: str
     name: str
     device_macs: frozenset[Mac]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Network:
+    """A network (`networkconf`) as far as the report names it: its name and its VLAN (None when untagged)."""
+
+    id: str
+    name: str
+    vlan: int | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -369,6 +379,7 @@ class SiteSnapshot:
     unparsable_devices: tuple[UnparsableDevice, ...]
     wlans: tuple[WlanConfig, ...]
     ap_groups: tuple[ApGroup, ...]
+    networks: tuple[Network, ...]
     settings: SiteSettings
     mgmt: MgmtSettings | None
     # None when the client picture was not collected, as opposed to a site without wireless clients.

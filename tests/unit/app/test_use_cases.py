@@ -13,6 +13,7 @@ from unifiwifioptimizer.domain.models import (
     ClientSighting,
     DevicesResult,
     FieldProblem,
+    Network,
     ParsedList,
     SettingsResult,
     Site,
@@ -47,6 +48,10 @@ class FixtureApi:
     def ap_groups(self, site_id: str) -> ParsedList[ApGroup]:
         self.calls.append(f"ap_groups:{site_id}")
         return parse.parse_ap_groups(load("apgroups.json"))
+
+    def networks(self, site_id: str) -> ParsedList[Network]:
+        self.calls.append(f"networks:{site_id}")
+        return parse.parse_networks(load("networkconf.json"))
 
     def settings(self, site_id: str) -> SettingsResult:
         self.calls.append(f"settings:{site_id}")

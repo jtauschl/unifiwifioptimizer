@@ -700,3 +700,14 @@ def test_overview_states_the_channel_reuse_shortfall_with_the_channel_list_as_it
         "controller's Channel AI list offers 2 80 MHz blocks, 3 would be needed; add channels to the Channel AI "
         "list, reduce the width or accept co-channel reuse"
     ) in text
+
+
+def test_the_wlan_title_names_the_network_and_its_vlan_and_says_untagged_without_one() -> None:
+    def titles(network: str | None, vlan: int | None) -> list[str]:
+        evaluations = tuple(replace(e, network=network, vlan=vlan) for e in REPORT.compliance.evaluations)
+        text = render_overview(replace(REPORT, compliance=replace(REPORT.compliance, evaluations=evaluations)))
+        return [line for line in text.splitlines() if line.startswith("  WLAN       SSID-1")]
+
+    assert titles("Network-9", 40) == ["  WLAN       SSID-1  (profile Throughput)  → network Network-9, VLAN 40"]
+    assert titles("Network-9", None) == ["  WLAN       SSID-1  (profile Throughput)  → network Network-9, untagged"]
+    assert titles(None, None) == ["  WLAN       SSID-1  (profile Throughput)"]

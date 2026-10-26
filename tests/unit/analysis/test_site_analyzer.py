@@ -51,6 +51,20 @@ def band_of(report, ap: str, band: Band):  # type: ignore[no-untyped-def]
     return next(b for a in report.aps for b in a.bands if a.name == ap and b.band is band)
 
 
+def test_each_evaluated_wlan_names_its_network_and_a_wlan_without_a_known_network_names_none() -> None:
+    assert {(e.wlan, e.network, e.vlan) for e in GOLDEN.compliance.evaluations} == {
+        ("SSID-1", "Network-1", 40),
+        ("SSID-2", "Network-1", 40),
+        ("SSID-3", "Network-1", 40),
+    }
+    snap = golden_input().snapshot
+    unknown = replace(snap, networks=())
+    dangling = replace(snap, wlans=tuple(replace(w, network_id=None) for w in snap.wlans))
+    for variant in (unknown, dangling):
+        report = analyze_site(replace(golden_input(), snapshot=variant))
+        assert {(e.network, e.vlan) for e in report.compliance.evaluations} == {(None, None)}
+
+
 def test_access_points_come_in_configuration_order_then_the_rest() -> None:
     assert ap_order({"AP-3": frozenset({"AP-4"}), "AP-1": frozenset({"AP-2"})}, fixture_snapshot()) == [
         "AP-3",

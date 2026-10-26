@@ -30,6 +30,7 @@ from unifiwifioptimizer.domain.models import (
     ApGroup,
     ClientSighting,
     DevicesResult,
+    Network,
     ParsedList,
     SettingsResult,
     Site,
@@ -70,6 +71,10 @@ class FakeApi:
     def ap_groups(self, site_id: str) -> ParsedList[ApGroup]:
         self.calls.append(f"ap_groups:{site_id}")
         return parse.parse_ap_groups(load("apgroups.json"))
+
+    def networks(self, site_id: str) -> ParsedList[Network]:
+        self.calls.append(f"networks:{site_id}")
+        return parse.parse_networks(load("networkconf.json"))
 
     def settings(self, site_id: str) -> SettingsResult:
         self.calls.append(f"settings:{site_id}")
@@ -378,6 +383,7 @@ def test_a_scanning_run_feeds_the_matrix_and_reports_what_the_scanner_heard() ->
                 unparsable_devices=(),
                 wlans=(),
                 ap_groups=(),
+                networks=(),
                 settings=parse.parse_settings(load("rest_setting.json")).settings,
                 mgmt=None,
                 clients=None,

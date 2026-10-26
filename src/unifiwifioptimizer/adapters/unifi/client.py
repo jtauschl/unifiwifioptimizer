@@ -23,6 +23,7 @@ from unifiwifioptimizer.domain.models import (
     ApGroup,
     ClientSighting,
     DevicesResult,
+    Network,
     ParsedList,
     SettingsResult,
     Site,
@@ -128,6 +129,10 @@ class UnifiClient:
     def ap_groups(self, site_id: str) -> ParsedList[ApGroup]:
         path = f"{V2_PREFIX}/site/{_site_path(site_id)}/apgroups"
         return parse.parse_ap_groups(self.get(path), self._observer(path))
+
+    def networks(self, site_id: str) -> ParsedList[Network]:
+        path = f"{API_PREFIX}/s/{_site_path(site_id)}/rest/networkconf"
+        return parse.parse_networks(self.get(path), self._observer(path))
 
     def settings(self, site_id: str) -> SettingsResult:
         path = f"{API_PREFIX}/s/{_site_path(site_id)}/rest/setting"

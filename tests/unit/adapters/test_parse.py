@@ -528,6 +528,25 @@ def test_the_wlan_advanced_switch_and_multicast_suppression_are_read_as_reported
     assert absent.setting_preference is None and absent.multicast_suppressor_mode is None
 
 
+def test_networks_carry_their_name_and_vlan_and_an_untagged_network_has_none() -> None:
+    parsed = parse.parse_networks(fixture("networkconf.json"))
+    assert [(n.name, n.vlan) for n in parsed.items] == [
+        ("Network-1", 40),
+        ("Network-2", 20),
+        ("Network-3", None),
+        ("Network-4", None),
+    ]
+    assert parsed.problems == ()
+    assert {w.network_id for w in parse.parse_wlans(fixture("list_wlanconf.json")).items} == {parsed.items[0].id}
+
+
+def test_a_network_vlan_outside_the_valid_range_is_dropped_and_reported() -> None:
+    payload = {"data": [{"_id": "n1", "name": "Net", "vlan": 5000}, {"_id": "n2", "name": "Net-2", "vlan": 0}]}
+    parsed = parse.parse_networks(payload)
+    assert [(n.name, n.vlan) for n in parsed.items] == [("Net", None), ("Net-2", None)]
+    assert [problem.path for problem in parsed.problems] == ["$.data[0].vlan", "$.data[1].vlan"]
+
+
 def test_parse_wlans_isolates_a_broken_record_and_collects_problems() -> None:
     result = parse.parse_wlans(envelope(wlan(dtim_ng=0), wlan(_id=None), wlan(group_rekey="never")))
     assert [w.dtim_ng for w in result.items] == [None, None]

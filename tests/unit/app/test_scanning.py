@@ -59,6 +59,7 @@ def snapshot(mgmt: MgmtSettings | None = MGMT) -> SiteSnapshot:
         unparsable_devices=(),
         wlans=(),
         ap_groups=(),
+        networks=(),
         settings=settings.settings,
         mgmt=mgmt,
         clients=None,
