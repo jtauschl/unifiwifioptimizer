@@ -1,7 +1,10 @@
 """Where a checked setting lives in the controller UI, keyed by check code, so a failed line is
 actionable without a hunt. Silent (None) for a code without a known path rather than a guess."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
+from typing import TypeVar
+
+_Item = TypeVar("_Item")
 
 WLAN_EDIT = "WLAN edit"
 ADVANCED = f"{WLAN_EDIT} → Advanced"
@@ -15,7 +18,7 @@ UI_PATHS: Mapping[str, str] = {
     "minrate_mode": f"{ADVANCED} → Hi-Capacity Tuning → Minimum Data Rate (Basic & Multicast)",
     "minrate_24": f"{ADVANCED} → Hi-Capacity Tuning → Minimum Data Rate → 2.4 GHz slider",
     "minrate_5": f"{ADVANCED} → Hi-Capacity Tuning → Minimum Data Rate → 5 GHz slider",
-    "multicast_broadcast_blocker": f"{ADVANCED} → Hi-Capacity Tuning → Multicast and Broadcast Blocker",
+    "multicast_broadcast_blocker": f"{ADVANCED} → Hi-Capacity Tuning → Multicast Filtering",
     "multicast_to_unicast": f"{ADVANCED} → Hi-Capacity Tuning → Multicast to Unicast",
     "proxy_arp": f"{ADVANCED} → Hi-Capacity Tuning → Proxy ARP",
     "security_protocol": f"{WLAN_EDIT} → Security Protocol dropdown (above Advanced)",
@@ -39,11 +42,11 @@ UI_PATHS: Mapping[str, str] = {
     "dtim_6": f"{ADVANCED} → Behavior Controls → Auto 802.11 DTIM Period → 6 GHz field",
     "group_rekey": f"{ADVANCED} → Behavior Controls → Group Rekey Interval",
     "ap_name_in_beacon": f"{ADVANCED} → Behavior Controls → Show Access Point Name in Beacon",
-    "iot_dtim_lock": f"{ADVANCED} → Behavior Controls → IoT DTIM Lock",
-    "iot_channel_lock": f"{ADVANCED} → Behavior Controls → IoT Channel Lock",
+    "iot_dtim_lock": f"{ADVANCED} → IoT Optimization → DTIM Interval Lock",
+    "iot_channel_lock": f"{ADVANCED} → IoT Optimization → Lock 2.4 GHz to Channel 6 (All APs)",
     "enhanced_iot": f"{ADVANCED} → Behavior Controls → Enhanced IoT Connectivity",
     "b_supported": f"{ADVANCED} → Behavior Controls → 802.11b Support",
-    "dns_assistance_mode": f"{ADVANCED} → DNS Assistance",
+    "dns_assistance_mode": f"{ADVANCED} → Behavior Controls → DNS Assistance",
     "mdns_proxy_mode": f"{ADVANCED} → mDNS Proxy",
     "multicast_suppressor_mode": f"{ADVANCED} → Hi-Capacity Tuning → Multicast Suppression",
     "tx_power": "AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field",
@@ -74,6 +77,53 @@ HINTED = frozenset(
         "wpa3_enhanced_192",
     }
 )
+
+
+# The order of the controller UI's WLAN editor, so a report row sits where the setting does.
+UI_ORDER: tuple[str, ...] = (
+    "wlan_enabled",
+    "wifi_bands",
+    "fast_roaming",
+    "roaming_assistant",
+    "roaming_assistant_6g",
+    "minrate_mode",
+    "minrate_24",
+    "minrate_5",
+    "b_supported",
+    "multicast_broadcast_blocker",
+    "multicast_to_unicast",
+    "proxy_arp",
+    "multicast_suppressor_mode",
+    "iot_channel_lock",
+    "enhanced_iot",
+    "iot_dtim_lock",
+    "security_protocol",
+    "wpa3_enhanced_192",
+    "pmf",
+    "ppsk",
+    "hide_wifi_name",
+    "client_device_isolation",
+    "sae_anti_clogging",
+    "sae_sync_time",
+    "dns_assistance_mode",
+    "mlo",
+    "band_steering",
+    "bss_transition",
+    "uapsd",
+    "dtim_mode",
+    "dtim_24",
+    "dtim_5",
+    "dtim_6",
+    "group_rekey",
+    "ap_name_in_beacon",
+    "mdns_proxy_mode",
+)
+_RANK = {code: index for index, code in enumerate(UI_ORDER)}
+
+
+def in_ui_order(items: Iterable[_Item], code_of: Callable[[_Item], str]) -> list[_Item]:
+    """Stable: a code the table does not know keeps its place after the known ones."""
+    return sorted(items, key=lambda item: _RANK.get(code_of(item), len(UI_ORDER)))
 
 
 def ui_path(code: str) -> str | None:

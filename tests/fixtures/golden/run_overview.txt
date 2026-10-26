@@ -7,12 +7,14 @@
   WLAN       SSID-1  (profile Throughput)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    ✓ WiFi Band                          2.4 GHz, 5 GHz
-    ✓ Fast Roaming                       Enabled
+    ✓ Radio Band                         2.4 GHz, 5 GHz
+    ✓ Fast Roaming (802.11r)             Enabled
+    ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
     ✓ Minimum Data Rate Mode             Manual
     ✓ Minimum Data Rate 2.4 GHz          12 Mbps
     ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
-    ✓ Multicast and Broadcast Blocker    Disabled
+    ✓ 802.11b Support                    Disabled
+    ✓ Multicast Filtering                Disabled
     ✗ Multicast to Unicast               Enabled (currently Disabled)
     ✓ Proxy ARP                          Enabled
     ✓ Security Protocol                  WPA2/WPA3
@@ -25,12 +27,10 @@
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
     ✓ UAPSD                              Disabled
-    ✗ DTIM Mode                          Default (currently Custom)
+    ✗ Auto 802.11 DTIM Period            Default (currently Custom)
         → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
     ✓ Group Rekey Interval               3600 s
     ✓ Show Access Point Name in Beacon   Disabled
-    ✓ 802.11b Support                    Disabled
-    ? Roaming Assistant                  threshold not available without neighbour data
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Standard)
@@ -125,7 +125,7 @@
   Data quality:
     Scan: 4 APs, 12/12 passes successful.
     Partial result (band empty); the exit code says so.
-    WLAN checks that could not be evaluated: Roaming Assistant.
+    WLAN checks that could not be evaluated: Handoff Suggestions (802.11v).
     3 neighbour links are configured in one direction; both are evaluated.
     AP beacon readings do not establish client roaming or channel airtime.
 

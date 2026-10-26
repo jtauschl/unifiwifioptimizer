@@ -184,7 +184,7 @@ def test_overview_keeps_5ghz_advice_actionable_after_a_24ghz_tx_change() -> None
     assert not any(check.deferred_by for check in marked.checks)
     text = render_overview(marked)
     assert "provisional" not in text
-    assert "✗ Minimum RSSI" in text and "✗ Roaming Assistant" in text
+    assert "✗ Minimum RSSI" in text and "✗ Handoff Suggestions (802.11v)" in text
 
 
 def _plan(*assignments: ChannelAssignment, after: int = 0) -> ExtendedChannelPlan:
@@ -279,7 +279,7 @@ def test_overview_tells_access_points_apart_when_their_shortened_names_collide()
 def test_overview_marks_severity_and_says_what_could_not_be_evaluated() -> None:
     text = render_overview(REPORT, width=None)
     assert "* 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients." in text
-    assert "WLAN checks that could not be evaluated: Roaming Assistant." in text
+    assert "WLAN checks that could not be evaluated: Handoff Suggestions (802.11v)." in text
     assert "Partial result (band empty); the exit code says so." in text
 
 
@@ -386,7 +386,7 @@ def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
     # The incomplete roaming verdict is printed, and the note follows it.
     text = render_report(REPORT)
     assert (
-        "Roaming Assistant" in text
+        "Handoff Suggestions (802.11v)" in text
         and "threshold not available" in text
         and "pending 5 GHz transmit-power change" in text
     )

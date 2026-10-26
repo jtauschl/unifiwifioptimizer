@@ -190,7 +190,7 @@ def _bands_rule() -> Rule:
             wlan.bands == profile.wifi_bands,
         )
 
-    return Rule("wifi_bands", "WiFi Band", RuleGroup.RADIO, evaluate)
+    return Rule("wifi_bands", "Radio Band", RuleGroup.RADIO, evaluate)
 
 
 def _security_protocol_rule() -> Rule:
@@ -249,14 +249,18 @@ def _uses_sae(profile: Profile, wlan: WlanConfig) -> bool:
 RULES: tuple[Rule, ...] = (
     _bands_rule(),
     _bool_rule(
-        "fast_roaming", "Fast Roaming", RuleGroup.ROAMING, lambda p: p.fast_roaming, lambda w: w.fast_roaming_enabled
+        "fast_roaming",
+        "Fast Roaming (802.11r)",
+        RuleGroup.ROAMING,
+        lambda p: p.fast_roaming,
+        lambda w: w.fast_roaming_enabled,
     ),
     _mode_rule("minrate_mode", "Minimum Data Rate Mode", RuleGroup.CAPACITY, lambda p: p.minrate_mode, minrate_mode),
     _rate_rule("minrate_24", "Minimum Data Rate 2.4 GHz", Band.GHZ_2),
     _rate_rule("minrate_5", "Minimum Data Rate 5 GHz", Band.GHZ_5),
     _bool_rule(
         "multicast_broadcast_blocker",
-        "Multicast and Broadcast Blocker",
+        "Multicast Filtering",
         RuleGroup.CAPACITY,
         lambda p: p.multicast_broadcast_blocker,
         lambda w: w.bc_filter_enabled,
@@ -319,7 +323,7 @@ RULES: tuple[Rule, ...] = (
         "bss_transition", "BSS Transition", RuleGroup.BEHAVIOUR, lambda p: p.bss_transition, lambda w: w.bss_transition
     ),
     _bool_rule("uapsd", "UAPSD", RuleGroup.BEHAVIOUR, lambda p: p.uapsd, lambda w: w.uapsd_enabled),
-    _mode_rule("dtim_mode", "DTIM Mode", RuleGroup.BEHAVIOUR, lambda p: p.dtim_mode, dtim_mode),
+    _mode_rule("dtim_mode", "Auto 802.11 DTIM Period", RuleGroup.BEHAVIOUR, lambda p: p.dtim_mode, dtim_mode),
     _dtim_rule("dtim_24", "DTIM Period 2.4 GHz", Band.GHZ_2),
     _dtim_rule("dtim_5", "DTIM Period 5 GHz", Band.GHZ_5),
     _dtim_rule("dtim_6", "DTIM Period 6 GHz", Band.GHZ_6),
@@ -332,11 +336,11 @@ RULES: tuple[Rule, ...] = (
         lambda w: w.advertise_device_name_in_beacon,
     ),
     _bool_rule(
-        "iot_dtim_lock", "IoT DTIM Lock", RuleGroup.BEHAVIOUR, lambda p: p.iot_dtim_lock, lambda w: w.iot_dtim_lock
+        "iot_dtim_lock", "DTIM Interval Lock", RuleGroup.BEHAVIOUR, lambda p: p.iot_dtim_lock, lambda w: w.iot_dtim_lock
     ),
     _bool_rule(
         "iot_channel_lock",
-        "IoT Channel Lock",
+        "Lock 2.4 GHz to Channel 6 (All APs)",
         RuleGroup.BEHAVIOUR,
         lambda p: p.iot_channel_lock,
         lambda w: w.iot_channel_lock,

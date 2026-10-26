@@ -39,7 +39,7 @@ from unifiwifioptimizer.domain.report import (
     WlanRoamingSummary,
 )
 from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
-from unifiwifioptimizer.report.ui_paths import ui_hint, ui_path
+from unifiwifioptimizer.report.ui_paths import in_ui_order, ui_hint, ui_path
 from unifiwifioptimizer.rf.constants import (
     MIN_RSSI_MAX_DBM,
     MIN_RSSI_MIN_DBM,
@@ -136,8 +136,8 @@ WIDTH = 100
 SETTING_LABEL: Mapping[str, str] = {TX_POWER: "Transmit Power", MIN_RSSI: "Minimum RSSI"}
 CHECK_LABELS: Mapping[str, str] = {
     "wlan_enabled": "WLAN Enabled",
-    "roaming_assistant": "Roaming Assistant",
-    "roaming_assistant_6g": "Roaming Assistant 6 GHz",
+    "roaming_assistant": "Handoff Suggestions (802.11v)",
+    "roaming_assistant_6g": "Handoff Suggestions (802.11v) 6 GHz",
 }
 SCOPE_NOTE = (
     "Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It cannot "
@@ -248,7 +248,7 @@ def _wlans(report: SiteReport) -> list[str]:
         lines.append("")
     for evaluation in report.compliance.evaluations:
         lines += _header("WLAN", f"{name(evaluation.wlan)}  (profile {name(evaluation.profile)})")
-        for check in evaluation.checks:
+        for check in in_ui_order(evaluation.checks, lambda item: item.code):
             lines += _check_line(check)
             if check.code == "roaming_assistant":
                 lines += _roaming_detail(roaming.get(evaluation.wlan), report)
@@ -836,7 +836,7 @@ def _overview_wlans(report: SiteReport) -> list[str]:
         lines.append("")
     for evaluation in report.compliance.evaluations:
         lines += _header("WLAN", f"{name(evaluation.wlan)}  (profile {name(evaluation.profile)})")
-        for check in evaluation.checks:
+        for check in in_ui_order(evaluation.checks, lambda item: item.code):
             lines += _check_line(check, hints_only=True)
         for finding in evaluation.findings:
             lines.append(_finding_line(finding))

@@ -10,7 +10,7 @@ from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
 CODE = "roaming_assistant"
 CODE_6G = "roaming_assistant_6g"
-LABEL = "Roaming Assistant"
+LABEL = "Handoff Suggestions (802.11v)"
 RSSI_NOT_SENT = "the controller did not send the RSSI threshold"
 
 

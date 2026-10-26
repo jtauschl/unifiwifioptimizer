@@ -175,10 +175,8 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
 ```text
   WLAN       SSID-1  (profile Throughput)
 […]
-    ✓ Band Steering                      Enabled
-    ✓ BSS Transition                     Enabled
-[…]
-    ? Roaming Assistant                  threshold not available without neighbour data
+    ✓ Fast Roaming (802.11r)             Enabled
+    ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
         AP-1: no reading of neighbour AP-2 (scan skipped)
 […]
   WLAN       SSID-2  (profile Standard)
@@ -189,7 +187,7 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
         → WLAN edit → Enabled toggle
 ```
 
-The Roaming Assistant threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Throughput` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
+The Handoff Suggestions threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Throughput` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
 
 ## 5. Trust the Access Points' Host Keys and Scan
 
@@ -217,12 +215,14 @@ The default output lists the WLANs and the access points the way the controller 
   WLAN       SSID-1  (profile Throughput)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    ✓ WiFi Band                          2.4 GHz, 5 GHz
-    ✓ Fast Roaming                       Enabled
+    ✓ Radio Band                         2.4 GHz, 5 GHz
+    ✓ Fast Roaming (802.11r)             Enabled
+    ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
     ✓ Minimum Data Rate Mode             Manual
     ✓ Minimum Data Rate 2.4 GHz          12 Mbps
     ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
-    ✓ Multicast and Broadcast Blocker    Disabled
+    ✓ 802.11b Support                    Disabled
+    ✓ Multicast Filtering                Disabled
     ✗ Multicast to Unicast               Enabled (currently Disabled)
     ✓ Proxy ARP                          Enabled
     ✓ Security Protocol                  WPA2/WPA3
@@ -235,12 +235,10 @@ The default output lists the WLANs and the access points the way the controller 
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
     ✓ UAPSD                              Disabled
-    ✗ DTIM Mode                          Default (currently Custom)
+    ✗ Auto 802.11 DTIM Period            Default (currently Custom)
         → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
     ✓ Group Rekey Interval               3600 s
     ✓ Show Access Point Name in Beacon   Disabled
-    ✓ 802.11b Support                    Disabled
-    ? Roaming Assistant                  threshold not available without neighbour data
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Standard)
@@ -335,7 +333,7 @@ The default output lists the WLANs and the access points the way the controller 
   Data quality:
     Scan: 4 APs, 12/12 passes successful.
     Partial result (band empty); the exit code says so.
-    WLAN checks that could not be evaluated: Roaming Assistant.
+    WLAN checks that could not be evaluated: Handoff Suggestions (802.11v).
     3 neighbour links are configured in one direction; both are evaluated.
     AP beacon readings do not establish client roaming or channel airtime.
 
