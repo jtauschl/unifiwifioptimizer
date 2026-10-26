@@ -40,7 +40,7 @@ jobs:
       - name: Install semgrep
         run: pip install semgrep==1.180.0
       - name: Run semgrep
-        run: semgrep ci --config p/python --config p/secrets --config p/security-audit
+        run: semgrep scan --config p/python --config p/secrets --config p/security-audit --error --metrics=off .
 
   sbom:
     name: SBOM (CycloneDX)
