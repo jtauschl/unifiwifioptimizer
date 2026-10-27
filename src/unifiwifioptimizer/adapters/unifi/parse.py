@@ -188,9 +188,13 @@ def numeric_set(fields: Fields, key: str, max_items: int, allowed: Callable[[int
 
 
 def configured_channel(fields: Fields) -> int | None:
-    # Auto-channel radios report the string `auto`; their current channel is in `radio_table_stats`.
-    if fields.raw("channel") == AUTO_CHANNEL:
+    # Auto-channel radios report the string `auto`; their current channel is in `radio_table_stats`. A channel the
+    # operator fixed on 2.4 GHz arrives as a digit string.
+    raw = fields.raw("channel")
+    if raw == AUTO_CHANNEL:
         return None
+    if isinstance(raw, str):
+        return allowed_number(CHANNEL_RANGE.__contains__)(raw, fields.path("channel"))
     return fields.integer("channel", CHANNEL_RANGE)
 
 

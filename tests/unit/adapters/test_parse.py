@@ -335,7 +335,6 @@ def test_a_gateway_with_a_built_in_radio_counts_as_an_access_point() -> None:
         ({"radio_table": [radio(ht="8" * 5000)]}, "$.data[0].radio_table[0].ht: unknown channel width"),
         ({"radio_table": [radio(ht="٨٠")]}, "$.data[0].radio_table[0].ht: unknown channel width"),
         ({"radio_table": [radio(channel=300)]}, "$.data[0].radio_table[0].channel: outside 1..253"),
-        ({"radio_table": [radio(channel="36")]}, "$.data[0].radio_table[0].channel: expected an integer"),
         ({"radio_table": "none"}, "$.data[0].radio_table: expected a list"),
         ({"radio_table": [1]}, "$.data[0].radio_table[0]: expected an object"),
     ],
@@ -385,6 +384,19 @@ def test_a_radio_keeps_only_band_and_width_mandatory() -> None:
     assert parsed.tx_power_mode is None and parsed.configured_tx_dbm is None and parsed.interface_name is None
     assert parsed.min_tx_dbm is None and parsed.max_tx_dbm is None and parsed.min_rssi_enabled is False
     assert ap.model is None and plain_problems(result.problems) == ()
+
+
+def test_a_fixed_channel_given_as_a_digit_string_is_the_configured_channel() -> None:
+    result = parse.parse_devices(envelope(device(radio_table=[radio(radio="ng", channel="6", ht="20")])))
+    (ap,) = result.access_points
+    assert ap.radios[0].channel == 6 and plain_problems(result.problems) == ()
+
+
+@pytest.mark.parametrize("channel", ["six", "", "0", "9999", "\uff16", "6.0", " 6"])
+def test_a_configured_channel_text_that_is_not_a_channel_number_makes_the_device_unparsable(channel: str) -> None:
+    result = parse.parse_devices(envelope(device(radio_table=[radio(radio="ng", channel=channel, ht="20")])))
+    assert not result.access_points
+    assert result.unparsable[0].reason.startswith("$.data[0].radio_table[0].channel")
 
 
 def test_an_invalid_optional_field_is_dropped_with_a_problem() -> None:
