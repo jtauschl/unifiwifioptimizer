@@ -215,6 +215,28 @@ def test_extended_output_is_additive_and_hides_bssid_and_ssid() -> None:
     assert all(b.status == "unavailable" for b in no_scan.extended_channel_plan.bands)
 
 
+def test_a_populated_plan_carries_foreign_counts_but_neither_bssid_nor_ssid() -> None:
+    snap, _ = pair_site()
+    neighbour = replace(foreign(Band.GHZ_2, -55, 6, 7), ssid="Neighbour-Secret-Net")
+    own_one = reading(snap, "AP-2", Band.GHZ_2, -65)
+    own_two = reading(snap, "AP-1", Band.GHZ_2, -66)
+    scan = site_scan(
+        snap,
+        {
+            "AP-1": (scan_pass(band_scan(Band.GHZ_2, (own_one, neighbour))),),
+            "AP-2": (scan_pass(band_scan(Band.GHZ_2, (own_two, neighbour))),),
+        },
+    )
+    report = analyze_site(
+        replace(golden_input(), snapshot=snap, scan=scan, neighbours={"AP-1": frozenset({"AP-2"})}, extended=True)
+    )
+    plan = next(b for b in report.extended_channel_plan.bands if b.band is Band.GHZ_2)  # type: ignore[union-attr]
+    assert plan.status == "recommended" and plan.foreign_overlaps_before == 2
+    exposed = render_report(report) + render_json([report])
+    for secret in (neighbour.bssid, "Neighbour-Secret-Net"):
+        assert secret not in exposed
+
+
 def test_ap_setup_groups_actions_and_defers_every_radio_on_a_changed_band() -> None:
     snap, scan = pair_site()
     inp = replace(

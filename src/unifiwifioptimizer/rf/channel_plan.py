@@ -30,6 +30,9 @@ class PlanRadio:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class PlanEdge:
+    """One measured pair. `rssi_dbm` is the stronger of the measured directions, as the analysis layer builds it;
+    group coupling and acceptance rely on that."""
+
     a: str
     b: str
     rssi_dbm: int
@@ -65,11 +68,97 @@ class OptimizedPlan:
         return self.after.own_pressure < self.before.own_pressure
 
 
-def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> OptimizedPlan:
-    """Find the lexicographic minimum, exactly for small products and with bounded local search otherwise.
+@cache
+def _overlap(band: Band, channel_a: int, width_a: int, channel_b: int, width_b: int) -> bool:
+    return channels_overlap(band, channel_a, width_a, channel_b, width_b)
 
-    Callers validate candidate geometry and the 128-radio limit before entering this pure function.
+
+def _power_increase(radio: PlanRadio, channel: int) -> int:
+    if channel == radio.current or radio.current_power_dbm is None:
+        return 0
+    ceiling = dict(radio.candidate_ceilings).get(channel)
+    return max(0, ceiling - radio.current_power_dbm) if ceiling is not None else 0
+
+
+def _edge_cost(a: PlanRadio, channel_a: int, b: PlanRadio, channel_b: int, edge: PlanEdge) -> tuple[int, int, int]:
+    """(own pressure, possible extra pressure from a higher candidate TX, conflict count) of one measured edge."""
+    if not _overlap(a.band, channel_a, a.width_mhz, channel_b, b.width_mhz):
+        return 0, 0, 0
+    baseline = max(0, edge.rssi_dbm + 83)
+    directed = []
+    if edge.a_at_b_dbm is not None:
+        directed.append(edge.a_at_b_dbm + _power_increase(a, channel_a))
+    if edge.b_at_a_dbm is not None:
+        directed.append(edge.b_at_a_dbm + _power_increase(b, channel_b))
+    possible = max((max(0, rssi + 83) for rssi in directed), default=baseline)
+    return baseline, max(0, possible - baseline), int(baseline > 0)
+
+
+def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> OptimizedPlan:
+    """Find the lexicographic minimum per group of radios that can influence each other, exactly for small
+    groups and with bounded local search otherwise.
+
+    A group changes only if it strictly improves, so radios that no costly edge couples to a conflict keep their
+    channel and the search space is the sum, not the product, of the group sizes. Callers validate candidate
+    geometry and the 128-radio limit before entering this pure function.
     """
+    ordered = tuple(sorted(radios, key=lambda r: r.name))
+    parent = {r.name: r.name for r in ordered}
+
+    def root(name: str) -> str:
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
+
+    # An edge couples two radios exactly when some assignment of their channels gives it a cost; every other edge is
+    # zero under every assignment and cannot link two searches.
+    by_name = {r.name: r for r in ordered}
+    choices = {r.name: {*r.candidates, r.current} for r in ordered}
+    for edge in edges:
+        a, b = by_name[edge.a], by_name[edge.b]
+        if any(any(_edge_cost(a, x, b, y, edge)) for x in choices[a.name] for y in choices[b.name]):
+            parent[root(edge.a)] = root(edge.b)
+    groups: dict[str, list[PlanRadio]] = {}
+    for radio in ordered:
+        groups.setdefault(root(radio.name), []).append(radio)
+    group_edges: dict[str, list[PlanEdge]] = {key: [] for key in groups}
+    for edge in edges:
+        if root(edge.a) == root(edge.b):
+            group_edges[root(edge.a)].append(edge)
+    plans = {key: _optimize_group(tuple(members), tuple(group_edges[key])) for key, members in groups.items()}
+    if len(plans) == 1:
+        return next(iter(plans.values()))
+
+    def merge(pick: Callable[[OptimizedPlan], PlanScore]) -> PlanScore:
+        parts = [pick(plan) for plan in plans.values()]
+        channel_of = {
+            radio.name: channel
+            for key, members in groups.items()
+            for radio, channel in zip(members, pick(plans[key]).channels, strict=True)
+        }
+        return PlanScore(
+            own_pressure=sum(p.own_pressure for p in parts),
+            power_risk=sum(p.power_risk for p in parts),
+            power_loss=sum(p.power_loss for p in parts),
+            foreign_pressure=sum(p.foreign_pressure for p in parts),
+            moved=sum(p.moved for p in parts),
+            channels=tuple(channel_of[r.name] for r in ordered),
+            own_conflicts=sum(p.own_conflicts for p in parts),
+            foreign_overlaps=sum(p.foreign_overlaps for p in parts),
+        )
+
+    return OptimizedPlan(
+        before=merge(lambda plan: plan.before),
+        after=merge(lambda plan: plan.after),
+        method=ChannelPlanMethod.HEURISTIC
+        if any(plan.method is ChannelPlanMethod.HEURISTIC for plan in plans.values())
+        else ChannelPlanMethod.EXACT,
+        evaluations=sum(plan.evaluations for plan in plans.values()),
+    )
+
+
+def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> OptimizedPlan:
     ordered = tuple(sorted(radios, key=lambda r: r.name))
     index = {r.name: i for i, r in enumerate(ordered)}
     candidates = tuple(r.candidates for r in ordered)
@@ -96,20 +185,6 @@ def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> Opti
         incident[b].append((a, edge))
     ceilings = tuple(dict(r.candidate_ceilings) for r in ordered)
 
-    @cache
-    def geometry_overlap(channel_a: int, width_a: int, channel_b: int, width_b: int) -> bool:
-        return channels_overlap(ordered[0].band, channel_a, width_a, channel_b, width_b)
-
-    def overlaps(a: int, channel_a: int, b: int, channel_b: int) -> bool:
-        return geometry_overlap(channel_a, ordered[a].width_mhz, channel_b, ordered[b].width_mhz)
-
-    def increase(i: int, channel: int) -> int:
-        if channel == ordered[i].current:
-            return 0
-        current = ordered[i].current_power_dbm
-        ceiling = ceilings[i].get(channel)
-        return max(0, ceiling - current) if current is not None and ceiling is not None else 0
-
     def loses_power(i: int, channel: int) -> int:
         if channel == ordered[i].current:
             return 0
@@ -119,16 +194,7 @@ def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> Opti
 
     @lru_cache(maxsize=100_000)
     def edge_cost(a: int, channel_a: int, b: int, channel_b: int, edge: PlanEdge) -> tuple[int, int, int]:
-        if not overlaps(a, channel_a, b, channel_b):
-            return 0, 0, 0
-        baseline = max(0, edge.rssi_dbm + 83)
-        directed = []
-        if edge.a_at_b_dbm is not None:
-            directed.append(edge.a_at_b_dbm + increase(a, channel_a))
-        if edge.b_at_a_dbm is not None:
-            directed.append(edge.b_at_a_dbm + increase(b, channel_b))
-        possible = max((max(0, rssi + 83) for rssi in directed), default=baseline)
-        return baseline, max(0, possible - baseline), int(baseline > 0)
+        return _edge_cost(ordered[a], channel_a, ordered[b], channel_b, edge)
 
     def pair_cost(i: int, channel: int, peer: int, peer_channel: int, edge: PlanEdge) -> tuple[int, int, int]:
         if edge.a == ordered[i].name:
@@ -162,7 +228,7 @@ def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> Opti
         return OptimizedPlan(
             before=before,
             after=before,
-            method=ChannelPlanMethod.EXACT if size <= EXACT_LIMIT else ChannelPlanMethod.HEURISTIC,
+            method=ChannelPlanMethod.EXACT,
             evaluations=0,
         )
     if size <= EXACT_LIMIT:

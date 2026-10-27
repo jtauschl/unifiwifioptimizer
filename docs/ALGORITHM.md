@@ -332,13 +332,17 @@ Assignments are ranked lexicographically: first the sum of `1 + (RSSI + 82)` ove
 pairs assigned overlapping blocks, then possible additional co-channel pressure from a higher candidate TX
 ceiling, known losses of effective TX, the same proxy over visible foreign BSSs that overlap each proposed
 radio, the number of changed radios and the channel tuple. The foreign term only breaks ties in own AP
-pressure and power risk. The report shows the before/after conflict count and proxy, including residual overlaps when there
+pressure, power risk and power loss. The report shows the before/after conflict count and proxy, including residual overlaps when there
 are more mutually heard APs than disjoint channels. It recommends changes only when the own AP proxy strictly
 improves, the possible total pressure remains below the current proxy, and no selected radio has a known
-lower power ceiling than its observed TX. It never calls residual reuse unavoidable or predicts throughput. Up to 100,000 assignments the
-search is exact (radios with a single candidate are constants and do not multiply the search); above that it uses a
-deterministic greedy seed and at most 20,000 candidate evaluations including the seed's, run once from the greedy
-layout and once from the observed layout.
+lower power ceiling than its observed TX. It never calls residual reuse unavoidable or predicts throughput.
+Two radios are coupled exactly when some choice of their channels gives their measured pair a cost: the pair is heard at −82 dBm or stronger on overlapping channels, or a candidate channel with a ceiling above the sender's observed TX lets the receiver, which measured the sender, hear it at −82 dBm or stronger and above the pair's current level on overlapping channels. A pair that can never cost anything does not link two searches. Radios that are not coupled form separate
+groups; within a coupled group one radio's gain can still offset another's risk. Each group is searched on its own and changes only if it satisfies the
+conditions above; a group without an improvement keeps its observed channels, and the groups' search spaces add up
+instead of multiplying. Up to 100,000 assignments in a group the search is exact (radios with a single candidate are
+constants and do not multiply the search); above that it uses a deterministic greedy seed and at most 20,000
+candidate evaluations per group including the seed's, run once from the greedy layout and once from the observed
+layout. At most 128 radios take part per band, which bounds the number of such groups and so the total.
 Sites with more than 128 participating radios per band are marked unavailable.
 
 The same SSH scan call reads a bounded `iw phy` power table from the 5 GHz PHY attached to an UP AP-mode
@@ -365,7 +369,7 @@ Unknown channel geometry, an observed fixed channel moved by radar or the contro
 controller, settings the controller sent only partly, a configured neighbour that is offline, a missing usable scan
 from any participating AP, or missing candidate data suppress a band plan with an explicit reason. An offline radio
 that is nobody's configured neighbour is left out and named as a data gap. A candidate list is a controller policy
-set rather than a per-radio regulatory guarantee, so every result is labelled a **candidate proposal**.
+set rather than a per-radio regulatory guarantee, so the detailed report labels a change a **candidate recommendation**.
 Re-run after any channel change: DFS moves and channel-specific transmit-power caps can change the evidence.
 `--extended --no-scan` prints the unavailable reason for both bands.
 
