@@ -8,7 +8,7 @@ otherwise — a combination the controller sent but the tool has no name for fai
 combination. UI paths are the renderer's business and stay out of here.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -296,28 +296,52 @@ def _uses_sae(profile: Profile, wlan: WlanConfig) -> bool:
     return not isinstance(protocol, Unrecognised) and protocol is not None and protocol.uses_sae
 
 
+def _switch(value: bool | None) -> str | None:
+    return None if value is None else on_off(value)
+
+
+def _uses_radius(wlan: WlanConfig) -> bool:
+    """The controller offers the RADIUS fields with MAC authentication or an enterprise protocol."""
+    return wlan.radius_mac_auth_enabled is True or wlan.security == "wpaeap"
+
+
+def _always_visible(wlan: WlanConfig) -> bool:
+    return True
+
+
 def _display_rule(
-    code: str, label: str, group: RuleGroup, actual: Callable[[WlanConfig], bool | None], note: str
+    code: str,
+    label: str,
+    group: RuleGroup,
+    actual: Callable[[WlanConfig], str | None],
+    note: str,
+    visible: Callable[[WlanConfig], bool] = _always_visible,
 ) -> Rule:
-    return _bool_rule(code, label, group, _never, actual, note)
+    """A setting no profile key covers: listed with its value and a note, never judged. `visible` mirrors the
+    controller UI, which offers some settings only when another one is on."""
+
+    def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
+        if not visible(wlan):
+            return None
+        return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, actual(wlan), note)
+
+    return Rule(code, label, group, evaluate)
 
 
-def _never(profile: Profile) -> None:
-    """A setting no profile key covers yet: it is listed with its value and a note, never judged."""
-    return None
+def _words(known: Mapping[str, str]) -> Callable[[str | None], str | None]:
+    """The controller's token as the UI writes it; a token the tool has no wording for is shown as sent."""
+    return lambda token: None if token is None else known.get(token, token)
 
 
-def _broadcasting_aps(wlan: WlanConfig) -> str | None:
-    return wlan.ap_group_mode
-
+MAC_FORMATS = {"none_upper": "AABBCCDDEEFF", "none_lower": "aabbccddeeff"}
+NAS_IDENTIFIERS = {"bssid": "BSSID"}
 
 RULES: tuple[Rule, ...] = (
-    _text_rule(
+    _display_rule(
         "broadcasting_aps",
         "Broadcasting APs",
         RuleGroup.RADIO,
-        _never,
-        _broadcasting_aps,
+        lambda w: None if w.ap_group_mode is None else w.ap_group_mode.capitalize(),
         "a WLAN on only some access points is missing where roaming needs it",
     ),
     _bands_rule(),
@@ -429,15 +453,31 @@ RULES: tuple[Rule, ...] = (
         "mac_filter",
         "MAC Address Filter",
         RuleGroup.BEHAVIOUR,
-        lambda w: w.mac_filter_enabled,
+        lambda w: _switch(w.mac_filter_enabled),
         "adds little security and locks out clients that randomise their MAC address",
     ),
     _display_rule(
         "radius_mac_auth",
         "RADIUS MAC Authentication",
         RuleGroup.BEHAVIOUR,
-        lambda w: w.radius_mac_auth_enabled,
+        lambda w: _switch(w.radius_mac_auth_enabled),
         "admits devices by MAC address through RADIUS; a deployment choice",
+    ),
+    _display_rule(
+        "radius_mac_format",
+        "MAC Address Format",
+        RuleGroup.BEHAVIOUR,
+        lambda w: _words(MAC_FORMATS)(w.radius_macacl_format),
+        "how the MAC address is sent to the RADIUS server; it must match the server's user list",
+        _uses_radius,
+    ),
+    _display_rule(
+        "radius_empty_password",
+        "Allow Empty Password",
+        RuleGroup.BEHAVIOUR,
+        lambda w: _switch(w.radius_macacl_empty_password),
+        "lets a device join on its MAC address alone, with no password sent to the RADIUS server",
+        _uses_radius,
     ),
     _mode_rule("dtim_mode", "Auto 802.11 DTIM Period", RuleGroup.BEHAVIOUR, lambda p: p.dtim_mode, dtim_mode),
     _dtim_rule("dtim_24", "DTIM Period 2.4 GHz", Band.GHZ_2),
@@ -450,6 +490,29 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.ap_name_in_beacon,
         lambda w: w.advertise_device_name_in_beacon,
+    ),
+    _display_rule(
+        "nas_identifier",
+        "NAS ID",
+        RuleGroup.BEHAVIOUR,
+        lambda w: _words(NAS_IDENTIFIERS)(w.nas_identifier_type),
+        "the name this WLAN gives the RADIUS server to identify the access point",
+        _uses_radius,
+    ),
+    _display_rule(
+        "radius_das",
+        "DAS/DAC (CoA)",
+        RuleGroup.BEHAVIOUR,
+        lambda w: _switch(w.radius_das_enabled),
+        "lets the RADIUS server disconnect or re-authorise a client during its session",
+        _uses_radius,
+    ),
+    _display_rule(
+        "blackout_schedule",
+        "WiFi Blackout Schedule",
+        RuleGroup.BEHAVIOUR,
+        lambda w: None if w.schedule_blocks is None else ("On" if w.schedule_blocks else "Off"),
+        "switches the WLAN off at set times; devices on it lose their connection then",
     ),
     _bool_rule(
         "iot_dtim_lock",

@@ -263,6 +263,11 @@ class WlanConfig:
     hotspot2conf_enabled: bool | None
     mac_filter_enabled: bool | None
     radius_mac_auth_enabled: bool | None
+    radius_macacl_format: str | None
+    radius_macacl_empty_password: bool | None
+    radius_das_enabled: bool | None
+    nas_identifier_type: str | None
+    schedule_blocks: int | None
     rrm_enabled: bool | None
     is_guest: bool | None
     ap_group_mode: str | None

@@ -31,6 +31,7 @@ MAX_WIDTH_LIST = 8
 MAX_BLACKLIST = 1024
 MAX_WLAN_BANDS = 4
 MAX_OPTIMIZE_TARGETS = 8
+MAX_SCHEDULE_BLOCKS = 64
 # Byte caps by kind of text: enumerated tokens, short technical names, identifiers/versions/cron, display
 # names and model codes (plan: names/models ≤ 128), the controller-managed SSH password.
 MAX_TOKEN_BYTES = 16

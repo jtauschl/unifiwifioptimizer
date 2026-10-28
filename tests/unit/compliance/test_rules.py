@@ -53,8 +53,9 @@ DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "ap_name_in_beacon": ({"advertise_device_name_in_beacon": True}, "advertise_device_name_in_beacon"),
 }
 APPLICABLE_TO_STANDARD = frozenset(DEVIATIONS)
+RADIUS_ROWS = ("radius_mac_format", "radius_empty_password", "nas_identifier", "radius_das")
 # Settings no profile key covers: always listed with their value and a note.
-LISTED_ONLY = frozenset({"broadcasting_aps", "mac_filter", "radius_mac_auth"})
+LISTED_ONLY = frozenset({"broadcasting_aps", "mac_filter", "radius_mac_auth", "blackout_schedule"})
 
 # A profile that sets every optional key, with neighbouring controller fields deliberately unequal so a
 # rule reading the wrong field cannot pass by accident.
@@ -245,9 +246,9 @@ def test_set_rules_accept_any_listed_value() -> None:
 
 def test_rule_codes_are_unique_grouped_and_labelled() -> None:
     codes = [rule.code for rule in RULES]
-    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 34
+    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 39
     assert all(rule.label and isinstance(rule.group, RuleGroup) for rule in RULES)
-    assert set(DEVIATIONS) | set(OPTIONAL_DEVIATIONS) == set(codes) - {"dtim_6"} - LISTED_ONLY
+    assert set(DEVIATIONS) | set(OPTIONAL_DEVIATIONS) == set(codes) - {"dtim_6"} - LISTED_ONLY - set(RADIUS_ROWS)
 
 
 def test_an_open_or_owe_wlan_without_a_group_rekey_interval_is_not_judged_on_it() -> None:
@@ -311,3 +312,35 @@ def test_a_moot_setting_is_not_applicable_even_when_the_profile_prescribes_nothi
     rule = _bool_rule("x", "X", RuleGroup.BEHAVIOUR, lambda p: None, lambda w: True, "note", lambda p, w: False, "moot")
     result = rule.evaluate(STANDARD, standard_wlan())
     assert result is not None and result.status is CheckStatus.NOT_APPLICABLE and result.detail == "moot"
+
+
+def test_the_radius_settings_are_listed_only_where_the_controller_offers_them() -> None:
+    quiet = by_code(evaluate_rules(STANDARD, standard_wlan(radius_mac_auth_enabled=False)))
+    assert set(RADIUS_ROWS).isdisjoint(quiet)
+    for enabled, security in ((True, "wpapsk"), (False, "wpaeap")):
+        w = standard_wlan(
+            radius_mac_auth_enabled=enabled,
+            security=security,
+            radius_macacl_format="none_upper",
+            radius_macacl_empty_password=False,
+            radius_das_enabled=True,
+            nas_identifier_type="bssid",
+        )
+        results = by_code(evaluate_rules(STANDARD, w))
+        assert {c: results[c].status for c in RADIUS_ROWS} == dict.fromkeys(RADIUS_ROWS, CheckStatus.NOT_PRESCRIBED)
+        assert results["radius_mac_format"].actual == "AABBCCDDEEFF" and results["nas_identifier"].actual == "BSSID"
+        assert results["radius_empty_password"].actual == "Disabled" and results["radius_das"].actual == "Enabled"
+
+
+def test_a_token_the_tool_has_no_wording_for_is_shown_as_the_controller_sent_it() -> None:
+    w = standard_wlan(radius_mac_auth_enabled=True, radius_macacl_format="colon_upper", nas_identifier_type=None)
+    results = by_code(evaluate_rules(STANDARD, w))
+    assert results["radius_mac_format"].actual == "colon_upper" and results["nas_identifier"].actual is None
+
+
+def test_the_blackout_schedule_is_on_when_the_controller_lists_a_schedule() -> None:
+    shown = {
+        blocks: by_code(evaluate_rules(STANDARD, standard_wlan(schedule_blocks=blocks)))["blackout_schedule"].actual
+        for blocks in (None, 0, 2)
+    }
+    assert shown == {None: None, 0: "Off", 2: "On"}

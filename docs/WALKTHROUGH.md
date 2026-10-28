@@ -262,6 +262,8 @@ The default output lists the WLANs and the access points the way the controller 
         not prescribed: the profile pins an interval only under a custom DTIM setting
     ✓ Group Rekey Interval                 3600 s
     ✓ Show Access Point Name in Beacon     Disabled
+    · WiFi Blackout Schedule               Off
+        not prescribed: switches the WLAN off at set times; devices on it lose their connection then
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40

@@ -33,6 +33,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     MAX_OPTIMIZE_TARGETS,
     MAX_PASSWORD_BYTES,
     MAX_RADIOS_PER_DEVICE,
+    MAX_SCHEDULE_BLOCKS,
     MAX_SETTINGS,
     MAX_SHORT_TEXT_BYTES,
     MAX_SITES,
@@ -342,6 +343,10 @@ def wlan_bands(fields: Fields) -> frozenset[Band]:
     raise SchemaError(fields.path("wlan_bands"), "no band information")
 
 
+def _count(items: Sequence[object] | None) -> int | None:
+    return None if items is None else len(items)
+
+
 def parse_wlan(fields: Fields) -> WlanConfig:
     return WlanConfig(
         id=fields.string("_id", MAX_ID_BYTES),
@@ -395,6 +400,11 @@ def parse_wlan(fields: Fields) -> WlanConfig:
         hotspot2conf_enabled=fields.opt_bool("hotspot2conf_enabled"),
         mac_filter_enabled=fields.opt_bool("mac_filter_enabled"),
         radius_mac_auth_enabled=fields.opt_bool("radius_mac_auth_enabled"),
+        radius_macacl_format=fields.opt_string("radius_macacl_format", MAX_TOKEN_BYTES),
+        radius_macacl_empty_password=fields.opt_bool("radius_macacl_empty_password"),
+        radius_das_enabled=fields.opt_bool("radius_das_enabled"),
+        nas_identifier_type=fields.opt_string("nas_identifier_type", MAX_TOKEN_BYTES),
+        schedule_blocks=_count(fields.opt_sequence("schedule_with_duration", MAX_SCHEDULE_BLOCKS)),
         rrm_enabled=fields.opt_bool("rrm_enabled"),
         is_guest=fields.opt_bool("is_guest"),
         ap_group_mode=fields.opt_string("ap_group_mode", MAX_TOKEN_BYTES),

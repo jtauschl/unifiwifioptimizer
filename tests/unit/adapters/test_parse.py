@@ -549,6 +549,26 @@ def test_the_mac_filter_and_the_radius_mac_authentication_switches_are_read_as_r
     assert (fixture_first.mac_filter_enabled, fixture_first.radius_mac_auth_enabled) == (False, False)
 
 
+def test_the_radius_fields_and_the_blackout_schedule_are_read_as_reported() -> None:
+    parsed = parse.parse_wlan(
+        Fields(
+            wlan(
+                radius_macacl_format="none_upper",
+                radius_macacl_empty_password=True,
+                radius_das_enabled=False,
+                nas_identifier_type="bssid",
+                schedule_with_duration=[{"x": 1}, {"x": 2}],
+            ),
+            "$",
+        )
+    )
+    assert (parsed.radius_macacl_format, parsed.radius_macacl_empty_password) == ("none_upper", True)
+    assert (parsed.radius_das_enabled, parsed.nas_identifier_type, parsed.schedule_blocks) == (False, "bssid", 2)
+    absent = parse.parse_wlan(Fields(wlan(), "$"))
+    assert absent.schedule_blocks is None and absent.nas_identifier_type is None
+    assert parse.parse_wlan(Fields(wlan(schedule_with_duration=[]), "$")).schedule_blocks == 0
+
+
 def test_networks_carry_their_name_and_vlan_and_an_untagged_network_has_none() -> None:
     parsed = parse.parse_networks(fixture("networkconf.json"))
     assert [(n.name, n.vlan) for n in parsed.items] == [

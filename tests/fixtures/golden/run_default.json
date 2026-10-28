@@ -1002,6 +1002,14 @@
                 "subject": "SSID-1"
               },
               {
+                "actual": "Off",
+                "code": "blackout_schedule",
+                "detail": "switches the WLAN off at set times; devices on it lose their connection then",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
                 "actual": "Disabled",
                 "code": "iot_dtim_lock",
                 "detail": "keeps the DTIM interval fixed for IoT devices that misbehave otherwise",
@@ -1327,6 +1335,14 @@
             "detail": "",
             "expected": "Disabled",
             "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Off",
+            "code": "blackout_schedule",
+            "detail": "switches the WLAN off at set times; devices on it lose their connection then",
+            "expected": null,
+            "status": "not_prescribed",
             "subject": "SSID-1"
           },
           {
