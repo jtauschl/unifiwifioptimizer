@@ -40,7 +40,7 @@ def render_skeleton(overview: SiteOverview) -> str:
         "    # so 3 or more passes outvote a single outlier.",
         "    scan_passes: 3",
         "",
-        "    # Standard, IoT, Hotspot, Throughput, or Latency",
+        "    # Standard, Compat, IoT, or Hotspot (docs/PROFILES.md says which fits which device)",
         "    wlans:",
     ]
     wlans = sorted({w.name for w in overview.wlans})

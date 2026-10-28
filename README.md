@@ -9,13 +9,13 @@
 `UniFi WiFi Optimizer` is a command-line tool for post-placement UniFi WLAN review and RF tuning.
 It reads radio configuration and WLAN settings from the UniFi Network API, compares them against shipped WLAN profiles, collects AP-to-AP neighbor scan data via SSH, and generates recommendations for:
 
-- profile-based WLAN best practices for Standard, IoT, Hotspot, Throughput, and Latency profiles, including a Roaming Assistant compliance check
+- profile-based WLAN best practices for Standard, Compat, IoT, and Hotspot profiles, including a Roaming Assistant compliance check
 - access point settings: `Transmit Power`, `Minimum RSSI`
 - channel plan checks: overlap, co-channel contention, reuse feasibility
 
 The tool **never writes** to the controller or to an access point. You apply every recommendation yourself in UniFi Network.
 
-The shipped profiles are recommendations with an evidence tier per setting (standard, vendor, practice) for everyday WLANs, 2.4 GHz-only IoT WLANs, public hotspots, throughput-focused WLANs, and low-latency WLANs; see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
+The shipped profiles are recommendations with an evidence tier per setting (standard, vendor, practice) for everyday WLANs, WLANs for older or stationary clients, 2.4 GHz-only IoT WLANs and public hotspots; see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
 
 AP recommendations are derived from AP-to-AP neighbor scan RSSI against a cell edge of `noise floor + required SNR` (default −92 dBm + 25 dB = −67 dBm), adjusted for the configured RF environment such as open space, office, or obstructed layouts. The Roaming Assistant threshold is computed per WLAN from that corridor and aggregated, conservatively, across the access points that broadcast the WLAN. (UniFi's controller UI calls this setting "Handoff Suggestions (802.11v)" since Network Application 10.4.57.)
 
@@ -228,7 +228,7 @@ sites:
     environment: Residential
 
     wlans:
-      Main: Throughput
+      Main: Standard
       IoT: IoT
       Guest: Hotspot
 
@@ -299,15 +299,16 @@ Environment presets:
 
 For environment details, see [docs/ALGORITHM.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/ALGORITHM.md).
 
-Profile presets:
+Profile presets, by device class:
 
-- `Standard`
-- `IoT`
-- `Hotspot`
-- `Throughput`
-- `Latency`
+| Device class | Profile |
+| --- | --- |
+| Phones, tablets, laptops | `Standard` |
+| Smart TVs, streaming boxes, speakers, consoles, printers with 5 GHz, older laptops | `Compat` |
+| Sensors, plugs, thermostats, cameras, printers on 2.4 GHz only | `IoT` |
+| Visitors' devices | `Hotspot` |
 
-For profile details, see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
+For the settings of every profile and the reasoning behind them, see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
 
 ## Security Notes
 

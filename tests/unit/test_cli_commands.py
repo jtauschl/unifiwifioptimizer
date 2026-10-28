@@ -381,7 +381,7 @@ def configured(sites: dict[str, object], legacy: bool = False) -> LoadedConfig:
 SCANNING_SITE = {
     "ssh": {},
     "neighbors": {"AP-1": ["AP-2"], "AP-2": ["AP-3"], "AP-3": ["AP-4"]},
-    "wlans": {"SSID-1": "Throughput"},
+    "wlans": {"SSID-1": "Standard"},
 }
 
 

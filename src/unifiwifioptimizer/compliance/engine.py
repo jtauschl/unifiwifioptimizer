@@ -35,6 +35,17 @@ def evaluate_wlan(wlan: WlanConfig, profile: Profile, roaming_threshold_dbm: int
     )
 
 
+RETIRED_PROFILES: Mapping[str, str] = {
+    "Throughput": "it was renamed to Standard",
+    "Latency": "it was removed; define it in your own profiles file with dtim_mode: custom and dtim_24/dtim_5 set to 1",
+}
+
+
+def _retired_hint(profile_name: str) -> str:
+    reason = RETIRED_PROFILES.get(profile_name)
+    return f"; {reason}" if reason else ""
+
+
 def evaluate_site(
     wlans: Sequence[WlanConfig],
     mapping: Mapping[str, str],
@@ -57,7 +68,7 @@ def evaluate_site(
                 Finding(
                     severity=Severity.ERROR,
                     code="profile_unknown",
-                    message=f"profile {profile_name!r} is not defined",
+                    message=f"profile {profile_name!r} is not defined{_retired_hint(profile_name)}",
                     subject=name,
                 )
             )

@@ -18,8 +18,8 @@ def wlan(**overrides: Any) -> WlanConfig:
     return WlanConfig(**values)
 
 
-def throughput_wlan(**overrides: Any) -> WlanConfig:
-    """A WLAN that passes every rule of the shipped `Throughput` profile."""
+def standard_wlan(**overrides: Any) -> WlanConfig:
+    """A WLAN that passes every rule of the shipped `Standard` profile."""
     base = wlan(
         security="wpapsk",
         wpa_mode="wpa2",
@@ -55,5 +55,5 @@ def throughput_wlan(**overrides: Any) -> WlanConfig:
     return replace(base, **overrides)
 
 
-def profile(name: str = "Throughput", **overrides: Any) -> Profile:
+def profile(name: str = "Standard", **overrides: Any) -> Profile:
     return replace(PROFILES.profiles[name], **overrides)

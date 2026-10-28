@@ -8,15 +8,70 @@ Profiles are **recommendations with a stated evidence tier per key**, not snapsh
 defaults. A finding therefore means "this differs from a well-founded baseline", never merely "this
 differs from the factory preset".
 
+## Which profile for which device
+
+A profile is chosen by how the devices behave, not by the network they sit in. The VLAN or firewall zone of a
+WLAN is a network decision; the profile only says which WLAN settings those devices need. Map each WLAN in
+`sites.<id>.wlans`; a second WLAN is only worth its airtime (each SSID adds beacons on every band) when its
+devices need different settings or a different network.
+
+| Device class | Profile | Why |
+| --- | --- | --- |
+| Phones, tablets, laptops | `Standard` | Move between access points, so roaming helps; modern security. |
+| Smart TVs, streaming boxes, speakers, game consoles | `Compat` | Mostly stationary and often older firmware: no fast roaming, automatic rates, WPA2 accepted, multicast help for casting and discovery. |
+| Printers and scanners with 5 GHz | `Compat` | Same as above; discovery relies on multicast. |
+| Printers, plugs, sensors, thermostats, cameras on 2.4 GHz only | `IoT` | 2.4 GHz only, WPA2, PMF off or optional, nothing active (Ubiquiti's IoT checklist). |
+| Visitors' devices | `Hotspot` | Enhanced Open (OWE) or Open, clients isolated. |
+
+Old laptops and phones that fail on `Standard` belong on `Compat`; a device that only speaks 2.4 GHz and
+a plain password belongs on `IoT`. Isolation of a network from the rest of the house is firewall work (VLAN and
+zone rules), not a WLAN profile setting.
+
 ## Shipped profiles
 
-| Profile | Intent | Key choices |
-| --- | --- | --- |
-| `Standard` | Everyday WLAN for phones and laptops on 2.4 + 5 GHz | WPA2/WPA3 transition with PMF Optional, 802.11r + 802.11v, Roaming Assistant on, band steering on, Proxy ARP on, multicast-to-unicast on |
-| `IoT` | 2.4 GHz-only WLAN for legacy clients with compatibility issues | WPA2 (a WPA2/WPA3 transition is accepted too), PMF off or optional, no 802.11r, no active steering, no band steering, no group rekey — Ubiquiti recommends these compatibility settings when legacy IoT devices have trouble on Wi-Fi 7 |
-| `Hotspot` | Guest WLAN | Enhanced Open (OWE, preferably in transition mode) or plain Open for captive portals, client isolation on, mDNS proxy off |
-| `Throughput` | Primary WLAN tuned for airtime | WPA2/WPA3 (Personal or Enterprise), fixed minimum rate 12 Mbit/s on both bands, 802.11b off, the controller's DTIM defaults, group rekey 3600 s, Proxy ARP and multicast-to-unicast on |
-| `Latency` | Primary WLAN tuned for responsiveness | As Throughput, with DTIM 1 on both bands |
+| Profile | Intent |
+| --- | --- |
+| `Standard` | Everyday WLAN for modern clients on 2.4 + 5 GHz: 802.11r + 802.11v, Handoff Suggestions and band steering on, fixed 12 Mbit/s minimum rate, 802.11b off; WPA2/WPA3 (WPA3-only accepted) |
+| `Compat` | The same WLAN for clients that dislike 802.11r, fixed rates or WPA3: 802.11r off, automatic rates, WPA2 accepted, PMF optional or off |
+| `IoT` | 2.4 GHz-only WLAN for IoT clients: WPA2, PMF off or optional, no roaming features, no steering, no group rekey |
+| `Hotspot` | Guest WLAN: Enhanced Open (OWE, preferably in transition mode) or plain Open for captive portals, client isolation, Proxy ARP, mDNS proxy off |
+
+### Settings by profile
+
+The table is generated from `profiles.yaml`; a test fails when the two differ. A dash means the profile does not
+check the setting.
+
+<!-- profile-matrix:start -->
+| Group | Setting | `Standard` | `Compat` | `IoT` | `Hotspot` | What it does |
+| --- | --- | --- | --- | --- | --- | --- |
+| Network | Radio Band | 2.4 GHz, 5 GHz | 2.4 GHz, 5 GHz | 2.4 GHz | 2.4 GHz, 5 GHz | Bands the WLAN broadcasts on; the list must match exactly. |
+| Security | Security Protocol | WPA2/WPA3, WPA2/WPA3 Enterprise, WPA3, WPA3 Enterprise | WPA2, WPA2 Enterprise, WPA2/WPA3, WPA2/WPA3 Enterprise | WPA2 | Enhanced Open (OWE), Enhanced Open with Transition, Open | Accepted security modes, any listed one passes. WPA2/WPA3 is the transition mode that serves both generations of clients. |
+|  | PMF | Optional, Required | Disabled, Optional | Disabled, Optional | Disabled, Optional, Required | Protected Management Frames (802.11w) stop forged disconnects. WPA3 requires them; a WPA2-only client that fails on them needs them off. |
+|  | Hide WiFi Name | off | off | off | off | Hiding the name adds no security. |
+| Roaming | Fast Roaming (802.11r) | on | off | off | off | Fast BSS Transition: a client joins the next access point without a full handshake. Old drivers can fail on it. |
+|  | BSS Transition (802.11v) | on | on | off | on | Lets an access point suggest a better access point to a client; the basis of Handoff Suggestions and band steering. |
+|  | Handoff Suggestions (802.11v) | on | on | off | on | Whether the controller sends the suggestions. The signal threshold comes from the site's RF model, not from the profile. |
+|  | Band Steering | on | on | off | on | Moves clients from 2.4 GHz to the other bands; not judged without 2.4 GHz plus another band. |
+| Data rates and beacons | Minimum Data Rate Mode | manual | auto | auto | auto | auto lets clients use every rate; manual fixes the lowest rate an access point accepts. |
+|  | Minimum Data Rate 2.4 GHz | 12 Mbps | – | – | – | Only with manual rates. A higher floor saves airtime and shrinks the cell; weak clients drop out. |
+|  | Minimum Data Rate 5 GHz | 12 Mbps | – | – | – | Only with manual rates, same trade-off as on 2.4 GHz. |
+|  | 802.11b Support | off | – | – | – | Off removes 802.11b-only clients and their airtime cost. The controller does not report it under automatic rates. |
+|  | Auto 802.11 DTIM Period | default | default | default | default | default keeps the controller's interval; custom pins one per band. |
+|  | Group Rekey Interval | 3600 s | 3600 s | off | 3600 s | How often the group key is renewed. Not judged on an open or OWE WLAN when the controller sends none. |
+| Multicast and airtime | Proxy ARP | on | on | off | on | The access point answers ARP for sleeping clients; less broadcast traffic. |
+|  | Multicast to Unicast | on | on | off | off | Turns multicast into unicast. Helps casting and streaming discovery; some smart-home devices need it off. |
+|  | Multicast Filtering | off | off | off | off | Blocks multicast and broadcast towards clients; mDNS and DHCP need them. |
+|  | UAPSD | off | off | off | off | Client power saving; can break legacy clients. |
+| Isolation and information | Client Device Isolation | off | off | off | on | Stops clients on the same access point from talking to each other; for guests. |
+|  | Show Access Point Name in Beacon | off | off | off | off | Information leak with no benefit to clients. |
+|  | MLO | off | off | off | off | Wi-Fi 7 multi-link operation; needs WPA3 and Wi-Fi 7 clients. |
+|  | mDNS Proxy | – | – | – | off | Service discovery across VLANs; never on isolated WLANs. |
+| IoT optimization | Lock 2.4 GHz to Channel 6 (All APs) | – | – | off | – | Pins the 2.4 GHz radio of every access point, for every SSID on it, to channel 6; off keeps the channel plan. |
+| WPA3 handshake | SAE Anti-clogging | 5 | 5 | 5 | 5 | Protects the WPA3 handshake against floods; keep the controller default. |
+|  | SAE Sync Time | 5 | 5 | 5 | 5 | WPA3 handshake timing; keep the controller default. |
+<!-- profile-matrix:end -->
+
+Each value carries an evidence tier and a source in `profiles.yaml` (see "Evidence tiers" below).
 
 Print the effective set, comments and evidence included:
 
@@ -69,7 +124,7 @@ profiles:
 | --- | --- | --- |
 | `wifi_bands` | the WLAN's bands | list of `2g`, `5g`, `6g`; must match exactly |
 | `security_protocols` | `security` + `wpa_mode` + `wpa3_support` + `wpa3_transition` | list; any listed protocol passes: `Open`, `Enhanced Open (OWE)`, `Enhanced Open with Transition`, `WPA2`, `WPA3`, `WPA2/WPA3`, `WPA2 Enterprise`, `WPA3 Enterprise`, `WPA2/WPA3 Enterprise` |
-| `pmf` | `pmf_mode` | list of `Disabled`, `Optional`, `Required` |
+| `pmf` | `pmf_mode` | list of `Disabled`, `Optional`, `Required`; judged separately from the protocol, the advisory `pmf_matches_protocol` judges the pair (so `Standard` accepting `Required` still reports a WPA2/WPA3 transition WLAN that has it) |
 | `fast_roaming` | `fast_roaming_enabled` (802.11r) | bool |
 | `bss_transition` | `bss_transition` (802.11v BTM support) | bool |
 | `roaming_assistant` | `roaming_assistant_na_enabled` | bool — only whether Handoff Suggestions should be on; the RSSI threshold always comes from the site's RF model (ALGORITHM.md §7). For a WLAN on 6 GHz the `roaming_assistant_6e_enabled` switch is shown as a separate, not evaluable result |
@@ -92,17 +147,18 @@ combination the controller did send but the tool has no name for (for example `w
 ## Evidence tiers
 
 Every key carries a tier in the `evidence` section of the profiles file; a profile overrides it for keys
-where its value is a compatibility choice (the IoT profile's PMF and protocol entries are `practice`
-although the mechanisms are standards, because the standard argues for the stricter setting):
+where its value differs from the set-wide entry (the `Compat` profile quotes Ubiquiti's legacy-client
+checklist for 802.11r and the minimum rate, `IoT` its IoT checklist, `Hotspot` Ubiquiti's guest guidance):
 
 - **standard** — a published standard requires or defines exactly this value; today the `pmf` and
-  `wpa3_enhanced_192` keys (IEEE 802.11w, Wi-Fi Alliance WPA3). A standard that defines a *mechanism* (802.11r,
+  `wpa3_enhanced_192` keys and the Open/OWE fast-roaming entry of `Hotspot` (IEEE 802.11w and 802.11r, Wi-Fi Alliance WPA3). A standard that defines a *mechanism* (802.11r,
   802.11v, Proxy ARP, WPA3 transition mode, OWE) does not recommend switching it on; that advice is vendor guidance.
 - **vendor** — reproducible official guidance for this value or setting, each entry naming the document: Cisco
   Catalyst 9800 best practices (mandatory rates), Apple router settings, Ubiquiti help articles, including their
   advice to keep a default.
-- **practice** — habit without a published derivation: DTIM values, U-APSD, isolation, the
-  compatibility choices of the IoT profile. These are the tunables to adjust first when your environment disagrees.
+- **practice** — habit without a published derivation: multicast filtering, the access point name in the beacon, the
+  mDNS proxy, multicast suppression, DTIM values, the IoT channel lock and the IoT roaming assistant (inferred from the BSS transition entry), multicast conversion for isolated guests. These are the tunables to
+  adjust first when your environment disagrees.
 
 ## Advisories
 
@@ -136,3 +192,7 @@ controller enforces WPA3-only + PMF Required on the 6 GHz radio internally.
 - Ubiquiti: [Using PPSK / RADIUS for Multiple VLANs on an SSID](https://help.ui.com/hc/en-us/articles/29887064407319)
 - Ubiquiti: [UniFi Wireless Guest Network Setup](https://help.ui.com/hc/en-us/articles/115000166827-UniFi-Wireless-Guest-Network-Setup)
 - Ubiquiti: [Setting Up Passpoint on UniFi Network](https://help.ui.com/hc/en-us/articles/25473982758551-Setting-Up-Passpoint-on-UniFi-Network)
+- Ubiquiti: [Unable to Connect to WiFi](https://help.ui.com/hc/en-us/articles/23283660456599-Unable-to-Connect-to-WiFi) (IoT and legacy-client checklist)
+- Ubiquiti: [Best Practices: Guest WiFi](https://help.ui.com/hc/en-us/articles/23948850278295-Best-Practices-Guest-WiFi)
+- Ubiquiti: [Ensure Your IoT Devices Work with WiFi 7 on U7 Access Points](https://help.ui.com/hc/en-us/articles/27053048844055-Ensure-Your-IoT-Devices-Work-with-WiFi-7-on-U7-Access-Points)
+- Ubiquiti: [Optimizing WiFi Connectivity and Reducing Latency](https://help.ui.com/hc/en-us/articles/221029967-Optimizing-WiFi-Connectivity-and-Reducing-Latency)

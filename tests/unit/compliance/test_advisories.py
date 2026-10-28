@@ -17,7 +17,7 @@ from unifiwifioptimizer.compliance.advisories import (
 from unifiwifioptimizer.domain.models import Band
 from unifiwifioptimizer.domain.report import Severity
 
-from .builders import profile, throughput_wlan, wlan
+from .builders import profile, standard_wlan, wlan
 
 
 def mlo(security: str, wpa3: bool, transition: bool, pmf: str, enabled: bool = True) -> str | None:
@@ -137,9 +137,7 @@ def test_fast_roaming_without_bss_transition_fires_only_when_both_facts_are_know
 
 def test_fast_roaming_on_a_2g_only_wlan_is_judged_on_the_controller_bands_not_the_profile() -> None:
     only_2g = frozenset({Band.GHZ_2})
-    assert (
-        fast_roaming_on_2g_only_wlan(profile("Throughput"), wlan(bands=only_2g, fast_roaming_enabled=True)) is not None
-    )
+    assert fast_roaming_on_2g_only_wlan(profile("Standard"), wlan(bands=only_2g, fast_roaming_enabled=True)) is not None
     assert fast_roaming_on_2g_only_wlan(profile("IoT"), wlan(fast_roaming_enabled=True)) is None
     assert fast_roaming_on_2g_only_wlan(profile("IoT"), wlan(bands=only_2g, fast_roaming_enabled=False)) is None
     finding = fast_roaming_on_2g_only_wlan(profile("IoT"), wlan(bands=only_2g, fast_roaming_enabled=True))
@@ -181,11 +179,11 @@ def test_min_rate_2g_speaks_only_for_a_fixed_2g_rate_with_802_11b_known_to_be_on
 
 def test_iot_locks_are_an_advisory_only_on_a_profile_that_expects_5_ghz() -> None:
     both = wlan(iot_channel_lock=True, iot_dtim_lock=True)
-    finding = iot_locks_on_dual_band_wlan(profile("Throughput"), both)
+    finding = iot_locks_on_dual_band_wlan(profile("Standard"), both)
     assert finding is not None and "IoT Channel Lock and IoT DTIM Lock" in finding.message
     assert iot_locks_on_dual_band_wlan(profile("IoT"), both) is None
-    assert iot_locks_on_dual_band_wlan(profile("Throughput"), wlan(iot_channel_lock=False, iot_dtim_lock=None)) is None
-    one = iot_locks_on_dual_band_wlan(profile("Throughput"), wlan(iot_dtim_lock=True))
+    assert iot_locks_on_dual_band_wlan(profile("Standard"), wlan(iot_channel_lock=False, iot_dtim_lock=None)) is None
+    one = iot_locks_on_dual_band_wlan(profile("Standard"), wlan(iot_dtim_lock=True))
     assert one is not None and one.message.startswith("IoT DTIM Lock enabled")
 
 
@@ -237,7 +235,7 @@ def test_wpa3_192_requires_wpa3_enterprise_without_transition() -> None:
     assert wpa3_192_requires_enterprise(profile(), wlan(wpa3_enhanced_192=True)) is None
 
 
-def test_a_compliant_throughput_wlan_raises_no_advisory_and_codes_are_unique() -> None:
-    assert evaluate_advisories(profile(), throughput_wlan()) == ()
+def test_a_compliant_standard_wlan_raises_no_advisory_and_codes_are_unique() -> None:
+    assert evaluate_advisories(profile(), standard_wlan()) == ()
     codes = [a.__name__ for a in ADVISORIES]
     assert len(set(codes)) == len(codes) == 10

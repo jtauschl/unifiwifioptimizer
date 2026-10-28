@@ -366,7 +366,7 @@ def test_a_derived_value_below_what_the_controller_accepts_is_raised_to_the_limi
     assert downlink_trigger_for(result, "AP-1") == -72 and downlink_trigger_for(result, "AP-2") == -80
     assert thresholds_for_compliance({"Corp": result}) == {"Corp": -80}
     configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=-80)
-    check = roaming_assistant_check(profile("Throughput"), configured, -80)
+    check = roaming_assistant_check(profile("Standard"), configured, -80)
     assert check.status is CheckStatus.PASSED
 
 

@@ -34,7 +34,7 @@ def shipped_document() -> Document:
 
 def test_the_shipped_profiles_load_and_cover_every_key_with_evidence() -> None:
     profiles = shipped_profiles()
-    assert sorted(profiles.profiles) == ["Hotspot", "IoT", "Latency", "Standard", "Throughput"]
+    assert sorted(profiles.profiles) == ["Compat", "Hotspot", "IoT", "Standard"]
     assert set(profiles.evidence) == PROFILE_KEYS
     assert {e.tier for e in profiles.evidence.values()} == set(EvidenceTier)
     assert "ADR-" not in shipped_profiles_text() and "in this release" not in shipped_profiles_text()
@@ -42,36 +42,39 @@ def test_the_shipped_profiles_load_and_cover_every_key_with_evidence() -> None:
 
 def test_the_shipped_baselines_follow_the_decided_recommendations() -> None:
     p = shipped_profiles().profiles
-    assert p["Standard"].security_protocols == {SecurityProtocol.WPA2_WPA3} and p["Standard"].pmf == {PmfMode.OPTIONAL}
-    assert p["Standard"].fast_roaming and p["Standard"].roaming_assistant and p["Standard"].group_rekey_s == 3600
-    assert p["Hotspot"].security_protocols == {
+    standard, compat, iot, hotspot = p["Standard"], p["Compat"], p["IoT"], p["Hotspot"]
+    assert standard.security_protocols == {
+        SecurityProtocol.WPA2_WPA3,
+        SecurityProtocol.WPA3,
+        SecurityProtocol.WPA2_WPA3_ENTERPRISE,
+        SecurityProtocol.WPA3_ENTERPRISE,
+    }
+    assert standard.pmf == {PmfMode.OPTIONAL, PmfMode.REQUIRED}
+    assert standard.fast_roaming and standard.roaming_assistant and standard.group_rekey_s == 3600
+    assert standard.minrate_mode is MinRateMode.MANUAL
+    assert (standard.minrate_24_kbps, standard.minrate_5_kbps) == (12000, 12000)
+    assert standard.b_supported is False and standard.wifi_bands == {Band.GHZ_2, Band.GHZ_5}
+    assert standard.dtim_mode is DtimMode.DEFAULT and standard.dtim_24 is None and standard.dtim_6 is None
+    # Compat is Standard for clients that dislike 802.11r, fixed rates and WPA3.
+    assert compat.fast_roaming is False and compat.minrate_mode is MinRateMode.AUTO
+    assert SecurityProtocol.WPA2 in compat.security_protocols and PmfMode.DISABLED in compat.pmf
+    assert compat.wifi_bands == standard.wifi_bands and compat.b_supported is None
+    assert compat.bss_transition and compat.band_steering and compat.roaming_assistant
+    assert hotspot.security_protocols == {
         SecurityProtocol.OWE_TRANSITION,
         SecurityProtocol.OWE,
         SecurityProtocol.OPEN,
     }
-    assert p["Hotspot"].client_device_isolation and p["Hotspot"].mdns_proxy_mode == "off"
-    assert p["IoT"].wifi_bands == {Band.GHZ_2}
-    assert p["IoT"].security_protocols == {SecurityProtocol.WPA2, SecurityProtocol.WPA2_WPA3}
-    assert p["IoT"].pmf == {PmfMode.DISABLED, PmfMode.OPTIONAL} and p["IoT"].group_rekey_s == 0
-    assert p["IoT"].fast_roaming is False and p["IoT"].band_steering is False
-    for name in ("Throughput", "Latency"):
-        assert p[name].minrate_mode is MinRateMode.MANUAL
-        assert (p[name].minrate_24_kbps, p[name].minrate_5_kbps) == (12000, 12000)
-        assert (
-            p[name].b_supported is False and p[name].wifi_bands == {Band.GHZ_2, Band.GHZ_5} and p[name].dtim_6 is None
-        )
-    # Throughput keeps the controller's DTIM defaults, Latency pins 1 on both bands; U-APSD is off everywhere.
-    assert (p["Throughput"].dtim_mode, p["Throughput"].dtim_24, p["Throughput"].dtim_5) == (
-        DtimMode.DEFAULT,
-        None,
-        None,
-    )
-    assert (p["Latency"].dtim_mode, p["Latency"].dtim_24, p["Latency"].dtim_5) == (DtimMode.CUSTOM, 1, 1)
+    assert hotspot.client_device_isolation and hotspot.mdns_proxy_mode == "off" and hotspot.proxy_arp
+    assert iot.wifi_bands == {Band.GHZ_2}
+    assert iot.security_protocols == {SecurityProtocol.WPA2}
+    assert iot.pmf == {PmfMode.DISABLED, PmfMode.OPTIONAL} and iot.group_rekey_s == 0
+    assert iot.fast_roaming is False and iot.band_steering is False
+    assert iot.iot_channel_lock is False and iot.iot_dtim_lock is None and iot.enhanced_iot is None
     assert not any(profile.uapsd for profile in p.values())
-    # One Proxy ARP and one multicast-to-unicast value for the three primary profiles.
-    assert {p[name].proxy_arp for name in ("Standard", "Throughput", "Latency")} == {True}
-    assert {p[name].multicast_to_unicast for name in ("Standard", "Throughput", "Latency")} == {True}
-    assert not p["IoT"].multicast_to_unicast and not p["Hotspot"].multicast_to_unicast
+    assert {p[name].proxy_arp for name in ("Standard", "Compat", "Hotspot")} == {True}
+    assert {p[name].multicast_to_unicast for name in ("Standard", "Compat")} == {True}
+    assert not iot.multicast_to_unicast and not hotspot.multicast_to_unicast
 
 
 def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choices() -> None:
@@ -89,12 +92,14 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
         "bss_transition",
         "roaming_assistant",
         "band_steering",
+        "mlo",
         "uapsd",
         "client_device_isolation",
         "multicast_broadcast_blocker",
         "minrate_mode",
         "dtim_mode",
         "group_rekey_s",
+        "iot_channel_lock",
         "proxy_arp",
         "multicast_to_unicast",
     }
@@ -111,12 +116,13 @@ def test_a_profile_that_switches_a_vendor_advised_setting_off_carries_its_own_en
         own = profiles.evidence_for(profile, key)
         assert own is not None
         if getattr(profile, key):
-            assert own == profiles.evidence[key], name
+            assert own.tier is EvidenceTier.VENDOR, name
         else:
-            assert "off" in own.source, name
+            assert key in profile.evidence and own != profiles.evidence[key], name
 
 
-def mutate(path: str, value: Any, delete: bool = False) -> Document:
+def mutate(path: str, value: Any, delete: bool = False, also: dict[str, Any] | None = None) -> Document:
+    """Set (or delete) one value of the shipped document; `also` sets sibling keys of the same profile."""
     document = shipped_document()
     node = document
     *parents, leaf = path.split(".")
@@ -126,6 +132,7 @@ def mutate(path: str, value: Any, delete: bool = False) -> Document:
         del node[leaf]
     else:
         node[leaf] = value
+    node.update(also or {})
     return document
 
 
@@ -142,11 +149,19 @@ INVALID: list[tuple[Document, str, str]] = [
     (mutate("profiles.Standard.security_protocols", ["WPA4"]), P + "Standard.security_protocols", "security protocol"),
     (mutate("profiles.Standard.pmf", ["Maybe"]), P + "Standard.pmf", "PMF mode"),
     (mutate("profiles.Standard.minrate_mode", "Manual"), P + "Standard.minrate_mode", "mode"),
-    (mutate("profiles.Standard.minrate_24_kbps", 12000), P + "Standard.minrate_24_kbps", "remove it"),
-    (mutate("profiles.Throughput.minrate_24_kbps", None, delete=True), P + "Throughput.minrate_24_kbps", "required"),
-    (mutate("profiles.Throughput.minrate_24_kbps", 500), P + "Throughput.minrate_24_kbps", "integer"),
-    (mutate("profiles.Latency.dtim_6", 3), P + "Latency.dtim_6", "remove it"),
-    (mutate("profiles.Latency.dtim_24", 0), P + "Latency.dtim_24", "integer"),
+    (mutate("profiles.Compat.minrate_24_kbps", 12000), P + "Compat.minrate_24_kbps", "remove it"),
+    (mutate("profiles.Standard.minrate_24_kbps", None, delete=True), P + "Standard.minrate_24_kbps", "required"),
+    (mutate("profiles.Standard.minrate_24_kbps", 500), P + "Standard.minrate_24_kbps", "integer"),
+    (
+        mutate("profiles.Standard.dtim_mode", "custom", also={"dtim_24": 1, "dtim_5": 1, "dtim_6": 3}),
+        P + "Standard.dtim_6",
+        "remove it",
+    ),
+    (
+        mutate("profiles.Standard.dtim_mode", "custom", also={"dtim_24": 0, "dtim_5": 1}),
+        P + "Standard.dtim_24",
+        "integer",
+    ),
     (mutate("profiles.Standard.group_rekey_s", True), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.group_rekey_s", 90000), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.sae_sync_time", -1), P + "Standard.sae_sync_time", "integer"),
@@ -245,7 +260,7 @@ def test_an_override_file_replaces_whole_profiles_adds_new_ones_and_updates_evid
     loaded = load_profiles(path, at(tmp_path / "elsewhere" / "config.yaml"))
     assert loaded.override_path == path and loaded.override_text == OVERRIDE
     profiles = loaded.profiles
-    assert sorted(profiles.profiles) == ["Hotspot", "IoT", "Latency", "Media", "Standard", "Throughput"]
+    assert sorted(profiles.profiles) == ["Compat", "Hotspot", "IoT", "Media", "Standard"]
     assert (
         profiles.profiles["Standard"].wifi_bands == {Band.GHZ_5}
         and profiles.profiles["Standard"].band_steering is False

@@ -201,6 +201,6 @@ def golden_input(*, clients: bool = False, skip_scan: bool = False) -> "SiteAnal
         environment=PathLossModel.from_preset("Residential"),
         rf=RfSettings(),
         scan_passes=3,
-        wlan_profiles={"SSID-1": "Throughput", "SSID-2": "Standard", "SSID-3": "Hotspot"},
+        wlan_profiles={"SSID-1": "Standard", "SSID-2": "Compat", "SSID-3": "Hotspot"},
         profiles=PROFILES,
     )

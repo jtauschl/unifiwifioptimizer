@@ -49,9 +49,9 @@ sites:
     # more passes outvote a single outlier. Each additional pass repeats the full scan sequence and adds scan time.
     scan_passes: 3
 
-    # WLAN name -> Standard, IoT, Hotspot, Throughput, or Latency
+    # WLAN name -> Standard, Compat, IoT, or Hotspot (docs/PROFILES.md says which fits which device)
     wlans:
-      YOUR_WIFI: Throughput
+      YOUR_WIFI: Standard
 
     # Access point name -> the access points it can hear. Names must match the controller exactly.
     neighbors:

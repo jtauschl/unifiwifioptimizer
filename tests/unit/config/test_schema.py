@@ -56,7 +56,7 @@ def test_full_site_configuration() -> None:
         },
         "environment": "obstructed",
         "scan_passes": 3,
-        "wlans": {"SSID-1": "Throughput"},
+        "wlans": {"SSID-1": "Standard"},
         "neighbors": {"AP-1": ["AP-2"], "AP-2": ["AP-1"]},
     }
     config = Config.from_mapping(with_site(site, url="https://unifi.example:8443", timeout_s=30))
@@ -67,7 +67,7 @@ def test_full_site_configuration() -> None:
     assert parsed.ssh.host_keys == {"02:00:00:00:00:04": parse_fingerprint("SHA256:" + "A" * 43, "x")}
     assert (parsed.ssh.scan_interface_toggle, parsed.ssh.scan_concurrency, parsed.ssh.scan_attempts) == (True, 2, 3)
     assert parsed.environment == PathLossModel.from_preset("Obstructed") and parsed.scan_passes == 3
-    assert parsed.wlans == {"SSID-1": "Throughput"} and parsed.neighbors == {"AP-1": {"AP-2"}, "AP-2": {"AP-1"}}
+    assert parsed.wlans == {"SSID-1": "Standard"} and parsed.neighbors == {"AP-1": {"AP-2"}, "AP-2": {"AP-1"}}
 
 
 def test_api_key_falls_back_to_the_environment_only_when_absent() -> None:

@@ -102,7 +102,7 @@ unifiwifioptimizer config default >> ~/.config/unifiwifioptimizer/config.yaml
     # so 3 or more passes outvote a single outlier.
     scan_passes: 3
 
-    # Standard, IoT, Hotspot, Throughput, or Latency
+    # Standard, Compat, IoT, or Hotspot (docs/PROFILES.md says which fits which device)
     wlans:
       "SSID-1": Standard
       "SSID-2": Standard
@@ -136,8 +136,8 @@ sites:
     environment: Residential
     scan_passes: 3
     wlans:
-      "SSID-1": Throughput
-      "SSID-2": Standard
+      "SSID-1": Standard
+      "SSID-2": Compat
       "SSID-3": Hotspot
     neighbors:
       "AP-1": ["AP-2"]
@@ -173,13 +173,13 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
 
 <!-- source: no-scan -->
 ```text
-  WLAN       SSID-1  (profile Throughput)  → network Network-1, VLAN 40
+  WLAN       SSID-1  (profile Standard)  → network Network-1, VLAN 40
 […]
     ✓ Fast Roaming (802.11r)             Enabled
     ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
         AP-1: no reading of neighbour AP-2 (scan skipped)
 […]
-  WLAN       SSID-2  (profile Standard)  → network Network-1, VLAN 40
+  WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)
@@ -187,7 +187,7 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
         → WLAN edit → Enabled toggle
 ```
 
-The Handoff Suggestions threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Throughput` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
+The Handoff Suggestions threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Standard` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
 
 ## 5. Trust the Access Points' Host Keys and Scan
 
@@ -212,7 +212,7 @@ The default output lists the WLANs and the access points the way the controller 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-1  (profile Throughput)  → network Network-1, VLAN 40
+  WLAN       SSID-1  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✓ Radio Band                         2.4 GHz, 5 GHz
@@ -241,7 +241,7 @@ The default output lists the WLANs and the access points the way the controller 
     ✓ Show Access Point Name in Beacon   Disabled
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WLAN       SSID-2  (profile Standard)  → network Network-1, VLAN 40
+  WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     ✗ WLAN Enabled                       Enabled (currently Disabled)

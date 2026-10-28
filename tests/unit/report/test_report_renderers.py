@@ -708,6 +708,6 @@ def test_the_wlan_title_names_the_network_and_its_vlan_and_says_untagged_without
         text = render_overview(replace(REPORT, compliance=replace(REPORT.compliance, evaluations=evaluations)))
         return [line for line in text.splitlines() if line.startswith("  WLAN       SSID-1")]
 
-    assert titles("Network-9", 40) == ["  WLAN       SSID-1  (profile Throughput)  → network Network-9, VLAN 40"]
-    assert titles("Network-9", None) == ["  WLAN       SSID-1  (profile Throughput)  → network Network-9, untagged"]
-    assert titles(None, None) == ["  WLAN       SSID-1  (profile Throughput)"]
+    assert titles("Network-9", 40) == ["  WLAN       SSID-1  (profile Standard)  → network Network-9, VLAN 40"]
+    assert titles("Network-9", None) == ["  WLAN       SSID-1  (profile Standard)  → network Network-9, untagged"]
+    assert titles(None, None) == ["  WLAN       SSID-1  (profile Standard)"]

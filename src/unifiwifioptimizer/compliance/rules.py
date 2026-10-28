@@ -22,7 +22,7 @@ from unifiwifioptimizer.compliance.normalize import (
     security_protocol,
 )
 from unifiwifioptimizer.domain.models import Band, WlanConfig
-from unifiwifioptimizer.domain.profile import DtimMode, MinRateMode, Profile
+from unifiwifioptimizer.domain.profile import DtimMode, MinRateMode, Profile, SecurityProtocol
 from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
 NOT_SENT = "the controller did not send this setting"
@@ -79,10 +79,11 @@ def _bool_rule(
     group: RuleGroup,
     expected: Callable[[Profile], bool | None],
     actual: Callable[[WlanConfig], bool | None],
+    applies: Callable[[Profile, WlanConfig], bool] = lambda profile, wlan: True,
 ) -> Rule:
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
         want = expected(profile)
-        if want is None:
+        if want is None or not applies(profile, wlan):
             return None
         have = actual(wlan)
         return _compare(code, wlan, on_off(want), None if have is None else on_off(have), have == want)
@@ -237,8 +238,20 @@ def _rekey_rule() -> Rule:
         RuleGroup.BEHAVIOUR,
         lambda profile: profile.group_rekey_s,
         lambda wlan: wlan.group_rekey,
+        applies=_has_group_rekey,
         render=rekey_label,
     )
+
+
+def _has_group_rekey(profile: Profile, wlan: WlanConfig) -> bool:
+    """The controller does not send the interval for an open or OWE WLAN, so its absence is not incomplete."""
+    protocol = security_protocol(wlan)
+    return wlan.group_rekey is not None or not (isinstance(protocol, SecurityProtocol) and protocol.is_open_family)
+
+
+def _steers_between_bands(profile: Profile, wlan: WlanConfig) -> bool:
+    """Steering moves a client from 2.4 GHz to another band; a WLAN without both has nothing to steer between."""
+    return Band.GHZ_2 in wlan.bands and len(wlan.bands) > 1
 
 
 def _uses_sae(profile: Profile, wlan: WlanConfig) -> bool:
@@ -317,7 +330,12 @@ RULES: tuple[Rule, ...] = (
     ),
     _bool_rule("mlo", "MLO", RuleGroup.BEHAVIOUR, lambda p: p.mlo, lambda w: w.mlo_enabled),
     _bool_rule(
-        "band_steering", "Band Steering", RuleGroup.BEHAVIOUR, lambda p: p.band_steering, lambda w: w.band_steering
+        "band_steering",
+        "Band Steering",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.band_steering,
+        lambda w: w.band_steering,
+        applies=_steers_between_bands,
     ),
     _bool_rule(
         "bss_transition", "BSS Transition", RuleGroup.BEHAVIOUR, lambda p: p.bss_transition, lambda w: w.bss_transition

@@ -9,12 +9,15 @@ from unittest import mock
 
 import pytest
 
+from tests.tools.profile_matrix import END, START, UNSET_BY_DEFAULT, covered_keys, render_matrix
+from tests.tools.profile_matrix import block as profile_matrix_block
 from tests.unit.analysis.builders import golden_input
 from tests.unit.test_cli_commands import FixtureApi
 from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.loader import parse_yaml
 from unifiwifioptimizer.config.locations import ConfigLocation
+from unifiwifioptimizer.config.profiles import shipped_profiles
 from unifiwifioptimizer.config.schema import CONTROLLER_KEYS, RF_KEYS, SITE_KEYS, SSH_KEYS, Config
 
 README = Path(__file__).resolve().parents[2] / "README.md"
@@ -133,8 +136,8 @@ def test_the_walkthrough_config_is_accepted_by_the_products_loader_and_describes
         site.scan_passes,
     )
     assert dict(site.wlans) == {
-        "SSID-1": "Throughput",
-        "SSID-2": "Standard",
+        "SSID-1": "Standard",
+        "SSID-2": "Compat",
         "SSID-3": "Hotspot",
     }
 
@@ -188,3 +191,38 @@ def test_every_documented_command_parses_against_the_real_command_line(document:
 def test_no_document_sends_the_reader_to_the_removed_tool_or_the_removed_aggregation(document: Path) -> None:
     text = document.read_text(encoding="utf-8")
     assert "./unifiwifioptimizer" not in text and "trimmed mean" not in text
+
+
+PROFILES_DOC = README.parent / "docs" / "PROFILES.md"
+
+
+def test_the_profile_matrix_in_the_docs_is_the_one_rendered_from_the_shipped_profiles() -> None:
+    text = PROFILES_DOC.read_text(encoding="utf-8")
+    assert START in text and END in text, "docs/PROFILES.md lost the profile matrix markers"
+    shown = text[text.index(START) : text.index(END) + len(END)]
+    assert shown == profile_matrix_block(shipped_profiles()), "run `uv run python -m tests.tools.profile_matrix`"
+
+
+def test_every_key_a_shipped_profile_checks_has_a_row_in_the_matrix() -> None:
+    profiles = shipped_profiles().profiles.values()
+    checked = {key for p in profiles for key in vars_of(p) if getattr(p, key) is not None}
+    assert checked - covered_keys() - {"name", "evidence"} == set(), "a checked profile key has no matrix row"
+    assert set(covered_keys()) <= set(vars_of(next(iter(profiles))))
+    assert UNSET_BY_DEFAULT.isdisjoint(covered_keys())
+    for key in UNSET_BY_DEFAULT - {"name", "evidence"}:
+        assert all(getattr(p, key) is None for p in profiles), key
+
+
+def test_a_changed_profile_value_changes_the_rendered_matrix() -> None:
+    from dataclasses import replace
+
+    original = shipped_profiles()
+    standard = original.profiles["Standard"]
+    changed = replace(original, profiles={**original.profiles, "Standard": replace(standard, fast_roaming=False)})
+    assert render_matrix(changed) != render_matrix(original)
+
+
+def vars_of(profile: object) -> list[str]:
+    from dataclasses import fields
+
+    return [f.name for f in fields(profile)]  # type: ignore[arg-type]

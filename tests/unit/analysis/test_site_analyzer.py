@@ -423,7 +423,7 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     assert "-68 dBm" in hint.message and "-70 dBm" in hint.message
     # The hint belongs to a mapped, enabled WLAN whose profile expects Handoff Suggestions.
     for quiet_input in (
-        replace(high_rf, wlan_profiles={"SSID-1": "Hotspot"}),
+        replace(high_rf, wlan_profiles={"SSID-1": "IoT"}),
         replace(high_rf, wlan_profiles={}),
         replace(high_rf, snapshot=replace(pair, wlans=(groups_wlan("SSID-1", "g1", enabled=False),))),
     ):

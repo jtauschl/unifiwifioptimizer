@@ -141,7 +141,7 @@ def loaded(sites: dict[str, dict[str, Any]] | None = None, env_password: str | N
 
 
 def scanning_site(**overrides: Any) -> dict[str, Any]:
-    return {"ssh": {}, "neighbors": NEIGHBOURS, "scan_passes": 1, "wlans": {"SSID-1": "Throughput"}, **overrides}
+    return {"ssh": {}, "neighbors": NEIGHBOURS, "scan_passes": 1, "wlans": {"SSID-1": "Standard"}, **overrides}
 
 
 def run(

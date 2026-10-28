@@ -853,7 +853,7 @@
                 "actual": "WPA2/WPA3",
                 "code": "security_protocol",
                 "detail": "",
-                "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise",
+                "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise, WPA3, WPA3 Enterprise",
                 "status": "passed",
                 "subject": "SSID-1"
               },
@@ -861,7 +861,7 @@
                 "actual": "Optional",
                 "code": "pmf",
                 "detail": "",
-                "expected": "Optional",
+                "expected": "Optional, Required",
                 "status": "passed",
                 "subject": "SSID-1"
               },
@@ -972,7 +972,7 @@
             ],
             "findings": [],
             "network": "Network-1",
-            "profile": "Throughput",
+            "profile": "Standard",
             "vlan": 40,
             "wlan": "SSID-1"
           },
@@ -989,7 +989,7 @@
             ],
             "findings": [],
             "network": "Network-1",
-            "profile": "Standard",
+            "profile": "Compat",
             "vlan": 40,
             "wlan": "SSID-2"
           },
@@ -1093,7 +1093,7 @@
             "actual": "WPA2/WPA3",
             "code": "security_protocol",
             "detail": "",
-            "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise",
+            "expected": "WPA2/WPA3, WPA2/WPA3 Enterprise, WPA3, WPA3 Enterprise",
             "status": "passed",
             "subject": "SSID-1"
           },
@@ -1101,7 +1101,7 @@
             "actual": "Optional",
             "code": "pmf",
             "detail": "",
-            "expected": "Optional",
+            "expected": "Optional, Required",
             "status": "passed",
             "subject": "SSID-1"
           },
@@ -1717,7 +1717,7 @@
           ],
           "status": "incomplete",
           "threshold_dbm": null,
-          "tx_change_pending": false,
+          "tx_change_pending": true,
           "wlan": "SSID-3"
         },
         {

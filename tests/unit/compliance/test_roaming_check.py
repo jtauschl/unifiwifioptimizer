@@ -8,7 +8,7 @@ from unifiwifioptimizer.domain.report import CheckStatus
 
 from .builders import profile, wlan
 
-EXPECTS_ON = profile("Throughput")
+EXPECTS_ON = profile("Standard")
 EXPECTS_OFF = profile("IoT")
 
 

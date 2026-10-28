@@ -29,6 +29,11 @@ class SecurityProtocol(StrEnum):
         return self in (SecurityProtocol.WPA3, SecurityProtocol.WPA2_WPA3)
 
     @property
+    def is_open_family(self) -> bool:
+        """Open and Enhanced Open: the controller does not send a group rekey interval for these."""
+        return self in (SecurityProtocol.OPEN, SecurityProtocol.OWE, SecurityProtocol.OWE_TRANSITION)
+
+    @property
     def uses_wpa3(self) -> bool:
         """Any WPA3 variant, Personal or Enterprise, transition or WPA3-only."""
         return self in (

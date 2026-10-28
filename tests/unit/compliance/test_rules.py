@@ -13,15 +13,15 @@ from unifiwifioptimizer.domain.profile import DtimMode, MinRateMode, PmfMode, Se
 from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
 from .builders import profile, wlan
-from .builders import throughput_wlan as shipped_throughput_wlan
+from .builders import standard_wlan as shipped_standard_wlan
 
-# The shipped Throughput profile uses the controller's DTIM defaults, which switches the DTIM rules off; these
+# The shipped Standard profile uses the controller's DTIM defaults, which switches the DTIM rules off; these
 # tests need every rule to apply, so they fix the DTIM values.
-THROUGHPUT = replace(profile("Throughput"), dtim_mode=DtimMode.CUSTOM, dtim_24=3, dtim_5=3)
+STANDARD = replace(profile("Standard"), dtim_mode=DtimMode.CUSTOM, dtim_24=3, dtim_5=3)
 
 
-def throughput_wlan(**overrides: Any) -> WlanConfig:
-    return shipped_throughput_wlan(**{"dtim_mode": "custom", "dtim_ng": 3, "dtim_na": 3, **overrides})
+def standard_wlan(**overrides: Any) -> WlanConfig:
+    return shipped_standard_wlan(**{"dtim_mode": "custom", "dtim_ng": 3, "dtim_na": 3, **overrides})
 
 
 # Rule → the WLAN field(s) that make it fail and the field that, missing, makes it INCOMPLETE.
@@ -51,12 +51,12 @@ DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "ap_name_in_beacon": ({"advertise_device_name_in_beacon": True}, "advertise_device_name_in_beacon"),
     "b_supported": ({"b_supported": True}, "b_supported"),
 }
-APPLICABLE_TO_THROUGHPUT = frozenset(DEVIATIONS)
+APPLICABLE_TO_STANDARD = frozenset(DEVIATIONS)
 
 # A profile that sets every optional key, with neighbouring controller fields deliberately unequal so a
 # rule reading the wrong field cannot pass by accident.
 STRICT = replace(
-    THROUGHPUT,
+    STANDARD,
     iot_dtim_lock=False,
     iot_channel_lock=True,
     enhanced_iot=False,
@@ -97,8 +97,8 @@ def by_code(results: tuple[CheckResult, ...]) -> dict[str, CheckResult]:
 
 
 def test_a_matching_wlan_passes_exactly_the_applicable_rules() -> None:
-    results = by_code(evaluate_rules(THROUGHPUT, throughput_wlan()))
-    assert set(results) == APPLICABLE_TO_THROUGHPUT
+    results = by_code(evaluate_rules(STANDARD, standard_wlan()))
+    assert set(results) == APPLICABLE_TO_STANDARD
     assert all(r.status is CheckStatus.PASSED for r in results.values()), [
         (c, r.status, r.expected, r.actual) for c, r in results.items() if r.status is not CheckStatus.PASSED
     ]
@@ -108,17 +108,17 @@ def test_a_matching_wlan_passes_exactly_the_applicable_rules() -> None:
 @pytest.mark.parametrize("code", sorted(DEVIATIONS))
 def test_each_rule_fails_on_its_deviation_and_is_incomplete_without_its_field(code: str) -> None:
     deviation, missing = DEVIATIONS[code]
-    failed = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(**deviation)))[code]
+    failed = by_code(evaluate_rules(STANDARD, standard_wlan(**deviation)))[code]
     assert failed.status is CheckStatus.FAILED and failed.expected is not None and failed.actual is not None
     assert failed.expected != failed.actual
     if missing:
-        incomplete = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(**{missing: None})))[code]
+        incomplete = by_code(evaluate_rules(STANDARD, standard_wlan(**{missing: None})))[code]
         assert incomplete.status is CheckStatus.INCOMPLETE and incomplete.actual is None
         assert incomplete.detail == "the controller did not send this setting"
 
 
 def test_every_optional_key_passes_on_the_strict_profile_against_its_own_controller_field() -> None:
-    results = by_code(evaluate_rules(STRICT, throughput_wlan(**STRICT_WLAN_FIELDS)))
+    results = by_code(evaluate_rules(STRICT, standard_wlan(**STRICT_WLAN_FIELDS)))
     assert set(OPTIONAL_DEVIATIONS) <= set(results)
     assert {results[code].status for code in OPTIONAL_DEVIATIONS} == {CheckStatus.PASSED}
     assert results["dns_assistance_mode"].actual == "auto" and results["mdns_proxy_mode"].actual == "custom"
@@ -127,77 +127,75 @@ def test_every_optional_key_passes_on_the_strict_profile_against_its_own_control
 @pytest.mark.parametrize("code", sorted(OPTIONAL_DEVIATIONS))
 def test_each_optional_rule_fails_on_its_deviation_and_is_incomplete_without_its_field(code: str) -> None:
     deviation, missing = OPTIONAL_DEVIATIONS[code]
-    failed = by_code(evaluate_rules(STRICT, throughput_wlan(**{**STRICT_WLAN_FIELDS, **deviation})))[code]
+    failed = by_code(evaluate_rules(STRICT, standard_wlan(**{**STRICT_WLAN_FIELDS, **deviation})))[code]
     assert failed.status is CheckStatus.FAILED and failed.expected != failed.actual
-    incomplete = by_code(evaluate_rules(STRICT, throughput_wlan(**{**STRICT_WLAN_FIELDS, missing: None})))[code]
+    incomplete = by_code(evaluate_rules(STRICT, standard_wlan(**{**STRICT_WLAN_FIELDS, missing: None})))[code]
     assert incomplete.status is CheckStatus.INCOMPLETE and incomplete.actual is None
 
 
 def test_expected_and_actual_are_human_readable() -> None:
-    results = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(minrate_na_data_rate_kbps=6000, group_rekey=0)))
+    results = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_na_data_rate_kbps=6000, group_rekey=0)))
     assert (results["minrate_5"].expected, results["minrate_5"].actual) == ("12 Mbps", "6 Mbps")
     assert (results["group_rekey"].expected, results["group_rekey"].actual) == ("3600 s", "Disabled")
-    assert results["security_protocol"].expected == "WPA2/WPA3, WPA2/WPA3 Enterprise"
+    assert results["security_protocol"].expected == "WPA2/WPA3, WPA2/WPA3 Enterprise, WPA3, WPA3 Enterprise"
     assert results["wifi_bands"].actual == "2.4 GHz, 5 GHz"
     assert results["fast_roaming"].expected == "Enabled" and results["minrate_mode"].expected == "Manual"
 
 
 def test_a_combination_the_controller_sent_but_the_tool_cannot_name_fails_with_the_raw_pair() -> None:
-    results = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(wpa_mode="wpa1", wpa3_support=False)))
+    results = by_code(evaluate_rules(STANDARD, standard_wlan(wpa_mode="wpa1", wpa3_support=False)))
     assert results["security_protocol"].status is CheckStatus.FAILED
     assert results["security_protocol"].actual == "wpapsk/wpa1"
     assert results["security_protocol"].detail == "the controller sent a value or combination this tool has no name for"
     assert {"sae_anti_clogging", "sae_sync_time"}.isdisjoint(results)
-    pmf = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(pmf_mode="Required")))["pmf"]
-    assert pmf.status is CheckStatus.FAILED and pmf.actual == "Required"
-    mode = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(minrate_setting_preference="Manual")))["minrate_mode"]
+    pmf = by_code(evaluate_rules(STANDARD, standard_wlan(pmf_mode="Disabled")))["pmf"]
+    assert pmf.status is CheckStatus.FAILED and pmf.actual == "Disabled"
+    mode = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_setting_preference="Manual")))["minrate_mode"]
     assert mode.status is CheckStatus.FAILED and mode.actual == "Manual"
 
 
 def test_a_rate_that_is_not_enforced_fails_before_its_value_is_compared() -> None:
-    result = by_code(
-        evaluate_rules(THROUGHPUT, throughput_wlan(minrate_ng_enabled=False, minrate_ng_data_rate_kbps=None))
-    )
+    result = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_ng_enabled=False, minrate_ng_data_rate_kbps=None)))
     assert result["minrate_24"].status is CheckStatus.FAILED and result["minrate_24"].actual == "not enforced"
-    enabled_without_value = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(minrate_ng_data_rate_kbps=None)))
+    enabled_without_value = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_ng_data_rate_kbps=None)))
     assert enabled_without_value["minrate_24"].status is CheckStatus.INCOMPLETE
-    flag_unknown = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(minrate_ng_enabled=None)))
+    flag_unknown = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_ng_enabled=None)))
     assert flag_unknown["minrate_24"].status is CheckStatus.INCOMPLETE and flag_unknown["minrate_24"].actual is None
 
 
 def test_rates_and_dtim_values_apply_only_under_the_matching_mode_and_band() -> None:
     # The mode alone decides; values left on the profile (the loader forbids that, a caller might not) stay unused.
-    auto = replace(THROUGHPUT, minrate_mode=MinRateMode.AUTO)
-    assert {"minrate_24", "minrate_5"}.isdisjoint(by_code(evaluate_rules(auto, throughput_wlan())))
-    default = replace(THROUGHPUT, dtim_mode=DtimMode.DEFAULT)
-    assert {"dtim_24", "dtim_5"}.isdisjoint(by_code(evaluate_rules(default, throughput_wlan())))
-    five_only = replace(THROUGHPUT, wifi_bands=frozenset({Band.GHZ_5}), minrate_24_kbps=None, dtim_24=None)
-    codes = set(by_code(evaluate_rules(five_only, throughput_wlan())))
+    auto = replace(STANDARD, minrate_mode=MinRateMode.AUTO)
+    assert {"minrate_24", "minrate_5"}.isdisjoint(by_code(evaluate_rules(auto, standard_wlan())))
+    default = replace(STANDARD, dtim_mode=DtimMode.DEFAULT)
+    assert {"dtim_24", "dtim_5"}.isdisjoint(by_code(evaluate_rules(default, standard_wlan())))
+    five_only = replace(STANDARD, wifi_bands=frozenset({Band.GHZ_5}), minrate_24_kbps=None, dtim_24=None)
+    codes = set(by_code(evaluate_rules(five_only, standard_wlan())))
     assert "minrate_5" in codes and "dtim_5" in codes and "minrate_24" not in codes and "dtim_24" not in codes
 
 
 def test_a_6_ghz_dtim_value_is_detect_only_never_passed_or_failed() -> None:
-    with_6g = replace(THROUGHPUT, wifi_bands=frozenset({Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}), dtim_6=2)
+    with_6g = replace(STANDARD, wifi_bands=frozenset({Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}), dtim_6=2)
     for dtim_6e in (2, 3, None):
-        result = by_code(evaluate_rules(with_6g, throughput_wlan(dtim_6e=dtim_6e, dtim_na=3)))["dtim_6"]
+        result = by_code(evaluate_rules(with_6g, standard_wlan(dtim_6e=dtim_6e, dtim_na=3)))["dtim_6"]
         assert result.status is CheckStatus.NOT_EVALUABLE and result.detail == "6 GHz is detect-only"
         assert result.expected == "2" and result.actual == (None if dtim_6e is None else str(dtim_6e))
-    assert "dtim_6" not in by_code(evaluate_rules(THROUGHPUT, throughput_wlan(dtim_6e=3)))
+    assert "dtim_6" not in by_code(evaluate_rules(STANDARD, standard_wlan(dtim_6e=3)))
 
 
 def test_sae_counters_are_checked_only_for_sae_protocols() -> None:
-    enterprise = throughput_wlan(security="wpaeap")
-    assert {"sae_anti_clogging", "sae_sync_time"}.isdisjoint(by_code(evaluate_rules(THROUGHPUT, enterprise)))
-    unknown = throughput_wlan(security=None)
-    assert {"sae_anti_clogging", "sae_sync_time"}.isdisjoint(by_code(evaluate_rules(THROUGHPUT, unknown)))
-    assert by_code(evaluate_rules(THROUGHPUT, unknown))["security_protocol"].status is CheckStatus.INCOMPLETE
+    enterprise = standard_wlan(security="wpaeap")
+    assert {"sae_anti_clogging", "sae_sync_time"}.isdisjoint(by_code(evaluate_rules(STANDARD, enterprise)))
+    unknown = standard_wlan(security=None)
+    assert {"sae_anti_clogging", "sae_sync_time"}.isdisjoint(by_code(evaluate_rules(STANDARD, unknown)))
+    assert by_code(evaluate_rules(STANDARD, unknown))["security_protocol"].status is CheckStatus.INCOMPLETE
 
 
 def test_optional_keys_are_checked_only_when_the_profile_sets_them() -> None:
-    silent = replace(THROUGHPUT, b_supported=None)
-    assert "b_supported" not in by_code(evaluate_rules(silent, throughput_wlan()))
-    # Throughput sets only b_supported; the other optional keys stay out even when the controller sends them.
-    results = by_code(evaluate_rules(THROUGHPUT, throughput_wlan(**STRICT_WLAN_FIELDS)))
+    silent = replace(STANDARD, b_supported=None)
+    assert "b_supported" not in by_code(evaluate_rules(silent, standard_wlan()))
+    # Standard sets only b_supported; the other optional keys stay out even when the controller sends them.
+    results = by_code(evaluate_rules(STANDARD, standard_wlan(**STRICT_WLAN_FIELDS)))
     assert set(OPTIONAL_DEVIATIONS) & set(results) == {"b_supported"}
 
 
@@ -226,7 +224,12 @@ def test_set_rules_accept_any_listed_value() -> None:
         pmf_mode="optional",
     )
     results = by_code(evaluate_rules(iot, transition))
-    assert results["security_protocol"].status is CheckStatus.PASSED and results["pmf"].status is CheckStatus.PASSED
+    # IoT expects WPA2: a transition WLAN cannot switch PMF off, which Ubiquiti's IoT guidance asks for.
+    assert results["security_protocol"].status is CheckStatus.FAILED and results["pmf"].status is CheckStatus.PASSED
+    for pmf in ("disabled", "optional"):
+        wpa2_only = wlan(bands=frozenset({Band.GHZ_2}), security="wpapsk", wpa_mode="wpa2", pmf_mode=pmf)
+        results = by_code(evaluate_rules(iot, wpa2_only))
+        assert results["security_protocol"].status is CheckStatus.PASSED and results["pmf"].status is CheckStatus.PASSED
 
 
 def test_rule_codes_are_unique_grouped_and_labelled() -> None:
@@ -234,3 +237,31 @@ def test_rule_codes_are_unique_grouped_and_labelled() -> None:
     assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 33
     assert all(rule.label and isinstance(rule.group, RuleGroup) for rule in RULES)
     assert set(DEVIATIONS) | set(OPTIONAL_DEVIATIONS) == set(codes) - {"dtim_6"}
+
+
+def test_an_open_or_owe_wlan_without_a_group_rekey_interval_is_not_judged_on_it() -> None:
+    hotspot = profile("Hotspot")
+    open_family = {
+        "open": wlan(security="open", wpa3_support=False, pmf_mode="disabled", group_rekey=None),
+        "owe": wlan(security="open", wpa3_support=True, wpa3_transition=False, pmf_mode="required", group_rekey=None),
+        "owe transition": wlan(
+            security="open", wpa3_support=True, wpa3_transition=True, pmf_mode="optional", group_rekey=None
+        ),
+    }
+    for name, silent in open_family.items():
+        assert "group_rekey" not in by_code(evaluate_rules(hotspot, silent)), name
+    sent = by_code(evaluate_rules(hotspot, wlan(security="open", wpa3_support=False, group_rekey=0)))
+    assert sent["group_rekey"].status is CheckStatus.FAILED and sent["group_rekey"].actual == "Disabled"
+    psk = wlan(security="wpapsk", wpa_mode="wpa2", group_rekey=None)
+    assert by_code(evaluate_rules(profile("Standard"), psk))["group_rekey"].status is CheckStatus.INCOMPLETE
+
+
+def test_band_steering_is_judged_only_on_a_wlan_with_2_4_ghz_and_another_band() -> None:
+    iot = profile("IoT")
+    stored_on = wlan(bands=frozenset({Band.GHZ_2}), band_steering=True)
+    assert "band_steering" not in by_code(evaluate_rules(iot, stored_on))
+    for bands in ({Band.GHZ_5}, {Band.GHZ_5, Band.GHZ_6}):
+        assert "band_steering" not in by_code(evaluate_rules(iot, wlan(bands=frozenset(bands), band_steering=True)))
+    for bands in ({Band.GHZ_2, Band.GHZ_5}, {Band.GHZ_2, Band.GHZ_6}):
+        dual = wlan(bands=frozenset(bands), band_steering=True)
+        assert by_code(evaluate_rules(iot, dual))["band_steering"].status is CheckStatus.FAILED
