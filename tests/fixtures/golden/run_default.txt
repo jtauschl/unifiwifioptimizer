@@ -54,6 +54,8 @@
     ✓ Client Device Isolation            Disabled
     ✓ SAE Anti-clogging                  5
     ✓ SAE Sync Time                      5
+    ✗ DNS Assistance                     Off (currently Auto)
+        → WLAN edit → Advanced → Behavior Controls → DNS Assistance
     ✓ MLO                                Disabled
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
@@ -242,7 +244,7 @@
   AP-1, AP-2, AP-3, AP-4
   ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
 
-  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 6 failed WLAN check(s). After applying changes,
     run the tool again.
   Partial result (band empty); the exit code says so.
 

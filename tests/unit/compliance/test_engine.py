@@ -78,7 +78,11 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
     # OWE-transition presets. Open and OWE WLANs send no group rekey interval and no 802.11b flag under automatic
     # rates: the first is not judged, the second is incomplete.
     assert golden == {
-        "SSID-1": (["dtim_mode", "minrate_5", "multicast_to_unicast"], ["roaming_assistant"], []),
+        "SSID-1": (
+            ["dns_assistance_mode", "dtim_mode", "minrate_5", "multicast_to_unicast"],
+            ["roaming_assistant"],
+            [],
+        ),
         "SSID-2": (
             [
                 "fast_roaming",
@@ -92,7 +96,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "roaming_assistant",
                 "security_protocol",
             ],
-            ["ap_name_in_beacon", "mlo", "multicast_suppressor_mode"],
+            ["ap_name_in_beacon", "dns_assistance_mode", "mlo", "multicast_suppressor_mode"],
             ["advanced_set_to_auto"],
         ),
         "SSID-3": (

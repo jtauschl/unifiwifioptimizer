@@ -37,6 +37,7 @@ def standard_wlan(**overrides: Any) -> WlanConfig:
         mcastenhance_enabled=True,
         bc_filter_enabled=False,
         multicast_suppressor_mode="off",
+        dns_assistance_mode="off",
         minrate_setting_preference="manual",
         minrate_ng_enabled=True,
         minrate_ng_data_rate_kbps=12000,

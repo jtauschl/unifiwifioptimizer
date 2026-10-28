@@ -96,6 +96,7 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
         "uapsd",
         "client_device_isolation",
         "multicast_suppressor_mode",
+        "dns_assistance_mode",
         "minrate_mode",
         "dtim_mode",
         "group_rekey_s",

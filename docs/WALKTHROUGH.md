@@ -187,7 +187,7 @@ Every WLAN is compared with its profile. `✓` matches, `✗` deviates and says 
         → WLAN edit → Enabled toggle
 ```
 
-The Handoff Suggestions threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off and a custom DTIM, where the `Standard` profile expects 12 Mbit/s, on and the controller's DTIM default; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
+The Handoff Suggestions threshold depends on how strongly the access points hear each other, so it needs the scan. These checks do not depend on the scan. Here `SSID-2` and `SSID-3` are switched off on the controller: enable them if they should broadcast, or remove them from `wlans:`. `SSID-1` still has the 5 GHz minimum data rate at 24 Mbit/s, multicast-to-unicast off, a custom DTIM and DNS Assistance on Auto, where the `Standard` profile expects 12 Mbit/s, on, the controller's DTIM default and DNS Assistance off; change them or switch to a profile of your own (`docs/PROFILES.md`). The full report below was taken before these changes.
 
 ## 5. Trust the Access Points' Host Keys and Scan
 
@@ -230,6 +230,8 @@ The default output lists the WLANs and the access points the way the controller 
     ✓ Client Device Isolation            Disabled
     ✓ SAE Anti-clogging                  5
     ✓ SAE Sync Time                      5
+    ✗ DNS Assistance                     Off (currently Auto)
+        → WLAN edit → Advanced → Behavior Controls → DNS Assistance
     ✓ MLO                                Disabled
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
@@ -336,7 +338,7 @@ The default output lists the WLANs and the access points the way the controller 
     3 neighbour links are configured in one direction; both are evaluated.
     AP beacon readings do not establish client roaming or channel airtime.
 
-  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 6 failed WLAN check(s). After applying changes,
     run the tool again.
   Full evidence: run with --details.
 ```
@@ -425,7 +427,7 @@ The end of the report summarises the site:
   AP-1, AP-2, AP-3, AP-4
   ! 5 GHz: AP-3 and AP-4: no reading in either direction (AP-4: not sighted; AP-3: not sighted)
 
-  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 6 failed WLAN check(s). After applying changes,
     run the tool again.
   Partial result (band empty); the exit code says so.
 ```

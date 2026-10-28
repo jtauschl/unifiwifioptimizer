@@ -21,8 +21,7 @@
 # - dtim_mode default|custom with dtim_24/dtim_5/dtim_6 when custom
 # - group_rekey_s: seconds, 0 = disabled; sae_anti_clogging/sae_sync_time: checked when the WLAN uses SAE
 # - optional keys, checked only when present: iot_dtim_lock, iot_channel_lock, enhanced_iot,
-#   dns_assistance_mode (off|auto|manual), mdns_proxy_mode (off|auto|custom),
-#   ppsk, wpa3_enhanced_192
+#   mdns_proxy_mode (off|auto|custom), ppsk, wpa3_enhanced_192
 
 profiles:
   # Primary WLAN for phones and laptops: fixed 12 Mbit/s basic rates (no 802.11b), 802.11r/v, the controller's DTIM defaults.
@@ -38,6 +37,7 @@ profiles:
     uapsd: false
     proxy_arp: true
     multicast_suppressor_mode: "off"
+    dns_assistance_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
@@ -49,6 +49,8 @@ profiles:
     group_rekey_s: 3600
     sae_anti_clogging: 5
     sae_sync_time: 5
+    evidence:
+      dns_assistance_mode: {tier: practice, source: "off keeps queries on the site's own resolver; with high latency or failing queries Ubiquiti redirects them to other DNS servers (Auto or user-defined)"}
 
   # WLAN for older or stationary dual-band clients (TVs, speakers, consoles, printers, old laptops): Standard minus
   # 802.11r and fixed rates, WPA2 and PMF off accepted.
@@ -64,6 +66,7 @@ profiles:
     uapsd: false
     proxy_arp: true
     multicast_suppressor_mode: "off"
+    dns_assistance_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
@@ -74,6 +77,7 @@ profiles:
     sae_anti_clogging: 5
     sae_sync_time: 5
     evidence:
+      dns_assistance_mode: {tier: practice, source: "off keeps queries on the site's own resolver; with high latency or failing queries Ubiquiti redirects them to other DNS servers (Auto or user-defined)"}
       fast_roaming: {tier: vendor, source: "Ubiquiti, Unable to Connect to WiFi: \"Legacy clients often do not support 802.11r Fast Transitions. Disable this for maximum compatibility.\""}
       minrate_mode: {tier: vendor, source: "Ubiquiti, Unable to Connect to WiFi: \"Legacy clients prefer lower data rates. Reduce this for maximum compatibility.\"; SSID overview: a higher minimum rate \"can also block legacy or low-speed IoT devices\""}
       wifi_bands: {tier: vendor, source: "Ubiquiti, Unable to Connect to WiFi: \"Legacy clients may not support 5 GHz or 6 GHz. Ensure your WiFi is being broadcasted on all frequency bands\""}
@@ -93,6 +97,7 @@ profiles:
     uapsd: false
     proxy_arp: false
     multicast_suppressor_mode: "off"
+    dns_assistance_mode: "off"
     multicast_to_unicast: false
     hide_wifi_name: false
     client_device_isolation: false
@@ -104,6 +109,7 @@ profiles:
     sae_sync_time: 5
     iot_channel_lock: false
     evidence:
+      dns_assistance_mode: {tier: vendor, source: "Ubiquiti Network Application 10.3.58 release notes: fixed an issue where DNS Assistance could be enabled for IoT WiFi Broadcasts"}
       wifi_bands: {tier: vendor, source: "Ubiquiti, Unable to Connect to WiFi: \"5GHz may not be supported by all IoT devices, so we recommend limiting those devices to a 2.4GHz network\" if IoT devices have connectivity issues"}
       security_protocols: {tier: vendor, source: "Ubiquiti: \"WPA2 offers broader compatibility with IoT devices. WPA3 is not recommended for 2.4GHz networks\"; U7 IoT article: \"Switch to WPA2 encryption for this SSID\""}
       pmf: {tier: vendor, source: "Ubiquiti IoT checklist: \"We recommend you disable PMF\"; SSID overview: disabling \"should only be considered in cases where specific clients can't connect otherwise\", so Optional passes too"}
@@ -135,6 +141,7 @@ profiles:
     uapsd: false
     proxy_arp: true
     multicast_suppressor_mode: "off"
+    dns_assistance_mode: "off"
     multicast_to_unicast: false
     hide_wifi_name: false
     client_device_isolation: true
@@ -146,6 +153,7 @@ profiles:
     sae_sync_time: 5
     mdns_proxy_mode: off
     evidence:
+      dns_assistance_mode: {tier: vendor, source: "Ubiquiti Network Application 10.3 release notes: DNS Assistance is disabled when Captive Portal is enabled"}
       security_protocols: {tier: vendor, source: "Ubiquiti SSID overview: \"For guest networks, use OWE with an Open network\"; plain Open accepted for captive portals (RFC 8110 defines OWE)"}
       pmf: {tier: standard, source: "OWE-only requires PMF (RFC 8110, Ubiquiti: Required \"is required for WPA3-only networks and OWE networks\"); Open has no RSN; pmf_matches_protocol judges the pair"}
       fast_roaming: {tier: standard, source: "IEEE 802.11 FT needs an FT AKM in the RSN; Open has no RSN and OWE has no FT AKM"}

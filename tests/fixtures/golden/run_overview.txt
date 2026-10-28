@@ -22,6 +22,8 @@
     ✓ Client Device Isolation            Disabled
     ✓ SAE Anti-clogging                  5
     ✓ SAE Sync Time                      5
+    ✗ DNS Assistance                     Off (currently Auto)
+        → WLAN edit → Advanced → Behavior Controls → DNS Assistance
     ✓ MLO                                Disabled
     ✓ Band Steering                      Enabled
     ✓ BSS Transition                     Enabled
@@ -128,7 +130,7 @@
     3 neighbour links are configured in one direction; both are evaluated.
     AP beacon readings do not establish client roaming or channel airtime.
 
-  4 pending setting change(s) (4 transmit power) and 5 failed WLAN check(s). After applying changes,
+  4 pending setting change(s) (4 transmit power) and 6 failed WLAN check(s). After applying changes,
     run the tool again.
   Full evidence: run with --details.
 

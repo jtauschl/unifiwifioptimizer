@@ -946,6 +946,14 @@
                 "subject": "SSID-1"
               },
               {
+                "actual": "Auto",
+                "code": "dns_assistance_mode",
+                "detail": "",
+                "expected": "Off",
+                "status": "failed",
+                "subject": "SSID-1"
+              },
+              {
                 "actual": "Off",
                 "code": "multicast_suppressor_mode",
                 "detail": "",
@@ -1175,6 +1183,14 @@
             "detail": "",
             "expected": "Disabled",
             "status": "passed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Auto",
+            "code": "dns_assistance_mode",
+            "detail": "",
+            "expected": "Off",
+            "status": "failed",
             "subject": "SSID-1"
           },
           {

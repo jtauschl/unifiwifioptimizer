@@ -63,6 +63,7 @@ check the setting.
 |  | Multicast Suppression | off | off | off | off | Limits multicast and broadcast traffic: Conservative prevents storms, Aggressive blocks all but DHCP and ARP unless a device is allowlisted. |
 |  | UAPSD | off | off | off | off | Client power saving; can break legacy clients. |
 | Isolation and information | Client Device Isolation | off | off | off | on | Stops clients on the same access point from talking to each other; for guests. |
+|  | DNS Assistance | off | off | off | off | Resolves DNS queries locally; on high latency or failure it redirects them to other DNS servers. |
 |  | Show Access Point Name in Beacon | off | off | off | off | Information leak with no benefit to clients. |
 |  | MLO | off | off | off | off | Wi-Fi 7 multi-link operation; needs WPA3 and Wi-Fi 7 clients. |
 | IoT optimization | Lock 2.4 GHz to Channel 6 (All APs) | – | – | off | – | Pins the 2.4 GHz radio of every access point, for every SSID on it, to channel 6; off keeps the channel plan. |

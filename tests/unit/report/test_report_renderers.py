@@ -298,7 +298,7 @@ def test_the_footer_counts_only_advice_that_can_be_applied_now() -> None:
     waiting = [r for r in moved.recommendations if r.is_change and r.deferred_by is not None]
     # Golden site: four power changes, one of them on the moved 5 GHz band; the channel move waits for nothing.
     assert [r.subject for r in waiting] == ["AP-1"] and waiting[0].setting == "tx_power"
-    assert "3 pending setting change(s) (3 transmit power) and 5 failed WLAN check(s)." in text
+    assert "3 pending setting change(s) (3 transmit power) and 6 failed WLAN check(s)." in text
     assert "1 further item(s) wait for the changes above" in text
     assert moved.pending_tx_changes == 3 and moved.waiting_items == 1
 
