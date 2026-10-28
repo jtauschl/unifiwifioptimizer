@@ -19,11 +19,25 @@ def test_a_disabled_wlan_is_reported_as_that_and_nothing_else() -> None:
     assert (evaluation.wlan, evaluation.profile) == ("SSID-1", "Standard")
 
 
-def test_a_compliant_wlan_has_only_passed_checks_plus_the_roaming_check_and_no_advisory() -> None:
+def test_a_compliant_wlan_passes_every_prescribed_check_and_lists_the_rest_with_a_note() -> None:
     evaluation = evaluate_wlan(standard_wlan(), profile(), roaming_threshold_dbm=-70)
     statuses = {c.code: c.status for c in evaluation.checks}
     assert statuses.pop("roaming_assistant") is CheckStatus.PASSED
-    assert set(statuses.values()) == {CheckStatus.PASSED} and evaluation.findings == ()
+    unprescribed = {code for code, status in statuses.items() if status is CheckStatus.NOT_PRESCRIBED}
+    assert unprescribed == {
+        "broadcasting_aps",
+        "mac_filter",
+        "radius_mac_auth",
+        "mdns_proxy_mode",
+        "iot_dtim_lock",
+        "iot_channel_lock",
+        "enhanced_iot",
+        "ppsk",
+        "wpa3_enhanced_192",
+    }
+    assert {s for c, s in statuses.items() if c not in unprescribed} == {CheckStatus.PASSED}
+    assert evaluation.findings == ()
+    assert all(c.detail for c in evaluation.checks if c.code in unprescribed)
 
 
 def test_a_wlan_on_6_ghz_gets_the_detect_only_roaming_result_through_the_engine() -> None:

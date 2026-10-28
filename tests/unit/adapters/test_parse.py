@@ -540,6 +540,15 @@ def test_the_wlan_advanced_switch_and_multicast_suppression_are_read_as_reported
     assert absent.setting_preference is None and absent.multicast_suppressor_mode is None
 
 
+def test_the_mac_filter_and_the_radius_mac_authentication_switches_are_read_as_reported() -> None:
+    parsed = parse.parse_wlan(Fields(wlan(mac_filter_enabled=True, radius_mac_auth_enabled=False), "$"))
+    assert (parsed.mac_filter_enabled, parsed.radius_mac_auth_enabled) == (True, False)
+    absent = parse.parse_wlan(Fields(wlan(), "$"))
+    assert absent.mac_filter_enabled is None and absent.radius_mac_auth_enabled is None
+    fixture_first = parse.parse_wlans(fixture("list_wlanconf.json")).items[0]
+    assert (fixture_first.mac_filter_enabled, fixture_first.radius_mac_auth_enabled) == (False, False)
+
+
 def test_networks_carry_their_name_and_vlan_and_an_untagged_network_has_none() -> None:
     parsed = parse.parse_networks(fixture("networkconf.json"))
     assert [(n.name, n.vlan) for n in parsed.items] == [

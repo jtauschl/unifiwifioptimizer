@@ -12,11 +12,20 @@ EXPECTS_ON = profile("Standard")
 EXPECTS_OFF = profile("IoT")
 
 
-def test_not_applicable_and_incomplete_take_priority_over_the_profile() -> None:
-    only_2g = wlan(bands=frozenset({Band.GHZ_2}), roaming_assistant_na_enabled=False)
+def test_a_wlan_without_5_ghz_should_have_the_suggestions_off_whatever_the_profile_expects() -> None:
+    only_2g = frozenset({Band.GHZ_2})
     for p in (EXPECTS_ON, EXPECTS_OFF):
-        result = roaming_assistant_check(p, only_2g, -70)
-        assert result.status is CheckStatus.NOT_APPLICABLE and result.detail == "5 GHz not broadcast"
+        off = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=False), -70)
+        assert off.status is CheckStatus.PASSED and (off.expected, off.actual) == ("Disabled", "Disabled")
+        on = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=True), -70)
+        assert on.status is CheckStatus.FAILED and on.expected == "Disabled" and on.actual == "Enabled"
+        assert on.detail == "the WLAN has no 5 GHz band to hand a client to"
+        unsent = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=None), -70)
+        assert unsent.status is CheckStatus.NOT_APPLICABLE and unsent.detail == "5 GHz not broadcast"
+
+
+def test_an_older_api_without_the_switch_is_incomplete_on_a_5_ghz_wlan() -> None:
+    for p in (EXPECTS_ON, EXPECTS_OFF):
         older = roaming_assistant_check(p, wlan(roaming_assistant_na_enabled=None), -70)
         assert older.status is CheckStatus.INCOMPLETE and "older API" in older.detail
 

@@ -30,13 +30,16 @@ class Severity(StrEnum):
 
 class CheckStatus(StrEnum):
     """`INCOMPLETE`: the controller did not send a field the check needs; `NOT_EVALUABLE`: the tool has no
-    rule for this case yet (6 GHz detect-only); `NOT_APPLICABLE`: the check does not apply to this subject."""
+    rule for this case yet (6 GHz detect-only); `NOT_APPLICABLE`: the check does not apply to this subject;
+    `NOT_PRESCRIBED`: the setting exists but the profile gives no value for it, so `actual` is shown and
+    `detail` says what the setting does."""
 
     PASSED = "passed"
     FAILED = "failed"
     INCOMPLETE = "incomplete"
     NOT_EVALUABLE = "not_evaluable"
     NOT_APPLICABLE = "not_applicable"
+    NOT_PRESCRIBED = "not_prescribed"
 
 
 class RecommendationKind(StrEnum):

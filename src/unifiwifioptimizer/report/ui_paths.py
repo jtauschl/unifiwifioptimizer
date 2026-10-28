@@ -11,6 +11,7 @@ ADVANCED = f"{WLAN_EDIT} → Advanced"
 
 UI_PATHS: Mapping[str, str] = {
     "wlan_enabled": f"{WLAN_EDIT} → Enabled toggle",
+    "broadcasting_aps": f"{WLAN_EDIT} → Broadcasting APs (above Advanced)",
     "wifi_bands": f"{WLAN_EDIT} → Radio Band checkboxes (above Advanced)",
     "fast_roaming": f"{ADVANCED} → Roaming Assistance → Fast Roaming (802.11r)",
     "roaming_assistant": f"{ADVANCED} → Roaming Assistance → Handoff Suggestions (802.11v)",
@@ -35,6 +36,8 @@ UI_PATHS: Mapping[str, str] = {
     "band_steering": f"{ADVANCED} → Behavior Controls → Band Steering",
     "bss_transition": f"{ADVANCED} → Behavior Controls → BSS Transition",
     "uapsd": f"{ADVANCED} → Behavior Controls → UAPSD",
+    "mac_filter": f"{ADVANCED} → Behavior Controls → MAC Address Filter",
+    "radius_mac_auth": f"{ADVANCED} → Behavior Controls → RADIUS MAC Authentication",
     "dtim_mode": f"{ADVANCED} → Behavior Controls → Auto 802.11 DTIM Period",
     "dtim_24": f"{ADVANCED} → Behavior Controls → Auto 802.11 DTIM Period → 2.4 GHz field",
     "dtim_5": f"{ADVANCED} → Behavior Controls → Auto 802.11 DTIM Period → 5 GHz field",
@@ -78,6 +81,7 @@ HINTED = frozenset(
 # The order of the controller UI's WLAN editor, so a report row sits where the setting does.
 UI_ORDER: tuple[str, ...] = (
     "wlan_enabled",
+    "broadcasting_aps",
     "wifi_bands",
     "fast_roaming",
     "roaming_assistant",
@@ -105,6 +109,8 @@ UI_ORDER: tuple[str, ...] = (
     "band_steering",
     "bss_transition",
     "uapsd",
+    "mac_filter",
+    "radius_mac_auth",
     "dtim_mode",
     "dtim_24",
     "dtim_5",

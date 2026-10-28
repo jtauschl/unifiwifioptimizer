@@ -1,10 +1,11 @@
 """The profile rule table: one entry per checked WLAN setting, evaluated to a `CheckResult`.
 
-A rule returns None when it does not apply (a band the profile does not expect, a rate value under
-`auto` mode, an optional key the profile leaves unset), `INCOMPLETE` when the controller did not send
-the setting, `NOT_EVALUABLE` for a 6 GHz value (detect-only), and `PASSED`/`FAILED` otherwise — a
-combination the controller sent but the tool has no name for fails and shows the raw combination. UI paths
-are the renderer's business and stay out of here.
+A rule returns None only for a setting the controller UI does not offer on this WLAN (a band it does not
+broadcast). Otherwise it reports the setting: `NOT_PRESCRIBED` when the profile gives no value for it (the
+note says what the setting does), `NOT_APPLICABLE` when the WLAN's own state makes it moot, `INCOMPLETE`
+when the controller did not send it, `NOT_EVALUABLE` for a 6 GHz value (detect-only), and `PASSED`/`FAILED`
+otherwise — a combination the controller sent but the tool has no name for fails and shows the raw
+combination. UI paths are the renderer's business and stay out of here.
 """
 
 from collections.abc import Callable, Iterable
@@ -73,20 +74,40 @@ def on_off(value: bool) -> str:
     return "Enabled" if value else "Disabled"
 
 
+def _unjudged(code: str, wlan: WlanConfig, status: CheckStatus, actual: str | None, note: str) -> CheckResult:
+    return CheckResult(code=code, subject=wlan.name, status=status, detail=note, actual=actual)
+
+
+def _always(profile: Profile, wlan: WlanConfig) -> bool:
+    return True
+
+
+def _guard_applicability(code: str, applies: Callable[[Profile, WlanConfig], bool], inapplicable: str) -> None:
+    if applies is not _always and not inapplicable:
+        raise ValueError(f"rule {code} has an applicability test but no reason to show when it fails")
+
+
 def _bool_rule(
     code: str,
     label: str,
     group: RuleGroup,
     expected: Callable[[Profile], bool | None],
     actual: Callable[[WlanConfig], bool | None],
-    applies: Callable[[Profile, WlanConfig], bool] = lambda profile, wlan: True,
+    note: str = "",
+    applies: Callable[[Profile, WlanConfig], bool] = _always,
+    inapplicable: str = "",
 ) -> Rule:
+    _guard_applicability(code, applies, inapplicable)
+
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
-        want = expected(profile)
-        if want is None or not applies(profile, wlan):
-            return None
         have = actual(wlan)
-        return _compare(code, wlan, on_off(want), None if have is None else on_off(have), have == want)
+        shown = None if have is None else on_off(have)
+        if not applies(profile, wlan):
+            return _unjudged(code, wlan, CheckStatus.NOT_APPLICABLE, shown, inapplicable)
+        want = expected(profile)
+        if want is None:
+            return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, shown, note)
+        return _compare(code, wlan, on_off(want), shown, have == want)
 
     return Rule(code, label, group, evaluate)
 
@@ -97,18 +118,18 @@ def _text_rule(
     group: RuleGroup,
     expected: Callable[[Profile], str | None],
     actual: Callable[[WlanConfig], str | None],
+    note: str,
 ) -> Rule:
     """Values are shown capitalised, as the controller UI writes them (Off, Auto, Manual)."""
 
-    def show(value: str) -> str:
-        return value.capitalize()
+    def show(value: str | None) -> str | None:
+        return None if value is None else value.capitalize()
 
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
-        want = expected(profile)
+        want, have = expected(profile), actual(wlan)
         if want is None:
-            return None
-        have = actual(wlan)
-        return _compare(code, wlan, show(want), None if have is None else show(have), have == want)
+            return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, show(have), note)
+        return _compare(code, wlan, show(want) or "", show(have), have == want)
 
     return Rule(code, label, group, evaluate)
 
@@ -117,17 +138,21 @@ def _int_rule(
     code: str,
     label: str,
     group: RuleGroup,
-    expected: Callable[[Profile], int | None],
+    expected: Callable[[Profile], int],
     actual: Callable[[WlanConfig], int | None],
-    applies: Callable[[Profile, WlanConfig], bool] = lambda profile, wlan: True,
+    applies: Callable[[Profile, WlanConfig], bool] = _always,
+    inapplicable: str = "",
     render: Callable[[int], str] = str,
 ) -> Rule:
+    _guard_applicability(code, applies, inapplicable)
+
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
-        want = expected(profile)
-        if want is None or not applies(profile, wlan):
-            return None
         have = actual(wlan)
-        return _compare(code, wlan, render(want), None if have is None else render(have), have == want)
+        shown = None if have is None else render(have)
+        if not applies(profile, wlan):
+            return _unjudged(code, wlan, CheckStatus.NOT_APPLICABLE, shown, inapplicable)
+        want = expected(profile)
+        return _compare(code, wlan, render(want), shown, have == want)
 
     return Rule(code, label, group, evaluate)
 
@@ -135,6 +160,7 @@ def _int_rule(
 def _rate_rule(code: str, label: str, band: Band) -> Rule:
     """A minimum data rate is only a rule when the profile fixes rates and expects the band; the
     controller's per-band enable flag counts as a deviation when off, as in the UI."""
+    note = "the profile prescribes a lowest rate only with Manual minimum data rates"
 
     def expected(profile: Profile) -> int | None:
         if profile.minrate_mode is not MinRateMode.MANUAL or band not in profile.wifi_bands:
@@ -142,11 +168,14 @@ def _rate_rule(code: str, label: str, band: Band) -> Rule:
         return profile.minrate_24_kbps if band is Band.GHZ_2 else profile.minrate_5_kbps
 
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
-        want = expected(profile)
-        if want is None:
+        if band not in wlan.bands:
             return None
         enabled = wlan.minrate_ng_enabled if band is Band.GHZ_2 else wlan.minrate_na_enabled
         kbps = wlan.minrate_ng_data_rate_kbps if band is Band.GHZ_2 else wlan.minrate_na_data_rate_kbps
+        want = expected(profile)
+        if want is None:
+            shown = None if enabled is None else rate_label(kbps) if enabled and kbps is not None else "not enforced"
+            return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, shown, note)
         if enabled is None:
             return _result(code, wlan, CheckStatus.INCOMPLETE, rate_label(want), None, NOT_SENT)
         if not enabled:
@@ -159,6 +188,10 @@ def _rate_rule(code: str, label: str, band: Band) -> Rule:
 
 
 def _dtim_rule(code: str, label: str, band: Band) -> Rule:
+    """The controller shows a band's DTIM field only under a custom interval, so an interval it merely keeps
+    is not listed."""
+    note = "the profile pins an interval only under a custom DTIM setting"
+
     def expected(profile: Profile) -> int | None:
         if profile.dtim_mode is not DtimMode.CUSTOM or band not in profile.wifi_bands:
             return None
@@ -168,20 +201,18 @@ def _dtim_rule(code: str, label: str, band: Band) -> Rule:
         return {Band.GHZ_2: wlan.dtim_ng, Band.GHZ_5: wlan.dtim_na, Band.GHZ_6: wlan.dtim_6e}[band]
 
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
-        want = expected(profile)
-        if want is None:
+        if band not in wlan.bands:
             return None
         have = actual(wlan)
+        shown = None if have is None else str(have)
+        want = expected(profile)
+        if want is None:
+            if dtim_mode(wlan) is not DtimMode.CUSTOM:
+                return None
+            return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, shown, note)
         if band is Band.GHZ_6:
-            return _result(
-                code,
-                wlan,
-                CheckStatus.NOT_EVALUABLE,
-                str(want),
-                None if have is None else str(have),
-                SIX_GHZ_DETECT_ONLY,
-            )
-        return _compare(code, wlan, str(want), None if have is None else str(have), have == want)
+            return _result(code, wlan, CheckStatus.NOT_EVALUABLE, str(want), shown, SIX_GHZ_DETECT_ONLY)
+        return _compare(code, wlan, str(want), shown, have == want)
 
     return Rule(code, label, RuleGroup.BEHAVIOUR, evaluate)
 
@@ -244,6 +275,7 @@ def _rekey_rule() -> Rule:
         lambda profile: profile.group_rekey_s,
         lambda wlan: wlan.group_rekey,
         applies=_has_group_rekey,
+        inapplicable="the controller sends no interval for an open or OWE WLAN",
         render=rekey_label,
     )
 
@@ -264,7 +296,30 @@ def _uses_sae(profile: Profile, wlan: WlanConfig) -> bool:
     return not isinstance(protocol, Unrecognised) and protocol is not None and protocol.uses_sae
 
 
+def _display_rule(
+    code: str, label: str, group: RuleGroup, actual: Callable[[WlanConfig], bool | None], note: str
+) -> Rule:
+    return _bool_rule(code, label, group, _never, actual, note)
+
+
+def _never(profile: Profile) -> None:
+    """A setting no profile key covers yet: it is listed with its value and a note, never judged."""
+    return None
+
+
+def _broadcasting_aps(wlan: WlanConfig) -> str | None:
+    return wlan.ap_group_mode
+
+
 RULES: tuple[Rule, ...] = (
+    _text_rule(
+        "broadcasting_aps",
+        "Broadcasting APs",
+        RuleGroup.RADIO,
+        _never,
+        _broadcasting_aps,
+        "a WLAN on only some access points is missing where roaming needs it",
+    ),
     _bands_rule(),
     _bool_rule(
         "fast_roaming",
@@ -283,11 +338,21 @@ RULES: tuple[Rule, ...] = (
         lambda p: p.multicast_to_unicast,
         lambda w: w.mcastenhance_enabled,
     ),
-    _bool_rule("proxy_arp", "Proxy ARP", RuleGroup.CAPACITY, lambda p: p.proxy_arp, lambda w: w.proxy_arp),
+    _bool_rule(
+        "proxy_arp",
+        "Proxy ARP",
+        RuleGroup.CAPACITY,
+        lambda p: p.proxy_arp,
+        lambda w: w.proxy_arp,
+    ),
     _security_protocol_rule(),
     _pmf_rule(),
     _bool_rule(
-        "hide_wifi_name", "Hide WiFi Name", RuleGroup.SECURITY, lambda p: p.hide_wifi_name, lambda w: w.hide_ssid
+        "hide_wifi_name",
+        "Hide WiFi Name",
+        RuleGroup.SECURITY,
+        lambda p: p.hide_wifi_name,
+        lambda w: w.hide_ssid,
     ),
     _bool_rule(
         "client_device_isolation",
@@ -303,6 +368,7 @@ RULES: tuple[Rule, ...] = (
         lambda p: p.sae_anti_clogging,
         lambda w: w.sae_anti_clogging,
         applies=_uses_sae,
+        inapplicable="the WLAN does not use WPA3",
     ),
     _int_rule(
         "sae_sync_time",
@@ -311,6 +377,7 @@ RULES: tuple[Rule, ...] = (
         lambda p: p.sae_sync_time,
         lambda w: w.sae_sync,
         applies=_uses_sae,
+        inapplicable="the WLAN does not use WPA3",
     ),
     _bool_rule(
         "ppsk",
@@ -318,6 +385,7 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.SECURITY,
         lambda p: p.ppsk,
         lambda w: w.private_preshared_keys_enabled,
+        "one password per device or group on a single WLAN; needs WPA2",
     ),
     _bool_rule(
         "wpa3_enhanced_192",
@@ -325,8 +393,15 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.SECURITY,
         lambda p: p.wpa3_enhanced_192,
         lambda w: w.wpa3_enhanced_192,
+        "192-bit mode of WPA3 Enterprise; needs a RADIUS server",
     ),
-    _bool_rule("mlo", "MLO", RuleGroup.BEHAVIOUR, lambda p: p.mlo, lambda w: w.mlo_enabled),
+    _bool_rule(
+        "mlo",
+        "MLO",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.mlo,
+        lambda w: w.mlo_enabled,
+    ),
     _bool_rule(
         "band_steering",
         "Band Steering",
@@ -334,11 +409,36 @@ RULES: tuple[Rule, ...] = (
         lambda p: p.band_steering,
         lambda w: w.band_steering,
         applies=_steers_between_bands,
+        inapplicable="the WLAN has no second band to steer to",
     ),
     _bool_rule(
-        "bss_transition", "BSS Transition", RuleGroup.BEHAVIOUR, lambda p: p.bss_transition, lambda w: w.bss_transition
+        "bss_transition",
+        "BSS Transition",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.bss_transition,
+        lambda w: w.bss_transition,
     ),
-    _bool_rule("uapsd", "UAPSD", RuleGroup.BEHAVIOUR, lambda p: p.uapsd, lambda w: w.uapsd_enabled),
+    _bool_rule(
+        "uapsd",
+        "UAPSD",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.uapsd,
+        lambda w: w.uapsd_enabled,
+    ),
+    _display_rule(
+        "mac_filter",
+        "MAC Address Filter",
+        RuleGroup.BEHAVIOUR,
+        lambda w: w.mac_filter_enabled,
+        "adds little security and locks out clients that randomise their MAC address",
+    ),
+    _display_rule(
+        "radius_mac_auth",
+        "RADIUS MAC Authentication",
+        RuleGroup.BEHAVIOUR,
+        lambda w: w.radius_mac_auth_enabled,
+        "admits devices by MAC address through RADIUS; a deployment choice",
+    ),
     _mode_rule("dtim_mode", "Auto 802.11 DTIM Period", RuleGroup.BEHAVIOUR, lambda p: p.dtim_mode, dtim_mode),
     _dtim_rule("dtim_24", "DTIM Period 2.4 GHz", Band.GHZ_2),
     _dtim_rule("dtim_5", "DTIM Period 5 GHz", Band.GHZ_5),
@@ -352,7 +452,12 @@ RULES: tuple[Rule, ...] = (
         lambda w: w.advertise_device_name_in_beacon,
     ),
     _bool_rule(
-        "iot_dtim_lock", "DTIM Interval Lock", RuleGroup.BEHAVIOUR, lambda p: p.iot_dtim_lock, lambda w: w.iot_dtim_lock
+        "iot_dtim_lock",
+        "DTIM Interval Lock",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.iot_dtim_lock,
+        lambda w: w.iot_dtim_lock,
+        "keeps the DTIM interval fixed for IoT devices that misbehave otherwise",
     ),
     _bool_rule(
         "iot_channel_lock",
@@ -360,9 +465,15 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.iot_channel_lock,
         lambda w: w.iot_channel_lock,
+        "pins every access point's 2.4 GHz radio to channel 6, for all WLANs on it",
     ),
     _bool_rule(
-        "enhanced_iot", "Force WiFi 4 Mode", RuleGroup.BEHAVIOUR, lambda p: p.enhanced_iot, lambda w: w.enhanced_iot
+        "enhanced_iot",
+        "Force WiFi 4 Mode",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.enhanced_iot,
+        lambda w: w.enhanced_iot,
+        "limits the WLAN to Wi-Fi 4 for IoT devices that fail on newer standards",
     ),
     _text_rule(
         "dns_assistance_mode",
@@ -370,6 +481,7 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.dns_assistance_mode,
         lambda w: w.dns_assistance_mode,
+        "resolves DNS locally and redirects slow or failed queries to other servers",
     ),
     _text_rule(
         "mdns_proxy_mode",
@@ -377,6 +489,7 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.mdns_proxy_mode,
         lambda w: w.mdns_proxy_mode,
+        "service discovery: Auto stays in the VLAN, Custom crosses VLANs by rules",
     ),
     _text_rule(
         "multicast_suppressor_mode",
@@ -384,6 +497,7 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.multicast_suppressor_mode,
         lambda w: w.multicast_suppressor_mode,
+        "Conservative prevents multicast storms, Aggressive blocks nearly all of it",
     ),
 )
 

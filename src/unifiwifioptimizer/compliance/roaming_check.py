@@ -1,7 +1,7 @@
 """Roaming Assistant ("Handoff Suggestions (802.11v)") compliance. The profile decides only whether the
 feature is expected on; the threshold comes from the site's RF analysis and is handed in by the caller
-(ALGORITHM.md §7). The N/A cases take priority over the profile's expectation: a WLAN that cannot run
-Roaming Assistant at all is not compliant merely because a profile expects it off."""
+(ALGORITHM.md §7). A WLAN without 5 GHz has no band to hand a client to, so the suggestions should be off
+whatever the profile says; the other N/A case takes priority over the profile's expectation."""
 
 from unifiwifioptimizer.compliance.rules import SIX_GHZ_DETECT_ONLY
 from unifiwifioptimizer.domain.models import Band, WlanConfig
@@ -11,6 +11,7 @@ from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 CODE = "roaming_assistant"
 CODE_6G = "roaming_assistant_6g"
 LABEL = "Handoff Suggestions (802.11v)"
+NO_5GHZ_TO_HAND_OFF_TO = "the WLAN has no 5 GHz band to hand a client to"
 RSSI_NOT_SENT = "the controller did not send the RSSI threshold"
 
 
@@ -57,11 +58,15 @@ def roaming_assistant_check(profile: Profile, wlan: WlanConfig, threshold_dbm: i
     analysis could not produce one (no neighbour data yet); the on/off expectation is still judged in that
     case. A switched-on assistant without a reported RSSI is a deviation of its own, never a coerced
     number."""
-    if Band.GHZ_5 not in wlan.bands:
-        return _result(wlan, CheckStatus.NOT_APPLICABLE, "5 GHz not broadcast", None, None)
-    if wlan.roaming_assistant_na_enabled is None:
-        return _result(wlan, CheckStatus.INCOMPLETE, "older API without roaming_assistant_na_*", None, None)
     enabled = wlan.roaming_assistant_na_enabled
+    if Band.GHZ_5 not in wlan.bands:
+        if enabled is None:
+            return _result(wlan, CheckStatus.NOT_APPLICABLE, "5 GHz not broadcast", None, None)
+        if not enabled:
+            return _result(wlan, CheckStatus.PASSED, "off without 5 GHz", "Disabled", "Disabled")
+        return _result(wlan, CheckStatus.FAILED, NO_5GHZ_TO_HAND_OFF_TO, "Disabled", _actual(wlan))
+    if enabled is None:
+        return _result(wlan, CheckStatus.INCOMPLETE, "older API without roaming_assistant_na_*", None, None)
     actual = _actual(wlan)
     if not profile.roaming_assistant:
         if not enabled:

@@ -27,9 +27,11 @@
   WLAN       SSID-1  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    ✓ Radio Band                         2.4 GHz, 5 GHz
-    ✓ Fast Roaming (802.11r)             Enabled
-    ? Handoff Suggestions (802.11v)      threshold not available without neighbour data
+    · Broadcasting APs                     All
+        not prescribed: a WLAN on only some access points is missing where roaming needs it
+    ✓ Radio Band                           2.4 GHz, 5 GHz
+    ✓ Fast Roaming (802.11r)               Enabled
+    ? Handoff Suggestions (802.11v)        threshold not available without neighbour data
         AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the
           floor -75 dBm; clamped to the floor (-81 dBm on the uplink) — no reachable roaming
           neighbour, fix placement
@@ -40,36 +42,56 @@
         AP-4: no reading of neighbour AP-3 (not sighted)
         Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN; apply
           those first and re-run; the threshold follows the effective power
-    ✓ Minimum Data Rate Mode             Manual
-    ✓ Minimum Data Rate 2.4 GHz          12 Mbps
-    ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
+    ✓ Minimum Data Rate Mode               Manual
+    ✓ Minimum Data Rate 2.4 GHz            12 Mbps
+    ✗ Minimum Data Rate 5 GHz              12 Mbps (currently 24 Mbps)
         → WLAN edit → Advanced → Hi-Capacity Tuning → Minimum Data Rate → 5 GHz slider
-    ✗ Multicast to Unicast               Enabled (currently Disabled)
+    · Multicast Filtering                  Off
+        not prescribed: service discovery: Auto stays in the VLAN, Custom crosses VLANs by rules
+    ✗ Multicast to Unicast                 Enabled (currently Disabled)
         → WLAN edit → Advanced → Hi-Capacity Tuning → Multicast to Unicast
-    ✓ Proxy ARP                          Enabled
-    ✓ Multicast Suppression              Off
-    ✓ Security Protocol                  WPA2/WPA3
-    ✓ PMF                                Optional
-    ✓ Hide WiFi Name                     Disabled
-    ✓ Client Device Isolation            Disabled
-    ✓ SAE Anti-clogging                  5
-    ✓ SAE Sync Time                      5
-    ✗ DNS Assistance                     Off (currently Auto)
+    ✓ Proxy ARP                            Enabled
+    ✓ Multicast Suppression                Off
+    · Lock 2.4 GHz to Channel 6 (All APs)  Disabled
+        not prescribed: pins every access point's 2.4 GHz radio to channel 6, for all WLANs on it
+    · Force WiFi 4 Mode                    Disabled
+        not prescribed: limits the WLAN to Wi-Fi 4 for IoT devices that fail on newer standards
+    · DTIM Interval Lock                   Disabled
+        not prescribed: keeps the DTIM interval fixed for IoT devices that misbehave otherwise
+    ✓ Security Protocol                    WPA2/WPA3
+    · WPA3 Enhanced 192-bit                Disabled
+        not prescribed: 192-bit mode of WPA3 Enterprise; needs a RADIUS server
+    ✓ PMF                                  Optional
+    · Private Pre-Shared Keys              Disabled
+        not prescribed: one password per device or group on a single WLAN; needs WPA2
+    ✓ Hide WiFi Name                       Disabled
+    ✓ Client Device Isolation              Disabled
+    ✓ SAE Anti-clogging                    5
+    ✓ SAE Sync Time                        5
+    ✗ DNS Assistance                       Off (currently Auto)
         → WLAN edit → Advanced → Behavior Controls → DNS Assistance
-    ✓ MLO                                Disabled
-    ✓ Band Steering                      Enabled
-    ✓ BSS Transition                     Enabled
-    ✓ UAPSD                              Disabled
-    ✗ Auto 802.11 DTIM Period            Default (currently Custom)
+    ✓ MLO                                  Disabled
+    ✓ Band Steering                        Enabled
+    ✓ BSS Transition                       Enabled
+    ✓ UAPSD                                Disabled
+    · MAC Address Filter                   Disabled
+        not prescribed: adds little security and locks out clients that randomise their MAC address
+    · RADIUS MAC Authentication            Disabled
+        not prescribed: admits devices by MAC address through RADIUS; a deployment choice
+    ✗ Auto 802.11 DTIM Period              Default (currently Custom)
         → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
-    ✓ Group Rekey Interval               3600 s
-    ✓ Show Access Point Name in Beacon   Disabled
+    · DTIM Period 2.4 GHz                  3
+        not prescribed: the profile pins an interval only under a custom DTIM setting
+    · DTIM Period 5 GHz                    3
+        not prescribed: the profile pins an interval only under a custom DTIM setting
+    ✓ Group Rekey Interval                 3600 s
+    ✓ Show Access Point Name in Beacon     Disabled
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    ✗ WLAN Enabled                       Enabled (currently Disabled)
+    ✗ WLAN Enabled                         Enabled (currently Disabled)
         the WLAN is disabled on the controller
         → WLAN edit → Enabled toggle
 
@@ -77,7 +99,7 @@
   WLAN       SSID-3  (profile Hotspot)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    ✗ WLAN Enabled                       Enabled (currently Disabled)
+    ✗ WLAN Enabled                         Enabled (currently Disabled)
         the WLAN is disabled on the controller
         → WLAN edit → Enabled toggle
 

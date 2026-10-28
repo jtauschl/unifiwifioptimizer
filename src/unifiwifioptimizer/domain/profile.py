@@ -107,9 +107,10 @@ class Evidence:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Profile:
-    """Expected WLAN settings. A key whose value is None is not checked for this profile. `evidence` holds
-    the keys whose tier differs for this profile from the set's global entry (a compatibility choice that
-    a standard argues against is `practice` here even where the mechanism itself is a standard)."""
+    """Expected WLAN settings. A key whose value is None is listed in the report but not judged for this
+    profile. `evidence` holds the keys whose tier differs for this profile from the set's global entry (a
+    compatibility choice that a standard argues against is `practice` here even where the mechanism itself
+    is a standard)."""
 
     name: str
     wifi_bands: frozenset[Band]

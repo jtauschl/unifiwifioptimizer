@@ -108,6 +108,7 @@ STATUS_MARK: Mapping[CheckStatus, str] = {
     CheckStatus.INCOMPLETE: "?",
     CheckStatus.NOT_EVALUABLE: "?",
     CheckStatus.NOT_APPLICABLE: "-",
+    CheckStatus.NOT_PRESCRIBED: "·",
 }
 SEVERITY_MARK: Mapping[Severity, str] = {
     Severity.INFO: "·",
@@ -129,8 +130,11 @@ MARKER_GLYPH: Mapping[NeighbourMarker, str] = {
 RULE = "━" * 64
 # Wide enough for the longest check label plus its colon, so every value column starts at the same place.
 LABEL = 34
+# The WLAN check rows carry the controller UI's own labels, the longest of which is wider.
+WLAN_ROW_LABEL = 36
 NAME = 24
 LINE_MAX = 160
+NOT_SENT_VALUE = "not sent by the controller"
 # The report is read in terminals and pasted into tickets; a sentence longer than this is folded with a
 # hanging indent so that a value column or a bullet stays recognisable as the start of its line.
 WIDTH = 100
@@ -220,9 +224,17 @@ def _check_line(check: CheckResult, *, hints_only: bool = False) -> list[str]:
     value = check.actual if check.status is CheckStatus.PASSED else check.expected
     if check.status is CheckStatus.FAILED and check.actual is not None:
         value = f"{check.expected} (currently {check.actual})"
-    if check.status in (CheckStatus.INCOMPLETE, CheckStatus.NOT_EVALUABLE, CheckStatus.NOT_APPLICABLE):
+    unjudged = check.status in (CheckStatus.NOT_APPLICABLE, CheckStatus.NOT_PRESCRIBED)
+    if unjudged and check.actual is not None:
+        value = check.actual
+    elif check.status in (CheckStatus.INCOMPLETE, CheckStatus.NOT_EVALUABLE, CheckStatus.NOT_APPLICABLE):
         value = check.detail or check.status.value
-    lines = [f"    {mark} {check_label(check.code):<{LABEL}} {safe_text(value or '', 80)}"]
+    elif check.status is CheckStatus.NOT_PRESCRIBED:
+        value = NOT_SENT_VALUE
+    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', 80)}"]
+    if (unjudged and check.actual is not None) or check.status is CheckStatus.NOT_PRESCRIBED:
+        prefix = "not prescribed" if check.status is CheckStatus.NOT_PRESCRIBED else "not applicable"
+        lines.append(f"        {safe_text(f'{prefix}: {check.detail}', 100)}")
     if check.status is CheckStatus.FAILED and check.detail:
         lines.append(f"        {safe_text(check.detail, 100)}")
     if check.deferred_by is not None:

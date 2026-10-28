@@ -261,6 +261,8 @@ class WlanConfig:
     private_preshared_keys_enabled: bool | None
     mlo_enabled: bool | None
     hotspot2conf_enabled: bool | None
+    mac_filter_enabled: bool | None
+    radius_mac_auth_enabled: bool | None
     rrm_enabled: bool | None
     is_guest: bool | None
     ap_group_mode: str | None

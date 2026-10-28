@@ -393,6 +393,8 @@ def parse_wlan(fields: Fields) -> WlanConfig:
         private_preshared_keys_enabled=fields.opt_bool("private_preshared_keys_enabled"),
         mlo_enabled=fields.opt_bool("mlo_enabled"),
         hotspot2conf_enabled=fields.opt_bool("hotspot2conf_enabled"),
+        mac_filter_enabled=fields.opt_bool("mac_filter_enabled"),
+        radius_mac_auth_enabled=fields.opt_bool("radius_mac_auth_enabled"),
         rrm_enabled=fields.opt_bool("rrm_enabled"),
         is_guest=fields.opt_bool("is_guest"),
         ap_group_mode=fields.opt_string("ap_group_mode", MAX_TOKEN_BYTES),

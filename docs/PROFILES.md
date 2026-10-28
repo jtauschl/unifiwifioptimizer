@@ -136,10 +136,10 @@ profiles:
 | `dtim_24`, `dtim_5`, `dtim_6` | `dtim_ng`, `dtim_na`, `dtim_6e` | required when `custom` and the band is listed |
 | `group_rekey_s` | `group_rekey` | seconds, 0 = disabled |
 | `sae_anti_clogging`, `sae_sync_time` | `sae_anti_clogging`, `sae_sync` | checked only when the WLAN uses SAE (WPA3 or WPA2/WPA3 Personal) |
-| `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
-| `dns_assistance_mode` | DNS Assistance | optional `off`, `auto`, `manual`; unset = not checked |
-| `mdns_proxy_mode` | Multicast Filtering | optional `off`, `auto`, `custom`; unset = not checked |
-| `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = not checked |
+| `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = listed, not judged |
+| `dns_assistance_mode` | DNS Assistance | optional `off`, `auto`, `manual`; unset = listed, not judged |
+| `mdns_proxy_mode` | Multicast Filtering | optional `off`, `auto`, `custom`; unset = listed, not judged |
+| `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = listed, not judged |
 
 A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A
 combination the controller did send but the tool has no name for (for example `wpapsk/wpa1`) is a

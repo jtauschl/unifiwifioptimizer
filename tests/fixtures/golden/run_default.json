@@ -786,6 +786,14 @@
           {
             "checks": [
               {
+                "actual": "All",
+                "code": "broadcasting_aps",
+                "detail": "a WLAN on only some access points is missing where roaming needs it",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
                 "actual": "2.4 GHz, 5 GHz",
                 "code": "wifi_bands",
                 "detail": "",
@@ -891,6 +899,22 @@
               },
               {
                 "actual": "Disabled",
+                "code": "ppsk",
+                "detail": "one password per device or group on a single WLAN; needs WPA2",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "wpa3_enhanced_192",
+                "detail": "192-bit mode of WPA3 Enterprise; needs a RADIUS server",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
                 "code": "mlo",
                 "detail": "",
                 "expected": "Disabled",
@@ -922,11 +946,43 @@
                 "subject": "SSID-1"
               },
               {
+                "actual": "Disabled",
+                "code": "mac_filter",
+                "detail": "adds little security and locks out clients that randomise their MAC address",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "radius_mac_auth",
+                "detail": "admits devices by MAC address through RADIUS; a deployment choice",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
                 "actual": "Custom",
                 "code": "dtim_mode",
                 "detail": "",
                 "expected": "Default",
                 "status": "failed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "3",
+                "code": "dtim_24",
+                "detail": "the profile pins an interval only under a custom DTIM setting",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "3",
+                "code": "dtim_5",
+                "detail": "the profile pins an interval only under a custom DTIM setting",
+                "expected": null,
+                "status": "not_prescribed",
                 "subject": "SSID-1"
               },
               {
@@ -946,11 +1002,43 @@
                 "subject": "SSID-1"
               },
               {
+                "actual": "Disabled",
+                "code": "iot_dtim_lock",
+                "detail": "keeps the DTIM interval fixed for IoT devices that misbehave otherwise",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "iot_channel_lock",
+                "detail": "pins every access point's 2.4 GHz radio to channel 6, for all WLANs on it",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Disabled",
+                "code": "enhanced_iot",
+                "detail": "limits the WLAN to Wi-Fi 4 for IoT devices that fail on newer standards",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
+              },
+              {
                 "actual": "Auto",
                 "code": "dns_assistance_mode",
                 "detail": "",
                 "expected": "Off",
                 "status": "failed",
+                "subject": "SSID-1"
+              },
+              {
+                "actual": "Off",
+                "code": "mdns_proxy_mode",
+                "detail": "service discovery: Auto stays in the VLAN, Custom crosses VLANs by rules",
+                "expected": null,
+                "status": "not_prescribed",
                 "subject": "SSID-1"
               },
               {
@@ -1025,6 +1113,14 @@
       },
       "derived": {
         "checks": [
+          {
+            "actual": "All",
+            "code": "broadcasting_aps",
+            "detail": "a WLAN on only some access points is missing where roaming needs it",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
           {
             "actual": "2.4 GHz, 5 GHz",
             "code": "wifi_bands",
@@ -1131,6 +1227,22 @@
           },
           {
             "actual": "Disabled",
+            "code": "ppsk",
+            "detail": "one password per device or group on a single WLAN; needs WPA2",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "wpa3_enhanced_192",
+            "detail": "192-bit mode of WPA3 Enterprise; needs a RADIUS server",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
             "code": "mlo",
             "detail": "",
             "expected": "Disabled",
@@ -1162,11 +1274,43 @@
             "subject": "SSID-1"
           },
           {
+            "actual": "Disabled",
+            "code": "mac_filter",
+            "detail": "adds little security and locks out clients that randomise their MAC address",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "radius_mac_auth",
+            "detail": "admits devices by MAC address through RADIUS; a deployment choice",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
             "actual": "Custom",
             "code": "dtim_mode",
             "detail": "",
             "expected": "Default",
             "status": "failed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "3",
+            "code": "dtim_24",
+            "detail": "the profile pins an interval only under a custom DTIM setting",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "3",
+            "code": "dtim_5",
+            "detail": "the profile pins an interval only under a custom DTIM setting",
+            "expected": null,
+            "status": "not_prescribed",
             "subject": "SSID-1"
           },
           {
@@ -1186,11 +1330,43 @@
             "subject": "SSID-1"
           },
           {
+            "actual": "Disabled",
+            "code": "iot_dtim_lock",
+            "detail": "keeps the DTIM interval fixed for IoT devices that misbehave otherwise",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "iot_channel_lock",
+            "detail": "pins every access point's 2.4 GHz radio to channel 6, for all WLANs on it",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Disabled",
+            "code": "enhanced_iot",
+            "detail": "limits the WLAN to Wi-Fi 4 for IoT devices that fail on newer standards",
+            "expected": null,
+            "status": "not_prescribed",
+            "subject": "SSID-1"
+          },
+          {
             "actual": "Auto",
             "code": "dns_assistance_mode",
             "detail": "",
             "expected": "Off",
             "status": "failed",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Off",
+            "code": "mdns_proxy_mode",
+            "detail": "service discovery: Auto stays in the VLAN, Custom crosses VLANs by rules",
+            "expected": null,
+            "status": "not_prescribed",
             "subject": "SSID-1"
           },
           {

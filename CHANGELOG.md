@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Give UniFi operators verified, actionable RF and WLAN-profile recommendations on current controller releases — including the WLAN-level Handoff Suggestions check, the extended profile schema, and secure-by-default controller and AP access — by rebuilding the optimizer as a typed, tested Python package.
 
 ### Added
+- Every setting of the controller's WLAN editor appears in the WLAN rows, in the editor's order: one the profile does not prescribe is shown with its current value and a line on what it does (`·`, JSON status `not_prescribed`), one that does not apply to the WLAN says why (`-`). New rows: Broadcasting APs, MAC Address Filter and RADIUS MAC Authentication. A WLAN without 5 GHz is expected to have Handoff Suggestions off, whatever its profile says.
 - A profile can pin `multicast_suppressor_mode` (`off`, `conservative`, `aggressive`; Multicast Suppression), and an information finding `advanced_set_to_auto` marks a WLAN whose Advanced switch is on Auto.
 - The transmit-power row of the default report shows the set value, the effective power and the EIRP (effective power plus the antenna gain the controller reports), e.g. `Auto (effective 17 dBm, EIRP 20 dBm)`.
 - The title of each WLAN names the network it is attached to and its VLAN (`→ network IoT, VLAN 30`, or `untagged`); the JSON evaluation carries `network` and `vlan`. The tool reads one more endpoint (`rest/networkconf`, GET) for it.

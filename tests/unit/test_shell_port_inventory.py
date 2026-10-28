@@ -78,17 +78,11 @@ PORTED: dict[str, str] = {
     "tx_test.sh::test_expected_disabled_ignores_incomplete_aggregation": (
         TARGETS + "test_an_incomplete_target_leaves_an_expected_off_wlan_judged_on_the_switch_alone"
     ),
-    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_false": (
-        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
-    ),
     "tx_test.sh::test_na_older_api_ignores_expected_false": (
-        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
-    ),
-    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_true": (
-        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+        ROAMING_CHECK + "test_an_older_api_without_the_switch_is_incomplete_on_a_5_ghz_wlan"
     ),
     "tx_test.sh::test_na_older_api_ignores_expected_true": (
-        ROAMING_CHECK + "test_not_applicable_and_incomplete_take_priority_over_the_profile"
+        ROAMING_CHECK + "test_an_older_api_without_the_switch_is_incomplete_on_a_5_ghz_wlan"
     ),
     "roaming_test.sh::test_ssid_peer_filtering": (TARGETS + "test_ssid_peer_filtering"),
     "roaming_test.sh::test_asymmetric_direction": (TARGETS + "test_asymmetric_direction"),
@@ -130,6 +124,13 @@ SUPERSEDED: dict[str, str] = {
     ),
     "roaming_test.sh::test_fetch_site_apgroups_survives_malformed_response": (
         "a malformed endpoint body is a SchemaError and aborts the run (exit 1), as above"
+    ),
+    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_false": (
+        "a WLAN without 5 GHz has no band to hand a client to, so its Handoff Suggestions are judged against "
+        "Disabled instead of being skipped"
+    ),
+    "tx_test.sh::test_na_band_not_broadcast_ignores_expected_true": (
+        "as above: without 5 GHz the suggestions should be off even when the profile expects them on"
     ),
 }
 # The shell suites' test ids as of `archive/bash-final`; the inventory above must account for every one.
