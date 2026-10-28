@@ -535,7 +535,7 @@ WLAN_SPEC: Spec = {
     "minrate_setting_preference": vocab("auto", "manual"),
     "setting_preference": vocab("auto", "manual"),
     "dtim_mode": vocab("default", "custom"),
-    "dns_assistance_mode": vocab("auto", "off", "custom"),
+    "dns_assistance_mode": vocab("auto", "off", "manual"),
     "mdns_proxy_mode": vocab("off", "all", "custom"),
     "multicast_suppressor_mode": vocab("off", "conservative", "aggressive"),
     "mac_filter_policy": vocab("allow", "deny"),

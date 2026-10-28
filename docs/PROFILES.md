@@ -136,7 +136,8 @@ profiles:
 | `group_rekey_s` | `group_rekey` | seconds, 0 = disabled |
 | `sae_anti_clogging`, `sae_sync_time` | `sae_anti_clogging`, `sae_sync` | checked only when the WLAN uses SAE (WPA3 or WPA2/WPA3 Personal) |
 | `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
-| `dns_assistance_mode`, `mdns_proxy_mode` (Multicast Filtering) | the matching controller field | optional `off`, `auto`, `custom` (DNS Assistance shows it as Manual); unset = not checked |
+| `dns_assistance_mode` | DNS Assistance | optional `off`, `auto`, `manual`; unset = not checked |
+| `mdns_proxy_mode` | Multicast Filtering | optional `off`, `auto`, `custom`; unset = not checked |
 | `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = not checked |
 
 A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A

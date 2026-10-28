@@ -91,7 +91,7 @@ class EvidenceTier(StrEnum):
     PRACTICE = "practice"
 
 
-DNS_ASSISTANCE_MODES = frozenset({"off", "auto", "custom"})
+DNS_ASSISTANCE_MODES = frozenset({"off", "auto", "manual"})
 MDNS_PROXY_MODES = frozenset({"off", "auto", "custom"})
 MULTICAST_SUPPRESSOR_MODES = frozenset({"off", "conservative", "aggressive"})
 # 6 and 9 Mbit/s are OFDM rates below the recommendation; unlike DSSS rates, they do not admit 802.11b clients.

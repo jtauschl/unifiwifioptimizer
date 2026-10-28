@@ -261,7 +261,7 @@ def test_band_steering_is_judged_only_on_a_wlan_with_2_4_ghz_and_another_band() 
 
 
 def test_a_text_setting_is_shown_with_the_word_of_the_controller_ui() -> None:
-    manual = by_code(evaluate_rules(STRICT, standard_wlan(**{**STRICT_WLAN_FIELDS, "dns_assistance_mode": "custom"})))
+    manual = by_code(evaluate_rules(STRICT, standard_wlan(**{**STRICT_WLAN_FIELDS, "dns_assistance_mode": "manual"})))
     assert manual["dns_assistance_mode"].actual == "Manual" and manual["dns_assistance_mode"].expected == "Auto"
     custom = by_code(evaluate_rules(STRICT, standard_wlan(**STRICT_WLAN_FIELDS)))["mdns_proxy_mode"]
     assert custom.expected == "Custom"
