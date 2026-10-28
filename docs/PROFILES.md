@@ -53,19 +53,18 @@ check the setting.
 |  | Handoff Suggestions (802.11v) | on | on | off | on | Whether the controller sends the suggestions. The signal threshold comes from the site's RF model, not from the profile. |
 |  | Band Steering | on | on | off | on | Moves clients from 2.4 GHz to the other bands; not judged without 2.4 GHz plus another band. |
 | Data rates and beacons | Minimum Data Rate Mode | manual | auto | auto | auto | auto lets clients use every rate; manual fixes the lowest rate an access point accepts. |
-|  | Minimum Data Rate 2.4 GHz | 12 Mbps | – | – | – | Only with manual rates. A higher floor saves airtime and shrinks the cell; weak clients drop out. |
+|  | Minimum Data Rate 2.4 GHz | 12 Mbps | – | – | – | Only with manual rates. A higher floor saves airtime and shrinks the cell; 12 Mbps ends 802.11b. |
 |  | Minimum Data Rate 5 GHz | 12 Mbps | – | – | – | Only with manual rates, same trade-off as on 2.4 GHz. |
-|  | 802.11b Support | off | – | – | – | Off removes 802.11b-only clients and their airtime cost. The controller does not report it under automatic rates. |
 |  | Auto 802.11 DTIM Period | default | default | default | default | default keeps the controller's interval; custom pins one per band. |
 |  | Group Rekey Interval | 3600 s | 3600 s | off | 3600 s | How often the group key is renewed. Not judged on an open or OWE WLAN when the controller sends none. |
-| Multicast and airtime | Proxy ARP | on | on | off | on | The access point answers ARP for sleeping clients; less broadcast traffic. |
+| Multicast and airtime | Multicast Filtering | – | – | – | off | Service discovery: Auto within the WLAN's VLAN, Custom across VLANs by rules; never when isolated. |
 |  | Multicast to Unicast | on | on | off | off | Turns multicast into unicast. Helps casting and streaming discovery; some smart-home devices need it off. |
-|  | Multicast Filtering | off | off | off | off | Blocks multicast and broadcast towards clients; mDNS and DHCP need them. |
+|  | Proxy ARP | on | on | off | on | The access point answers ARP for sleeping clients; less broadcast traffic. |
+|  | Multicast Suppression | off | off | off | off | Limits multicast and broadcast traffic: Conservative prevents storms, Aggressive blocks all but DHCP and ARP unless a device is allowlisted. |
 |  | UAPSD | off | off | off | off | Client power saving; can break legacy clients. |
 | Isolation and information | Client Device Isolation | off | off | off | on | Stops clients on the same access point from talking to each other; for guests. |
 |  | Show Access Point Name in Beacon | off | off | off | off | Information leak with no benefit to clients. |
 |  | MLO | off | off | off | off | Wi-Fi 7 multi-link operation; needs WPA3 and Wi-Fi 7 clients. |
-|  | mDNS Proxy | – | – | – | off | Service discovery across VLANs; never on isolated WLANs. |
 | IoT optimization | Lock 2.4 GHz to Channel 6 (All APs) | – | – | off | – | Pins the 2.4 GHz radio of every access point, for every SSID on it, to channel 6; off keeps the channel plan. |
 | WPA3 handshake | SAE Anti-clogging | 5 | 5 | 5 | 5 | Protects the WPA3 handshake against floods; keep the controller default. |
 |  | SAE Sync Time | 5 | 5 | 5 | 5 | WPA3 handshake timing; keep the controller default. |
@@ -104,7 +103,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: true
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
@@ -129,15 +128,15 @@ profiles:
 | `bss_transition` | `bss_transition` (802.11v BTM support) | bool |
 | `roaming_assistant` | `roaming_assistant_na_enabled` | bool — only whether Handoff Suggestions should be on; the RSSI threshold always comes from the site's RF model (ALGORITHM.md §7). For a WLAN on 6 GHz the `roaming_assistant_6e_enabled` switch is shown as a separate, not evaluable result |
 | `band_steering` | `no2ghz_oui` | bool |
-| `mlo`, `uapsd`, `proxy_arp`, `multicast_broadcast_blocker`, `multicast_to_unicast`, `hide_wifi_name`, `client_device_isolation`, `ap_name_in_beacon` | the matching controller flag | bool |
+| `mlo`, `uapsd`, `proxy_arp`, `multicast_to_unicast`, `hide_wifi_name`, `client_device_isolation`, `ap_name_in_beacon` | the matching controller flag | bool |
 | `minrate_mode` | `minrate_setting_preference` | `auto` or `manual` |
 | `minrate_24_kbps`, `minrate_5_kbps` | `minrate_ng/na_enabled` + `_data_rate_kbps` | required when `manual` and the band is listed; a rate that is not enforced fails |
 | `dtim_mode` | `dtim_mode` | `default` or `custom` |
 | `dtim_24`, `dtim_5`, `dtim_6` | `dtim_ng`, `dtim_na`, `dtim_6e` | required when `custom` and the band is listed |
 | `group_rekey_s` | `group_rekey` | seconds, 0 = disabled |
 | `sae_anti_clogging`, `sae_sync_time` | `sae_anti_clogging`, `sae_sync` | checked only when the WLAN uses SAE (WPA3 or WPA2/WPA3 Personal) |
-| `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `b_supported`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
-| `dns_assistance_mode`, `mdns_proxy_mode` | the matching controller field | optional `off`, `auto`, `custom`; unset = not checked |
+| `iot_dtim_lock`, `iot_channel_lock`, `enhanced_iot`, `ppsk`, `wpa3_enhanced_192` | the matching controller flag | optional bool; unset = not checked |
+| `dns_assistance_mode`, `mdns_proxy_mode` (Multicast Filtering) | the matching controller field | optional `off`, `auto`, `custom`; unset = not checked |
 | `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = not checked |
 
 A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A

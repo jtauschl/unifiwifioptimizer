@@ -122,7 +122,6 @@ class Profile:
     mlo: bool
     uapsd: bool
     proxy_arp: bool
-    multicast_broadcast_blocker: bool
     multicast_to_unicast: bool
     hide_wifi_name: bool
     client_device_isolation: bool
@@ -140,7 +139,6 @@ class Profile:
     iot_dtim_lock: bool | None = None
     iot_channel_lock: bool | None = None
     enhanced_iot: bool | None = None
-    b_supported: bool | None = None
     dns_assistance_mode: str | None = None
     mdns_proxy_mode: str | None = None
     multicast_suppressor_mode: str | None = None

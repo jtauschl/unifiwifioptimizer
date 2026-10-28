@@ -827,14 +827,6 @@
               },
               {
                 "actual": "Disabled",
-                "code": "multicast_broadcast_blocker",
-                "detail": "",
-                "expected": "Disabled",
-                "status": "passed",
-                "subject": "SSID-1"
-              },
-              {
-                "actual": "Disabled",
                 "code": "multicast_to_unicast",
                 "detail": "",
                 "expected": "Enabled",
@@ -954,10 +946,10 @@
                 "subject": "SSID-1"
               },
               {
-                "actual": "Disabled",
-                "code": "b_supported",
+                "actual": "Off",
+                "code": "multicast_suppressor_mode",
                 "detail": "",
-                "expected": "Disabled",
+                "expected": "Off",
                 "status": "passed",
                 "subject": "SSID-1"
               },
@@ -1063,14 +1055,6 @@
             "detail": "",
             "expected": "12 Mbps",
             "status": "failed",
-            "subject": "SSID-1"
-          },
-          {
-            "actual": "Disabled",
-            "code": "multicast_broadcast_blocker",
-            "detail": "",
-            "expected": "Disabled",
-            "status": "passed",
             "subject": "SSID-1"
           },
           {
@@ -1194,10 +1178,10 @@
             "subject": "SSID-1"
           },
           {
-            "actual": "Disabled",
-            "code": "b_supported",
+            "actual": "Off",
+            "code": "multicast_suppressor_mode",
             "detail": "",
-            "expected": "Disabled",
+            "expected": "Off",
             "status": "passed",
             "subject": "SSID-1"
           },

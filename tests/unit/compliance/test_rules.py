@@ -31,7 +31,7 @@ DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "minrate_mode": ({"minrate_setting_preference": "auto"}, "minrate_setting_preference"),
     "minrate_24": ({"minrate_ng_data_rate_kbps": 6000}, "minrate_ng_data_rate_kbps"),
     "minrate_5": ({"minrate_na_data_rate_kbps": 24000}, "minrate_na_data_rate_kbps"),
-    "multicast_broadcast_blocker": ({"bc_filter_enabled": True}, "bc_filter_enabled"),
+    "multicast_suppressor_mode": ({"multicast_suppressor_mode": "aggressive"}, "multicast_suppressor_mode"),
     "multicast_to_unicast": ({"mcastenhance_enabled": False}, "mcastenhance_enabled"),
     "proxy_arp": ({"proxy_arp": False}, "proxy_arp"),
     "security_protocol": ({"wpa3_support": False}, "security"),
@@ -49,7 +49,6 @@ DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "dtim_5": ({"dtim_na": 1}, "dtim_na"),
     "group_rekey": ({"group_rekey": 0}, "group_rekey"),
     "ap_name_in_beacon": ({"advertise_device_name_in_beacon": True}, "advertise_device_name_in_beacon"),
-    "b_supported": ({"b_supported": True}, "b_supported"),
 }
 APPLICABLE_TO_STANDARD = frozenset(DEVIATIONS)
 
@@ -60,7 +59,6 @@ STRICT = replace(
     iot_dtim_lock=False,
     iot_channel_lock=True,
     enhanced_iot=False,
-    b_supported=True,
     dns_assistance_mode="auto",
     mdns_proxy_mode="custom",
     multicast_suppressor_mode="conservative",
@@ -72,7 +70,6 @@ STRICT_WLAN_FIELDS: dict[str, Any] = {
     "iot_channel_lock": True,
     "enhanced_iot": False,
     "optimize_iot_wifi_connectivity": True,
-    "b_supported": True,
     "dns_assistance_mode": "auto",
     "mdns_proxy_mode": "custom",
     "multicast_suppressor_mode": "conservative",
@@ -83,10 +80,8 @@ OPTIONAL_DEVIATIONS: dict[str, tuple[dict[str, Any], str]] = {
     "iot_dtim_lock": ({"iot_dtim_lock": True}, "iot_dtim_lock"),
     "iot_channel_lock": ({"iot_channel_lock": False}, "iot_channel_lock"),
     "enhanced_iot": ({"enhanced_iot": True}, "enhanced_iot"),
-    "b_supported": ({"b_supported": False}, "b_supported"),
     "dns_assistance_mode": ({"dns_assistance_mode": "off"}, "dns_assistance_mode"),
     "mdns_proxy_mode": ({"mdns_proxy_mode": "auto"}, "mdns_proxy_mode"),
-    "multicast_suppressor_mode": ({"multicast_suppressor_mode": "off"}, "multicast_suppressor_mode"),
     "ppsk": ({"private_preshared_keys_enabled": True}, "private_preshared_keys_enabled"),
     "wpa3_enhanced_192": ({"wpa3_enhanced_192": False}, "wpa3_enhanced_192"),
 }
@@ -121,7 +116,7 @@ def test_every_optional_key_passes_on_the_strict_profile_against_its_own_control
     results = by_code(evaluate_rules(STRICT, standard_wlan(**STRICT_WLAN_FIELDS)))
     assert set(OPTIONAL_DEVIATIONS) <= set(results)
     assert {results[code].status for code in OPTIONAL_DEVIATIONS} == {CheckStatus.PASSED}
-    assert results["dns_assistance_mode"].actual == "auto" and results["mdns_proxy_mode"].actual == "custom"
+    assert results["dns_assistance_mode"].actual == "Auto" and results["mdns_proxy_mode"].actual == "Custom"
 
 
 @pytest.mark.parametrize("code", sorted(OPTIONAL_DEVIATIONS))
@@ -192,11 +187,9 @@ def test_sae_counters_are_checked_only_for_sae_protocols() -> None:
 
 
 def test_optional_keys_are_checked_only_when_the_profile_sets_them() -> None:
-    silent = replace(STANDARD, b_supported=None)
-    assert "b_supported" not in by_code(evaluate_rules(silent, standard_wlan()))
-    # Standard sets only b_supported; the other optional keys stay out even when the controller sends them.
+    # Standard sets none of them; they stay out even when the controller sends them.
     results = by_code(evaluate_rules(STANDARD, standard_wlan(**STRICT_WLAN_FIELDS)))
-    assert set(OPTIONAL_DEVIATIONS) & set(results) == {"b_supported"}
+    assert set(OPTIONAL_DEVIATIONS) & set(results) == set()
 
 
 def test_set_rules_accept_any_listed_value() -> None:
@@ -234,7 +227,7 @@ def test_set_rules_accept_any_listed_value() -> None:
 
 def test_rule_codes_are_unique_grouped_and_labelled() -> None:
     codes = [rule.code for rule in RULES]
-    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 33
+    assert len(set(codes)) == len(codes) == len(RULE_BY_CODE) == 31
     assert all(rule.label and isinstance(rule.group, RuleGroup) for rule in RULES)
     assert set(DEVIATIONS) | set(OPTIONAL_DEVIATIONS) == set(codes) - {"dtim_6"}
 

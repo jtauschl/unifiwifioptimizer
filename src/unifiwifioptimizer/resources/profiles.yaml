@@ -15,17 +15,17 @@
 #   legitimately differ
 # - fast_roaming (802.11r), bss_transition (802.11v BTM support), roaming_assistant (whether the controller
 #   should actively send BTM requests; the RSSI threshold itself always comes from the site's RF model),
-#   band_steering, mlo, uapsd, proxy_arp, multicast_broadcast_blocker, multicast_to_unicast,
+#   band_steering, mlo, uapsd, proxy_arp, multicast_to_unicast,
 #   hide_wifi_name, client_device_isolation, ap_name_in_beacon: compared as on/off
 # - minrate_mode auto|manual with minrate_24_kbps/minrate_5_kbps when manual
 # - dtim_mode default|custom with dtim_24/dtim_5/dtim_6 when custom
 # - group_rekey_s: seconds, 0 = disabled; sae_anti_clogging/sae_sync_time: checked when the WLAN uses SAE
-# - optional keys, checked only when present: iot_dtim_lock, iot_channel_lock, enhanced_iot, b_supported,
+# - optional keys, checked only when present: iot_dtim_lock, iot_channel_lock, enhanced_iot,
 #   dns_assistance_mode (off|auto|custom), mdns_proxy_mode (off|auto|custom),
-#   multicast_suppressor_mode (off|conservative|aggressive), ppsk, wpa3_enhanced_192
+#   ppsk, wpa3_enhanced_192
 
 profiles:
-  # Primary WLAN for phones and laptops: fixed 12 Mbit/s basic rates, 802.11b off, 802.11r/v, the controller's DTIM defaults.
+  # Primary WLAN for phones and laptops: fixed 12 Mbit/s basic rates (no 802.11b), 802.11r/v, the controller's DTIM defaults.
   Standard:
     wifi_bands: [2g, 5g]
     security_protocols: ["WPA2/WPA3", "WPA3", "WPA2/WPA3 Enterprise", "WPA3 Enterprise"]
@@ -37,7 +37,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: true
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
@@ -49,7 +49,6 @@ profiles:
     group_rekey_s: 3600
     sae_anti_clogging: 5
     sae_sync_time: 5
-    b_supported: false
 
   # WLAN for older or stationary dual-band clients (TVs, speakers, consoles, printers, old laptops): Standard minus
   # 802.11r and fixed rates, WPA2 and PMF off accepted.
@@ -64,7 +63,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: true
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false
@@ -93,7 +92,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: false
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: false
     hide_wifi_name: false
     client_device_isolation: false
@@ -115,7 +114,7 @@ profiles:
       mlo: {tier: vendor, source: "Ubiquiti IoT checklist: Multi-Link-Operation Off"}
       uapsd: {tier: vendor, source: "Ubiquiti IoT checklist: UAPSD Off"}
       proxy_arp: {tier: vendor, source: "Ubiquiti IoT checklist: Proxy ARP Off"}
-      multicast_broadcast_blocker: {tier: vendor, source: "Ubiquiti IoT checklist: Multicast and Broadcast Control Off"}
+      multicast_suppressor_mode: {tier: vendor, source: "Ubiquiti IoT checklist: Multicast and Broadcast Control Off; the controller's Multicast Suppression limits multicast and broadcast traffic (Off, Conservative, Aggressive)"}
       multicast_to_unicast: {tier: vendor, source: "Ubiquiti IoT checklist: Multicast Enhancement Off; Optimizing WiFi: \"Some smart home devices may require it to be disabled\""}
       client_device_isolation: {tier: vendor, source: "Ubiquiti IoT checklist: Client Device Isolation Off"}
       minrate_mode: {tier: vendor, source: "Ubiquiti IoT checklist: Minimum Data Rate Control Auto"}
@@ -135,7 +134,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: true
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: false
     hide_wifi_name: false
     client_device_isolation: true
@@ -166,7 +165,6 @@ evidence:
   mlo: {tier: vendor, source: "Ubiquiti SSID overview: \"Enable this setting only if your network includes WiFi 7 clients\"; it \"also enables WPA3 security, which may limit connectivity with IoT clients\""}
   uapsd: {tier: vendor, source: "Ubiquiti SSID overview: UAPSD extends client battery life, but \"some legacy or non-compliant clients may experience connectivity issues\"; switch it on in your own profile for VoIP handsets"}
   proxy_arp: {tier: vendor, source: "Ubiquiti: reduces broadcast traffic and can improve airtime and latency; Cisco 9800 calls ARP proxy the recommended setting (client battery life); the mechanism is IEEE 802.11v"}
-  multicast_broadcast_blocker: {tier: practice, source: "Ubiquiti setting; off because mDNS and DHCP need broadcast"}
   multicast_to_unicast: {tier: vendor, source: "Ubiquiti Multicast Enhancement: \"especially helpful in networks with devices like Chromecast, Apple TV, or Sonos\""}
   hide_wifi_name: {tier: vendor, source: "Apple: Hidden network \"Set to Disabled\"; hiding does not secure the network and can expose identifying information"}
   client_device_isolation: {tier: vendor, source: "Ubiquiti: isolation for guest networks; off where clients talk to each other (casting, printing)"}
@@ -184,9 +182,8 @@ evidence:
   iot_dtim_lock: {tier: vendor, source: "Ubiquiti IoT Optimization (Network Application 10.4); 2.4 GHz-only IoT WLANs"}
   iot_channel_lock: {tier: vendor, source: "Ubiquiti IoT Optimization (Network Application 10.4): Lock 2.4 GHz to Channel 6 (All APs)"}
   enhanced_iot: {tier: vendor, source: "Ubiquiti Enhanced IoT Connectivity: \"generally not needed in modern networks but can help resolve connectivity issues with legacy or low-power devices\""}
-  b_supported: {tier: vendor, source: "Cisco 9800: \"Disable all 11b rates, unless needed\""}
   dns_assistance_mode: {tier: vendor, source: "Ubiquiti DNS Assistance (Network Application 10.3)"}
-  mdns_proxy_mode: {tier: practice, source: "mDNS proxy only where cross-VLAN discovery is wanted; never on isolated WLANs"}
-  multicast_suppressor_mode: {tier: practice, source: "Ubiquiti Hi-Capacity Tuning setting (Off, Conservative, Aggressive); a custom profile may pin it"}
+  mdns_proxy_mode: {tier: practice, source: "Multicast Filtering: Auto discovers standard services only within the WLAN's VLAN, Custom adds discovery rules across VLANs (Ubiquiti tooltip); never on isolated WLANs"}
+  multicast_suppressor_mode: {tier: practice, source: "off keeps mDNS and DHCP discovery working; Ubiquiti: Conservative prevents storms, Aggressive blocks all but DHCP and ARP unless a device is allowlisted"}
   ppsk: {tier: vendor, source: "Ubiquiti: \"PPSK requires the use of WPA2 encryption\""}
   wpa3_enhanced_192: {tier: standard, source: "Wi-Fi Alliance WPA3-Enterprise 192-bit mode (CNSA suite), WPA3 Enterprise only"}

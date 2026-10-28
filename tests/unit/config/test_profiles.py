@@ -53,12 +53,12 @@ def test_the_shipped_baselines_follow_the_decided_recommendations() -> None:
     assert standard.fast_roaming and standard.roaming_assistant and standard.group_rekey_s == 3600
     assert standard.minrate_mode is MinRateMode.MANUAL
     assert (standard.minrate_24_kbps, standard.minrate_5_kbps) == (12000, 12000)
-    assert standard.b_supported is False and standard.wifi_bands == {Band.GHZ_2, Band.GHZ_5}
+    assert standard.wifi_bands == {Band.GHZ_2, Band.GHZ_5}
     assert standard.dtim_mode is DtimMode.DEFAULT and standard.dtim_24 is None and standard.dtim_6 is None
     # Compat is Standard for clients that dislike 802.11r, fixed rates and WPA3.
     assert compat.fast_roaming is False and compat.minrate_mode is MinRateMode.AUTO
     assert SecurityProtocol.WPA2 in compat.security_protocols and PmfMode.DISABLED in compat.pmf
-    assert compat.wifi_bands == standard.wifi_bands and compat.b_supported is None
+    assert compat.wifi_bands == standard.wifi_bands
     assert compat.bss_transition and compat.band_steering and compat.roaming_assistant
     assert hotspot.security_protocols == {
         SecurityProtocol.OWE_TRANSITION,
@@ -95,7 +95,7 @@ def test_per_profile_evidence_overrides_the_set_wide_tier_for_compatibility_choi
         "mlo",
         "uapsd",
         "client_device_isolation",
-        "multicast_broadcast_blocker",
+        "multicast_suppressor_mode",
         "minrate_mode",
         "dtim_mode",
         "group_rekey_s",
@@ -165,7 +165,6 @@ INVALID: list[tuple[Document, str, str]] = [
     (mutate("profiles.Standard.group_rekey_s", True), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.group_rekey_s", 90000), P + "Standard.group_rekey_s", "integer"),
     (mutate("profiles.Standard.sae_sync_time", -1), P + "Standard.sae_sync_time", "integer"),
-    (mutate("profiles.Standard.b_supported", "no"), P + "Standard.b_supported", "true or false"),
     (mutate("profiles.Standard.mdns_proxy_mode", "on"), P + "Standard.mdns_proxy_mode", "mode"),
     (
         mutate("profiles.IoT.evidence.colour", {"tier": "practice", "source": "x"}),
@@ -216,7 +215,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: false
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: false
     hide_wifi_name: false
     client_device_isolation: false
@@ -237,7 +236,7 @@ profiles:
     mlo: false
     uapsd: false
     proxy_arp: true
-    multicast_broadcast_blocker: false
+    multicast_suppressor_mode: "off"
     multicast_to_unicast: true
     hide_wifi_name: false
     client_device_isolation: false

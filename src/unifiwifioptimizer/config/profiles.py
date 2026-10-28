@@ -49,13 +49,12 @@ BOOL_KEYS = (
     "mlo",
     "uapsd",
     "proxy_arp",
-    "multicast_broadcast_blocker",
     "multicast_to_unicast",
     "hide_wifi_name",
     "client_device_isolation",
     "ap_name_in_beacon",
 )
-OPTIONAL_BOOL_KEYS = ("iot_dtim_lock", "iot_channel_lock", "enhanced_iot", "b_supported", "ppsk", "wpa3_enhanced_192")
+OPTIONAL_BOOL_KEYS = ("iot_dtim_lock", "iot_channel_lock", "enhanced_iot", "ppsk", "wpa3_enhanced_192")
 OPTIONAL_TEXT_KEYS: Mapping[str, frozenset[str]] = {
     "dns_assistance_mode": DNS_ASSISTANCE_MODES,
     "mdns_proxy_mode": MDNS_PROXY_MODES,
@@ -79,7 +78,10 @@ PROFILE_KEYS = frozenset({*REQUIRED_KEYS, *CONDITIONAL_KEYS, *OPTIONAL_BOOL_KEYS
 # Per-profile evidence overrides live under this key inside a profile; it is not a checked setting.
 EVIDENCE_KEY = "evidence"
 # Keys of the legacy profiles file and what replaced them, so a migrating file gets a pointer, not a riddle.
-RENAMED_KEYS: Mapping[str, str] = {"group_rekey": "group_rekey_s"}
+RENAMED_KEYS: Mapping[str, str] = {
+    "group_rekey": "group_rekey_s",
+    "multicast_broadcast_blocker": "multicast_suppressor_mode (off, conservative or aggressive)",
+}
 Value = object
 T = TypeVar("T")
 
@@ -194,7 +196,6 @@ def parse_profile(name: str, value: Value, path: str) -> Profile:
         mlo=flag("mlo"),
         uapsd=flag("uapsd"),
         proxy_arp=flag("proxy_arp"),
-        multicast_broadcast_blocker=flag("multicast_broadcast_blocker"),
         multicast_to_unicast=flag("multicast_to_unicast"),
         hide_wifi_name=flag("hide_wifi_name"),
         client_device_isolation=flag("client_device_isolation"),
@@ -216,7 +217,6 @@ def parse_profile(name: str, value: Value, path: str) -> Profile:
         iot_dtim_lock=optional_flag("iot_dtim_lock"),
         iot_channel_lock=optional_flag("iot_channel_lock"),
         enhanced_iot=optional_flag("enhanced_iot"),
-        b_supported=optional_flag("b_supported"),
         ppsk=optional_flag("ppsk"),
         wpa3_enhanced_192=optional_flag("wpa3_enhanced_192"),
         dns_assistance_mode=optional_mode("dns_assistance_mode"),

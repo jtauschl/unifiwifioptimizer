@@ -13,10 +13,9 @@
     ✓ Minimum Data Rate Mode             Manual
     ✓ Minimum Data Rate 2.4 GHz          12 Mbps
     ✗ Minimum Data Rate 5 GHz            12 Mbps (currently 24 Mbps)
-    ✓ 802.11b Support                    Disabled
-    ✓ Multicast Filtering                Disabled
     ✗ Multicast to Unicast               Enabled (currently Disabled)
     ✓ Proxy ARP                          Enabled
+    ✓ Multicast Suppression              Off
     ✓ Security Protocol                  WPA2/WPA3
     ✓ PMF                                Optional
     ✓ Hide WiFi Name                     Disabled

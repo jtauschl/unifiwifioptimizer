@@ -158,8 +158,8 @@ def mdns_proxy_with_isolation(profile: Profile, wlan: WlanConfig) -> Finding | N
     return _advisory(
         "mdns_proxy_with_isolation",
         wlan,
-        f"mDNS proxy is {wlan.mdns_proxy_mode} while Client Device Isolation is on — isolated clients cannot use what "
-        "the proxy advertises.",
+        f"Multicast Filtering is {wlan.mdns_proxy_mode} while Client Device Isolation is on — isolated clients cannot "
+        "use what the discovery proxy advertises.",
     )
 
 

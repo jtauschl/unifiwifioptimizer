@@ -79,18 +79,12 @@ GROUPS: tuple[tuple[str, tuple[Row, ...]], ...] = (
             (
                 "minrate_24_kbps",
                 "Minimum Data Rate 2.4 GHz",
-                "Only with manual rates. A higher floor saves airtime and shrinks the cell; weak clients drop out.",
+                "Only with manual rates. A higher floor saves airtime and shrinks the cell; 12 Mbps ends 802.11b.",
             ),
             (
                 "minrate_5_kbps",
                 "Minimum Data Rate 5 GHz",
                 "Only with manual rates, same trade-off as on 2.4 GHz.",
-            ),
-            (
-                "b_supported",
-                "802.11b Support",
-                "Off removes 802.11b-only clients and their airtime cost. The controller does not report it under "
-                "automatic rates.",
             ),
             (
                 "dtim_mode",
@@ -107,17 +101,23 @@ GROUPS: tuple[tuple[str, tuple[Row, ...]], ...] = (
     (
         "Multicast and airtime",
         (
-            ("proxy_arp", "Proxy ARP", "The access point answers ARP for sleeping clients; less broadcast traffic."),
+            (
+                "mdns_proxy_mode",
+                "Multicast Filtering",
+                "Service discovery: Auto within the WLAN's VLAN, Custom across VLANs by rules; never when isolated.",
+            ),
             (
                 "multicast_to_unicast",
                 "Multicast to Unicast",
                 "Turns multicast into unicast. Helps casting and streaming discovery; some smart-home devices need "
                 "it off.",
             ),
+            ("proxy_arp", "Proxy ARP", "The access point answers ARP for sleeping clients; less broadcast traffic."),
             (
-                "multicast_broadcast_blocker",
-                "Multicast Filtering",
-                "Blocks multicast and broadcast towards clients; mDNS and DHCP need them.",
+                "multicast_suppressor_mode",
+                "Multicast Suppression",
+                "Limits multicast and broadcast traffic: Conservative prevents storms, Aggressive blocks all but DHCP "
+                "and ARP unless a device is allowlisted.",
             ),
             ("uapsd", "UAPSD", "Client power saving; can break legacy clients."),
         ),
@@ -132,7 +132,6 @@ GROUPS: tuple[tuple[str, tuple[Row, ...]], ...] = (
             ),
             ("ap_name_in_beacon", "Show Access Point Name in Beacon", "Information leak with no benefit to clients."),
             ("mlo", "MLO", "Wi-Fi 7 multi-link operation; needs WPA3 and Wi-Fi 7 clients."),
-            ("mdns_proxy_mode", "mDNS Proxy", "Service discovery across VLANs; never on isolated WLANs."),
         ),
     ),
     (
@@ -167,7 +166,6 @@ UNSET_BY_DEFAULT = frozenset(
         "iot_dtim_lock",
         "enhanced_iot",
         "dns_assistance_mode",
-        "multicast_suppressor_mode",
         "ppsk",
         "wpa3_enhanced_192",
         "evidence",

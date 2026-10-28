@@ -92,7 +92,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "roaming_assistant",
                 "security_protocol",
             ],
-            ["ap_name_in_beacon", "b_supported", "mlo", "multicast_broadcast_blocker"],
+            ["ap_name_in_beacon", "mlo", "multicast_suppressor_mode"],
             ["advanced_set_to_auto"],
         ),
         "SSID-3": (
@@ -108,7 +108,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "roaming_assistant",
                 "security_protocol",
             ],
-            ["b_supported"],
+            [],
             [],
         ),
         "SSID-4": (
@@ -122,7 +122,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "roaming_assistant",
                 "security_protocol",
             ],
-            ["b_supported"],
+            [],
             [],
         ),
         "SSID-5": (
@@ -136,7 +136,7 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
                 "roaming_assistant",
                 "security_protocol",
             ],
-            ["b_supported"],
+            [],
             [],
         ),
     }

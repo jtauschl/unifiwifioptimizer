@@ -36,6 +36,7 @@ def standard_wlan(**overrides: Any) -> WlanConfig:
         uapsd_enabled=False,
         mcastenhance_enabled=True,
         bc_filter_enabled=False,
+        multicast_suppressor_mode="off",
         minrate_setting_preference="manual",
         minrate_ng_enabled=True,
         minrate_ng_data_rate_kbps=12000,
@@ -50,7 +51,6 @@ def standard_wlan(**overrides: Any) -> WlanConfig:
         band_steering=True,
         advertise_device_name_in_beacon=False,
         mlo_enabled=False,
-        b_supported=False,
     )
     return replace(base, **overrides)
 

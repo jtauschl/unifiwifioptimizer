@@ -103,7 +103,8 @@ def _text_rule(
         if want is None:
             return None
         have = actual(wlan)
-        return _compare(code, wlan, want, have, have == want)
+        shown = None if have is None else have.capitalize()
+        return _compare(code, wlan, want.capitalize(), shown, have == want)
 
     return Rule(code, label, group, evaluate)
 
@@ -272,13 +273,6 @@ RULES: tuple[Rule, ...] = (
     _rate_rule("minrate_24", "Minimum Data Rate 2.4 GHz", Band.GHZ_2),
     _rate_rule("minrate_5", "Minimum Data Rate 5 GHz", Band.GHZ_5),
     _bool_rule(
-        "multicast_broadcast_blocker",
-        "Multicast Filtering",
-        RuleGroup.CAPACITY,
-        lambda p: p.multicast_broadcast_blocker,
-        lambda w: w.bc_filter_enabled,
-    ),
-    _bool_rule(
         "multicast_to_unicast",
         "Multicast to Unicast",
         RuleGroup.CAPACITY,
@@ -363,8 +357,9 @@ RULES: tuple[Rule, ...] = (
         lambda p: p.iot_channel_lock,
         lambda w: w.iot_channel_lock,
     ),
-    _bool_rule("enhanced_iot", "Enhanced IoT", RuleGroup.BEHAVIOUR, lambda p: p.enhanced_iot, lambda w: w.enhanced_iot),
-    _bool_rule("b_supported", "802.11b Support", RuleGroup.BEHAVIOUR, lambda p: p.b_supported, lambda w: w.b_supported),
+    _bool_rule(
+        "enhanced_iot", "Force WiFi 4 Mode", RuleGroup.BEHAVIOUR, lambda p: p.enhanced_iot, lambda w: w.enhanced_iot
+    ),
     _text_rule(
         "dns_assistance_mode",
         "DNS Assistance",
@@ -373,7 +368,11 @@ RULES: tuple[Rule, ...] = (
         lambda w: w.dns_assistance_mode,
     ),
     _text_rule(
-        "mdns_proxy_mode", "mDNS Proxy", RuleGroup.BEHAVIOUR, lambda p: p.mdns_proxy_mode, lambda w: w.mdns_proxy_mode
+        "mdns_proxy_mode",
+        "Multicast Filtering",
+        RuleGroup.BEHAVIOUR,
+        lambda p: p.mdns_proxy_mode,
+        lambda w: w.mdns_proxy_mode,
     ),
     _text_rule(
         "multicast_suppressor_mode",
