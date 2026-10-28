@@ -146,7 +146,7 @@ def test_row_3_a_radio_in_cac_gets_the_info_with_the_channel_aware_wait() -> Non
         (lambda ap: with_stats(ap, Band.GHZ_5, observed_tx_dbm=None), "tx_power"),
         (lambda ap: with_radio(ap, Band.GHZ_5, min_tx_dbm=None), "min_txpower"),
         (lambda ap: with_radio(ap, Band.GHZ_5, max_tx_dbm=None), "max_txpower"),
-        (lambda ap: with_stats(ap, Band.GHZ_5, observed_tx_dbm=30), "outside its own range 6..24"),
+        (lambda ap: with_stats(ap, Band.GHZ_5, observed_tx_dbm=30), "outside the setting range 6..24"),
         (
             lambda ap: with_stats(
                 with_radio(ap, Band.GHZ_5, tx_power_mode=TxPowerMode.AUTO), Band.GHZ_5, observed_tx_dbm=3
@@ -160,6 +160,23 @@ def test_row_4_missing_or_inconsistent_numbers_are_not_evaluable_without_default
     assert result.outcome is BandTxOutcome.NOT_EVALUABLE and result.recommendation is None
     (warning,) = result.findings
     assert warning.severity is Severity.WARNING and warning.code == "tx_not_evaluable" and expect in warning.message
+
+
+@pytest.mark.parametrize(
+    ("observed", "gain", "hint"),
+    [(30, 5, True), (29, 5, True), (31, 5, False), (30, None, False), (30, 0, False)],
+)
+def test_row_4_names_an_eirp_only_where_the_reading_fits_the_setting_range_plus_the_antenna(
+    observed: int, gain: int | None, hint: bool
+) -> None:
+    ap = with_stats(
+        with_radio(custom("AP-4", Band.GHZ_5, 18, 24), Band.GHZ_5, antenna_gain_dbi=gain),
+        Band.GHZ_5,
+        observed_tx_dbm=observed,
+    )
+    (warning,) = run(ap, [measured("AP-2", -70)]).findings
+    assert f"the controller reports {observed} dBm, outside the setting range 6..24 dBm" in warning.message
+    assert ("as an EIRP it would fit 24 dBm plus 5 dBi" in warning.message) is hint
 
 
 def test_row_5_no_peer_on_the_band_emits_nothing() -> None:

@@ -201,6 +201,11 @@ def analyse_band_tx(
             ],
         )
     if not min_tx <= current <= max_tx:
+        radio = ap.radio(band)
+        gain = radio.antenna_gain_dbi if radio is not None else None
+        eirp = (
+            f"; as an EIRP it would fit {max_tx} dBm plus {gain} dBi" if gain and current <= max_tx + gain + 1 else ""
+        )
         return result(
             BandTxOutcome.NOT_EVALUABLE,
             findings=[
@@ -209,7 +214,7 @@ def analyse_band_tx(
                     "tx_not_evaluable",
                     ap,
                     band,
-                    f"the radio runs at {current} dBm outside its own range {min_tx}..{max_tx} dBm",
+                    f"the controller reports {current} dBm, outside the setting range {min_tx}..{max_tx} dBm{eirp}",
                 )
             ],
         )
