@@ -258,3 +258,10 @@ def test_band_steering_is_judged_only_on_a_wlan_with_2_4_ghz_and_another_band() 
     for bands in ({Band.GHZ_2, Band.GHZ_5}, {Band.GHZ_2, Band.GHZ_6}):
         dual = wlan(bands=frozenset(bands), band_steering=True)
         assert by_code(evaluate_rules(iot, dual))["band_steering"].status is CheckStatus.FAILED
+
+
+def test_a_text_setting_is_shown_with_the_word_of_the_controller_ui() -> None:
+    manual = by_code(evaluate_rules(STRICT, standard_wlan(**{**STRICT_WLAN_FIELDS, "dns_assistance_mode": "custom"})))
+    assert manual["dns_assistance_mode"].actual == "Manual" and manual["dns_assistance_mode"].expected == "Auto"
+    custom = by_code(evaluate_rules(STRICT, standard_wlan(**STRICT_WLAN_FIELDS)))["mdns_proxy_mode"]
+    assert custom.expected == "Custom"

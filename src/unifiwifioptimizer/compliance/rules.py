@@ -7,7 +7,7 @@ combination the controller sent but the tool has no name for fails and shows the
 are the renderer's business and stay out of here.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -97,14 +97,19 @@ def _text_rule(
     group: RuleGroup,
     expected: Callable[[Profile], str | None],
     actual: Callable[[WlanConfig], str | None],
+    names: Mapping[str, str] = {},
 ) -> Rule:
+    """`names` gives a value the word the controller UI shows for it; any other value is shown capitalised."""
+
+    def show(value: str) -> str:
+        return names.get(value, value.capitalize())
+
     def evaluate(profile: Profile, wlan: WlanConfig) -> CheckResult | None:
         want = expected(profile)
         if want is None:
             return None
         have = actual(wlan)
-        shown = None if have is None else have.capitalize()
-        return _compare(code, wlan, want.capitalize(), shown, have == want)
+        return _compare(code, wlan, show(want), None if have is None else show(have), have == want)
 
     return Rule(code, label, group, evaluate)
 
@@ -366,6 +371,7 @@ RULES: tuple[Rule, ...] = (
         RuleGroup.BEHAVIOUR,
         lambda p: p.dns_assistance_mode,
         lambda w: w.dns_assistance_mode,
+        names={"custom": "Manual"},
     ),
     _text_rule(
         "mdns_proxy_mode",
