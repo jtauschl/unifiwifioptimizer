@@ -972,7 +972,7 @@
               {
                 "actual": "3",
                 "code": "dtim_24",
-                "detail": "the profile pins an interval only under a custom DTIM setting",
+                "detail": "an interval is pinned only under a custom DTIM setting",
                 "expected": null,
                 "status": "not_prescribed",
                 "subject": "SSID-1"
@@ -980,7 +980,7 @@
               {
                 "actual": "3",
                 "code": "dtim_5",
-                "detail": "the profile pins an interval only under a custom DTIM setting",
+                "detail": "an interval is pinned only under a custom DTIM setting",
                 "expected": null,
                 "status": "not_prescribed",
                 "subject": "SSID-1"
@@ -1068,7 +1068,7 @@
               {
                 "actual": "Off",
                 "code": "speed_limit",
-                "detail": "caps each client's rate on this WLAN; the right cap depends on the site, so no profile prescribes one",
+                "detail": "caps each client's rate on this WLAN; the right cap depends on the site",
                 "expected": null,
                 "status": "not_prescribed",
                 "subject": "SSID-1"
@@ -1316,7 +1316,7 @@
           {
             "actual": "3",
             "code": "dtim_24",
-            "detail": "the profile pins an interval only under a custom DTIM setting",
+            "detail": "an interval is pinned only under a custom DTIM setting",
             "expected": null,
             "status": "not_prescribed",
             "subject": "SSID-1"
@@ -1324,7 +1324,7 @@
           {
             "actual": "3",
             "code": "dtim_5",
-            "detail": "the profile pins an interval only under a custom DTIM setting",
+            "detail": "an interval is pinned only under a custom DTIM setting",
             "expected": null,
             "status": "not_prescribed",
             "subject": "SSID-1"
@@ -1412,7 +1412,7 @@
           {
             "actual": "Off",
             "code": "speed_limit",
-            "detail": "caps each client's rate on this WLAN; the right cap depends on the site, so no profile prescribes one",
+            "detail": "caps each client's rate on this WLAN; the right cap depends on the site",
             "expected": null,
             "status": "not_prescribed",
             "subject": "SSID-1"

@@ -8,7 +8,7 @@ from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
 CODE = "speed_limit"
 LABEL = "WiFi Speed Limit"
-NOTE = "caps each client's rate on this WLAN; the right cap depends on the site, so no profile prescribes one"
+NOTE = "caps each client's rate on this WLAN; the right cap depends on the site"
 
 
 def _rate(kbps: int | None) -> str:

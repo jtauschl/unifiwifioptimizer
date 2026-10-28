@@ -220,22 +220,24 @@ _WAITS_FOR = {
 }
 
 
+_UNJUDGED_WORDS: Mapping[CheckStatus, str] = {
+    CheckStatus.NOT_PRESCRIBED: "not set by profile",
+    CheckStatus.NOT_APPLICABLE: "not applicable",
+}
+
+
 def _check_line(check: CheckResult, *, hints_only: bool = False) -> list[str]:
     mark = STATUS_MARK[check.status]
     value = check.actual if check.status is CheckStatus.PASSED else check.expected
     if check.status is CheckStatus.FAILED and check.actual is not None:
         value = f"{check.expected} (currently {check.actual})"
-    unjudged = check.status in (CheckStatus.NOT_APPLICABLE, CheckStatus.NOT_PRESCRIBED)
-    if unjudged and check.actual is not None:
-        value = check.actual
+    if check.status in (CheckStatus.NOT_APPLICABLE, CheckStatus.NOT_PRESCRIBED) and check.actual is not None:
+        value = f"{check.actual} ({_UNJUDGED_WORDS[check.status]}: {check.detail})"
     elif check.status in (CheckStatus.INCOMPLETE, CheckStatus.NOT_EVALUABLE, CheckStatus.NOT_APPLICABLE):
         value = check.detail or check.status.value
     elif check.status is CheckStatus.NOT_PRESCRIBED:
-        value = NOT_SENT_VALUE
-    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', 80)}"]
-    if (unjudged and check.actual is not None) or check.status is CheckStatus.NOT_PRESCRIBED:
-        prefix = "not prescribed" if check.status is CheckStatus.NOT_PRESCRIBED else "not applicable"
-        lines.append(f"        {safe_text(f'{prefix}: {check.detail}', 100)}")
+        value = f"{NOT_SENT_VALUE} ({_UNJUDGED_WORDS[check.status]}: {check.detail})"
+    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', LINE_MAX)}"]
     if check.status is CheckStatus.FAILED and check.detail:
         lines.append(f"        {safe_text(check.detail, 100)}")
     if check.deferred_by is not None:

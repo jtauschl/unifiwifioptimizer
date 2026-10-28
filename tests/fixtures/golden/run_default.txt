@@ -27,8 +27,8 @@
   WLAN       SSID-1  (profile Standard)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    · Broadcasting APs                     All
-        not prescribed: a WLAN on only some access points is missing where roaming needs it
+    · Broadcasting APs                     All (not set by profile: a WLAN on only some access
+                                           points is missing where roaming needs it)
     ✓ Radio Band                           2.4 GHz, 5 GHz
     ✓ Fast Roaming (802.11r)               Enabled
     ? Handoff Suggestions (802.11v)        threshold not available without neighbour data
@@ -46,24 +46,24 @@
     ✓ Minimum Data Rate 2.4 GHz            12 Mbps
     ✗ Minimum Data Rate 5 GHz              12 Mbps (currently 24 Mbps)
         → WLAN edit → Advanced → Hi-Capacity Tuning → Minimum Data Rate → 5 GHz slider
-    · Multicast Filtering                  Off
-        not prescribed: service discovery: Auto stays in the VLAN, Custom crosses VLANs by rules
+    · Multicast Filtering                  Off (not set by profile: service discovery: Auto stays in
+                                           the VLAN, Custom crosses VLANs by rules)
     ✗ Multicast to Unicast                 Enabled (currently Disabled)
         → WLAN edit → Advanced → Hi-Capacity Tuning → Multicast to Unicast
     ✓ Proxy ARP                            Enabled
     ✓ Multicast Suppression                Off
-    · Lock 2.4 GHz to Channel 6 (All APs)  Disabled
-        not prescribed: pins every access point's 2.4 GHz radio to channel 6, for all WLANs on it
-    · Force WiFi 4 Mode                    Disabled
-        not prescribed: limits the WLAN to Wi-Fi 4 for IoT devices that fail on newer standards
-    · DTIM Interval Lock                   Disabled
-        not prescribed: keeps the DTIM interval fixed for IoT devices that misbehave otherwise
+    · Lock 2.4 GHz to Channel 6 (All APs)  Disabled (not set by profile: pins every access point's
+                                           2.4 GHz radio to channel 6, for all WLANs on it)
+    · Force WiFi 4 Mode                    Disabled (not set by profile: limits the WLAN to Wi-Fi 4
+                                           for IoT devices that fail on newer standards)
+    · DTIM Interval Lock                   Disabled (not set by profile: keeps the DTIM interval
+                                           fixed for IoT devices that misbehave otherwise)
     ✓ Security Protocol                    WPA2/WPA3
-    · WPA3 Enhanced 192-bit                Disabled
-        not prescribed: 192-bit mode of WPA3 Enterprise; needs a RADIUS server
+    · WPA3 Enhanced 192-bit                Disabled (not set by profile: 192-bit mode of WPA3
+                                           Enterprise; needs a RADIUS server)
     ✓ PMF                                  Optional
-    · Private Pre-Shared Keys              Disabled
-        not prescribed: one password per device or group on a single WLAN; needs WPA2
+    · Private Pre-Shared Keys              Disabled (not set by profile: one password per device or
+                                           group on a single WLAN; needs WPA2)
     ✓ Hide WiFi Name                       Disabled
     ✓ Client Device Isolation              Disabled
     ✓ SAE Anti-clogging                    5
@@ -74,23 +74,22 @@
     ✓ Band Steering                        Enabled
     ✓ BSS Transition                       Enabled
     ✓ UAPSD                                Disabled
-    · MAC Address Filter                   Disabled
-        not prescribed: adds little security and locks out clients that randomise their MAC address
-    · RADIUS MAC Authentication            Disabled
-        not prescribed: admits devices by MAC address through RADIUS; a deployment choice
-    · WiFi Speed Limit                     Off
-        not prescribed: caps each client's rate on this WLAN; the right cap depends on the site, so
-          no prof…
+    · MAC Address Filter                   Disabled (not set by profile: adds little security and
+                                           locks out clients that randomise their MAC address)
+    · RADIUS MAC Authentication            Disabled (not set by profile: admits devices by MAC
+                                           address through RADIUS; a deployment choice)
+    · WiFi Speed Limit                     Off (not set by profile: caps each client's rate on this
+                                           WLAN; the right cap depends on the site)
     ✗ Auto 802.11 DTIM Period              Default (currently Custom)
         → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
-    · DTIM Period 2.4 GHz                  3
-        not prescribed: the profile pins an interval only under a custom DTIM setting
-    · DTIM Period 5 GHz                    3
-        not prescribed: the profile pins an interval only under a custom DTIM setting
+    · DTIM Period 2.4 GHz                  3 (not set by profile: an interval is pinned only under a
+                                           custom DTIM setting)
+    · DTIM Period 5 GHz                    3 (not set by profile: an interval is pinned only under a
+                                           custom DTIM setting)
     ✓ Group Rekey Interval                 3600 s
     ✓ Show Access Point Name in Beacon     Disabled
-    · WiFi Blackout Schedule               Off
-        not prescribed: switches the WLAN off at set times; devices on it lose their connection then
+    · WiFi Blackout Schedule               Off (not set by profile: switches the WLAN off at set
+                                           times; devices on it lose their connection then)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40

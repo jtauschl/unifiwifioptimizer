@@ -160,7 +160,7 @@ def _int_rule(
 def _rate_rule(code: str, label: str, band: Band) -> Rule:
     """A minimum data rate is only a rule when the profile fixes rates and expects the band; the
     controller's per-band enable flag counts as a deviation when off, as in the UI."""
-    note = "the profile prescribes a lowest rate only with Manual minimum data rates"
+    note = "a lowest rate is pinned only with Manual minimum data rates"
 
     def expected(profile: Profile) -> int | None:
         if profile.minrate_mode is not MinRateMode.MANUAL or band not in profile.wifi_bands:
@@ -190,7 +190,7 @@ def _rate_rule(code: str, label: str, band: Band) -> Rule:
 def _dtim_rule(code: str, label: str, band: Band) -> Rule:
     """The controller shows a band's DTIM field only under a custom interval, so an interval it merely keeps
     is not listed."""
-    note = "the profile pins an interval only under a custom DTIM setting"
+    note = "an interval is pinned only under a custom DTIM setting"
 
     def expected(profile: Profile) -> int | None:
         if profile.dtim_mode is not DtimMode.CUSTOM or band not in profile.wifi_bands:
