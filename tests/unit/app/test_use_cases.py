@@ -17,6 +17,7 @@ from unifiwifioptimizer.domain.models import (
     ParsedList,
     SettingsResult,
     Site,
+    UserGroup,
     WlanConfig,
 )
 
@@ -52,6 +53,10 @@ class FixtureApi:
     def networks(self, site_id: str) -> ParsedList[Network]:
         self.calls.append(f"networks:{site_id}")
         return parse.parse_networks(load("networkconf.json"))
+
+    def user_groups(self, site_id: str) -> ParsedList[UserGroup]:
+        self.calls.append(f"user_groups:{site_id}")
+        return parse.parse_user_groups(load("usergroup.json"))
 
     def settings(self, site_id: str) -> SettingsResult:
         self.calls.append(f"settings:{site_id}")
@@ -121,6 +126,7 @@ def test_build_snapshot_collects_every_endpoint_and_problem() -> None:
     assert snapshot.captured_at == datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
     assert len(snapshot.access_points) == 4 and len(snapshot.wlans) == 5 and len(snapshot.ap_groups) == 1
     assert snapshot.settings.country_code == 276 and snapshot.mgmt is not None
+    assert [g.name for g in snapshot.user_groups] == ["Group-1", "Group-2"] and len(snapshot.networks) == 4
     assert snapshot.clients is not None and len(snapshot.clients) == 26 and snapshot.problems == ()
     assert snapshot.bssids.lookup(snapshot.access_points[0].vaps[0].bssid) == (
         snapshot.access_points[0].mac,

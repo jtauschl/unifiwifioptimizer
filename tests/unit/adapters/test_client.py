@@ -460,6 +460,8 @@ def test_endpoints_map_onto_the_parsers_and_report_unread_keys() -> None:
         "/proxy/network/api/s/default/stat/device": json.loads((FIXTURES / "stat_device.json").read_text()),
         "/proxy/network/api/s/default/list/wlanconf": json.loads((FIXTURES / "list_wlanconf.json").read_text()),
         "/proxy/network/v2/api/site/default/apgroups": json.loads((FIXTURES / "apgroups.json").read_text()),
+        "/proxy/network/api/s/default/rest/networkconf": json.loads((FIXTURES / "networkconf.json").read_text()),
+        "/proxy/network/api/s/default/rest/usergroup": json.loads((FIXTURES / "usergroup.json").read_text()),
         "/proxy/network/api/s/default/rest/setting": json.loads((FIXTURES / "rest_setting.json").read_text()),
         "/proxy/network/api/s/default/stat/sta": json.loads((FIXTURES / "stat_sta.json").read_text()),
     }
@@ -488,9 +490,11 @@ def test_endpoints_map_onto_the_parsers_and_report_unread_keys() -> None:
     assert len(client.devices("default").access_points) == 4
     assert len(client.wlans("default").items) == 5
     assert len(client.ap_groups("default").items) == 1
+    assert [n.name for n in client.networks("default").items][:1] == ["Network-1"]
+    assert [g.name for g in client.user_groups("default").items] == ["Group-1", "Group-2"]
     assert client.settings("default").settings.country_code == 276
     assert len(client.clients("default").items) == 26
-    assert len(requested) == 6
+    assert len(requested) == 8
     by_endpoint = {endpoint for endpoint, _, _ in observed}
     assert by_endpoint == set(payloads)
     sites_counts = [(p, n) for e, p, n in observed if e.endswith("self/sites")]

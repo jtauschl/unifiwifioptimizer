@@ -49,6 +49,7 @@ def fixture_snapshot(*, clients: bool = False, extra_devices: list[dict[str, Any
     wlans = parse.parse_wlans(fixture("list_wlanconf.json"))
     groups = parse.parse_ap_groups(fixture("apgroups.json"))
     networks = parse.parse_networks(fixture("networkconf.json"))
+    user_groups = parse.parse_user_groups(fixture("usergroup.json"))
     settings = parse.parse_settings(fixture("rest_setting.json"))
     sta = parse.parse_clients(fixture("stat_sta.json")) if clients else None
     sites = parse.parse_sites(fixture("sites.json"))
@@ -60,10 +61,16 @@ def fixture_snapshot(*, clients: bool = False, extra_devices: list[dict[str, Any
         wlans=wlans.items,
         ap_groups=groups.items,
         networks=networks.items,
+        user_groups=user_groups.items,
         settings=settings.settings,
         mgmt=settings.mgmt,
         clients=sta.items if sta is not None else None,
-        problems=devices.problems + wlans.problems + groups.problems + networks.problems + settings.problems,
+        problems=devices.problems
+        + wlans.problems
+        + groups.problems
+        + networks.problems
+        + user_groups.problems
+        + settings.problems,
     )
 
 

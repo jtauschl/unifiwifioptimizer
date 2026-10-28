@@ -569,6 +569,25 @@ def test_the_radius_fields_and_the_blackout_schedule_are_read_as_reported() -> N
     assert parse.parse_wlan(Fields(wlan(schedule_with_duration=[]), "$")).schedule_blocks == 0
 
 
+def test_user_groups_carry_their_name_and_caps_and_no_cap_is_none() -> None:
+    parsed = parse.parse_user_groups(fixture("usergroup.json"))
+    assert plain_problems(parsed.problems) == ()
+    assert [(g.name, g.down_kbps, g.up_kbps) for g in parsed.items] == [
+        ("Group-1", None, None),
+        ("Group-2", 20000, 5000),
+    ]
+    assert parse.parse_wlans(fixture("list_wlanconf.json")).items[0].usergroup_id == parsed.items[0].id
+
+
+def test_a_user_group_with_an_impossible_cap_loses_only_that_cap() -> None:
+    parsed = parse.parse_user_groups(
+        envelope({"_id": "g", "name": "G", "qos_rate_max_down": 0, "qos_rate_max_up": 5000})
+    )
+    (group,) = parsed.items
+    assert (group.down_kbps, group.up_kbps) == (None, 5000)
+    assert [p.path for p in parsed.problems] == ["$.data[0].qos_rate_max_down"]
+
+
 def test_networks_carry_their_name_and_vlan_and_an_untagged_network_has_none() -> None:
     parsed = parse.parse_networks(fixture("networkconf.json"))
     assert [(n.name, n.vlan) for n in parsed.items] == [

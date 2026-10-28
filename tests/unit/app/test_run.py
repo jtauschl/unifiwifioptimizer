@@ -34,6 +34,7 @@ from unifiwifioptimizer.domain.models import (
     ParsedList,
     SettingsResult,
     Site,
+    UserGroup,
     WlanConfig,
 )
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanPass, ScanTarget
@@ -75,6 +76,10 @@ class FakeApi:
     def networks(self, site_id: str) -> ParsedList[Network]:
         self.calls.append(f"networks:{site_id}")
         return parse.parse_networks(load("networkconf.json"))
+
+    def user_groups(self, site_id: str) -> ParsedList[UserGroup]:
+        self.calls.append(f"user_groups:{site_id}")
+        return parse.parse_user_groups(load("usergroup.json"))
 
     def settings(self, site_id: str) -> SettingsResult:
         self.calls.append(f"settings:{site_id}")
@@ -384,6 +389,7 @@ def test_a_scanning_run_feeds_the_matrix_and_reports_what_the_scanner_heard() ->
                 wlans=(),
                 ap_groups=(),
                 networks=(),
+                user_groups=(),
                 settings=parse.parse_settings(load("rest_setting.json")).settings,
                 mgmt=None,
                 clients=None,

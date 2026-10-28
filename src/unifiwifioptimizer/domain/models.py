@@ -273,6 +273,7 @@ class WlanConfig:
     ap_group_mode: str | None
     ap_group_ids: tuple[str, ...]
     network_id: str | None
+    usergroup_id: str | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -289,6 +290,17 @@ class Network:
     id: str
     name: str
     vlan: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UserGroup:
+    """A WiFi speed-limit profile (`usergroup`): its name and the per-client rate caps in kbit/s, None where
+    the controller sends no cap (-1)."""
+
+    id: str
+    name: str
+    down_kbps: int | None
+    up_kbps: int | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -387,6 +399,7 @@ class SiteSnapshot:
     wlans: tuple[WlanConfig, ...]
     ap_groups: tuple[ApGroup, ...]
     networks: tuple[Network, ...]
+    user_groups: tuple[UserGroup, ...]
     settings: SiteSettings
     mgmt: MgmtSettings | None
     # None when the client picture was not collected, as opposed to a site without wireless clients.

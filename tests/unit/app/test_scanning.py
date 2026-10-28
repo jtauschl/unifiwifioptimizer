@@ -60,6 +60,7 @@ def snapshot(mgmt: MgmtSettings | None = MGMT) -> SiteSnapshot:
         wlans=(),
         ap_groups=(),
         networks=(),
+        user_groups=(),
         settings=settings.settings,
         mgmt=mgmt,
         clients=None,

@@ -567,6 +567,13 @@ NETWORK_SPEC: Spec = {
     "vlan": keep,
     "site_id": object_id,
 }
+USER_GROUP_SPEC: Spec = {
+    "_id": object_id,
+    "name": group_name,
+    "qos_rate_max_down": keep,
+    "qos_rate_max_up": keep,
+    "site_id": object_id,
+}
 # The controller's setting record names, closed so that free text cannot hide under `key`.
 SETTING_KEY = vocab(
     "auto_speedtest", "connectivity", "country", "dashboard", "device_supervision", "doh", "dpi", "element_adopt",
@@ -686,6 +693,8 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     Endpoint("apgroups.json", "live_v2_api_site_{site}_apgroups.json", list_of(AP_GROUP_SPEC)),
     # Hand-written and only checked: its object ids must match the `networkconf_id` of `list_wlanconf.json`.
     Endpoint("networkconf.json", None, nested(envelope(list_of(NETWORK_SPEC)))),
+    # Hand-written and only checked: the first group's id matches the `usergroup_id` of `list_wlanconf.json`.
+    Endpoint("usergroup.json", None, nested(envelope(list_of(USER_GROUP_SPEC)))),
     Endpoint("rest_setting.json", "live_api_s_{site}_rest_setting.json", nested(envelope(records(setting_spec)))),
     Endpoint("stat_sta.json", "live_api_s_{site}_stat_sta.json", nested(envelope(records(client_spec)))),
     # `self/sites` has no live dump; the fixture is hand-written and only checked.

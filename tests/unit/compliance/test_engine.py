@@ -29,6 +29,7 @@ def test_a_compliant_wlan_passes_every_prescribed_check_and_lists_the_rest_with_
         "mac_filter",
         "radius_mac_auth",
         "blackout_schedule",
+        "speed_limit",
         "mdns_proxy_mode",
         "iot_dtim_lock",
         "iot_channel_lock",

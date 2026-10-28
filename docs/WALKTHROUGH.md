@@ -254,6 +254,9 @@ The default output lists the WLANs and the access points the way the controller 
         not prescribed: adds little security and locks out clients that randomise their MAC address
     · RADIUS MAC Authentication            Disabled
         not prescribed: admits devices by MAC address through RADIUS; a deployment choice
+    · WiFi Speed Limit                     Off
+        not prescribed: caps each client's rate on this WLAN; the right cap depends on the site, so
+          no prof…
     ✗ Auto 802.11 DTIM Period              Default (currently Custom)
         → WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period
     · DTIM Period 2.4 GHz                  3

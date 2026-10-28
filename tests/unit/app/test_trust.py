@@ -24,6 +24,7 @@ from unifiwifioptimizer.domain.models import (
     ParsedList,
     SettingsResult,
     Site,
+    UserGroup,
     WlanConfig,
 )
 
@@ -49,6 +50,9 @@ class FixtureApi:
 
     def networks(self, site_id: str) -> ParsedList[Network]:
         return parse.parse_networks(load("networkconf.json"))
+
+    def user_groups(self, site_id: str) -> ParsedList[UserGroup]:
+        return parse.parse_user_groups(load("usergroup.json"))
 
     def settings(self, site_id: str) -> SettingsResult:
         return parse.parse_settings(load("rest_setting.json"))

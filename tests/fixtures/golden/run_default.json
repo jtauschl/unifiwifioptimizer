@@ -1064,6 +1064,14 @@
                 "expected": "Enabled",
                 "status": "incomplete",
                 "subject": "SSID-1"
+              },
+              {
+                "actual": "Off",
+                "code": "speed_limit",
+                "detail": "caps each client's rate on this WLAN; the right cap depends on the site, so no profile prescribes one",
+                "expected": null,
+                "status": "not_prescribed",
+                "subject": "SSID-1"
               }
             ],
             "findings": [],
@@ -1399,6 +1407,14 @@
             "detail": "threshold not available without neighbour data",
             "expected": "Enabled",
             "status": "incomplete",
+            "subject": "SSID-1"
+          },
+          {
+            "actual": "Off",
+            "code": "speed_limit",
+            "detail": "caps each client's rate on this WLAN; the right cap depends on the site, so no profile prescribes one",
+            "expected": null,
+            "status": "not_prescribed",
             "subject": "SSID-1"
           },
           {

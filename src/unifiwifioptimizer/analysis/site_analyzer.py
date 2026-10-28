@@ -454,7 +454,14 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     channels = analyse_channels(snapshot, scan, inp.neighbours, snapshot.settings.channel_ai)
     targets = roaming_targets(snapshot, matrix, corridors[Band.GHZ_5], inp.rf)
     compliance = _with_networks(
-        evaluate_site(snapshot.wlans, inp.wlan_profiles, inp.profiles, thresholds_for_compliance(targets)), snapshot
+        evaluate_site(
+            snapshot.wlans,
+            inp.wlan_profiles,
+            inp.profiles,
+            thresholds_for_compliance(targets),
+            snapshot.user_groups,
+        ),
+        snapshot,
     )
     roles = mesh_roles(snapshot)
     aps_by_name = {ap.name: ap for ap in snapshot.access_points}

@@ -5,7 +5,8 @@ from collections.abc import Mapping, Sequence
 from unifiwifioptimizer.compliance.advisories import evaluate_advisories
 from unifiwifioptimizer.compliance.roaming_check import roaming_assistant_checks
 from unifiwifioptimizer.compliance.rules import evaluate_rules
-from unifiwifioptimizer.domain.models import WlanConfig
+from unifiwifioptimizer.compliance.speed_limit import speed_limit_check
+from unifiwifioptimizer.domain.models import UserGroup, WlanConfig
 from unifiwifioptimizer.domain.profile import Profile, ProfileSet
 from unifiwifioptimizer.domain.report import (
     CheckResult,
@@ -17,7 +18,12 @@ from unifiwifioptimizer.domain.report import (
 )
 
 
-def evaluate_wlan(wlan: WlanConfig, profile: Profile, roaming_threshold_dbm: int | None = None) -> WlanEvaluation:
+def evaluate_wlan(
+    wlan: WlanConfig,
+    profile: Profile,
+    roaming_threshold_dbm: int | None = None,
+    user_groups: Sequence[UserGroup] = (),
+) -> WlanEvaluation:
     """A disabled WLAN is reported as exactly that and nothing else: its other settings are moot."""
     if not wlan.enabled:
         disabled = CheckResult(
@@ -29,7 +35,11 @@ def evaluate_wlan(wlan: WlanConfig, profile: Profile, roaming_threshold_dbm: int
             actual="Disabled",
         )
         return WlanEvaluation(wlan=wlan.name, profile=profile.name, checks=(disabled,), findings=())
-    checks = (*evaluate_rules(profile, wlan), *roaming_assistant_checks(profile, wlan, roaming_threshold_dbm))
+    checks = (
+        *evaluate_rules(profile, wlan),
+        *roaming_assistant_checks(profile, wlan, roaming_threshold_dbm),
+        speed_limit_check(wlan, user_groups),
+    )
     return WlanEvaluation(
         wlan=wlan.name, profile=profile.name, checks=checks, findings=evaluate_advisories(profile, wlan)
     )
@@ -51,6 +61,7 @@ def evaluate_site(
     mapping: Mapping[str, str],
     profiles: ProfileSet,
     roaming_thresholds_dbm: Mapping[str, int] | None = None,
+    user_groups: Sequence[UserGroup] = (),
 ) -> SiteCompliance:
     """`mapping` is the site's `wlans: {name: profile}`; iteration follows it so the report order is the
     operator's. A WLAN name that occurs twice on the controller is ambiguous and reported as such."""
@@ -93,5 +104,5 @@ def evaluate_site(
                 )
             )
             continue
-        evaluations.append(evaluate_wlan(candidates[0], profile, thresholds.get(name)))
+        evaluations.append(evaluate_wlan(candidates[0], profile, thresholds.get(name), user_groups))
     return SiteCompliance(evaluations=tuple(evaluations), findings=tuple(findings))

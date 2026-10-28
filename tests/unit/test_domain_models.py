@@ -143,6 +143,7 @@ def test_snapshot_exposes_the_bssid_index_and_distinguishes_uncollected_clients(
         wlans=(),
         ap_groups=(),
         networks=(),
+        user_groups=(),
         settings=SiteSettings(country_code=276, channel_ai=None, mlo_mesh_enabled=None, outdoor_mode_enabled=None),
         mgmt=None,
         clients=None,

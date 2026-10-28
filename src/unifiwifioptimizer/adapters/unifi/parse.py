@@ -39,6 +39,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     MAX_SITES,
     MAX_SSID_BYTES,
     MAX_TOKEN_BYTES,
+    MAX_USER_GROUPS,
     MAX_VAPS_PER_DEVICE,
     MAX_WIDTH_LIST,
     MAX_WLAN_BANDS,
@@ -84,6 +85,7 @@ from unifiwifioptimizer.domain.models import (
     SiteSettings,
     TxPowerMode,
     UnparsableDevice,
+    UserGroup,
     Vap,
     WlanConfig,
 )
@@ -112,6 +114,9 @@ DEVICES_ENDPOINT = "stat/device"
 WLANS_ENDPOINT = "rest/wlanconf"
 AP_GROUPS_ENDPOINT = "v2/apgroups"
 NETWORKS_ENDPOINT = "rest/networkconf"
+USER_GROUPS_ENDPOINT = "rest/usergroup"
+# The controller sends -1 for "no cap"; a cap is a positive rate in kbit/s.
+RATE_CAP_RANGE = range(1, 100_000_001)
 VLAN_RANGE = range(1, 4095)
 CLIENTS_ENDPOINT = "stat/sta"
 SITES_ENDPOINT = "self/sites"
@@ -410,6 +415,7 @@ def parse_wlan(fields: Fields) -> WlanConfig:
         ap_group_mode=fields.opt_string("ap_group_mode", MAX_TOKEN_BYTES),
         ap_group_ids=fields.opt_string_list("ap_group_ids", MAX_AP_GROUPS),
         network_id=fields.opt_string("networkconf_id", MAX_ID_BYTES),
+        usergroup_id=fields.opt_string("usergroup_id", MAX_ID_BYTES),
     )
 
 
@@ -455,6 +461,21 @@ def parse_network(fields: Fields) -> Network:
 
 def parse_networks(payload: Json, observe: Observer | None = None) -> ParsedList[Network]:
     return parse_isolated(data_list(payload, MAX_NETWORKS), "$.data", parse_network, NETWORKS_ENDPOINT, observe)
+
+
+def parse_user_group(fields: Fields) -> UserGroup:
+    return UserGroup(
+        id=fields.string("_id", MAX_ID_BYTES),
+        name=fields.string("name"),
+        down_kbps=fields.opt_integer("qos_rate_max_down", RATE_CAP_RANGE, sentinel=NO_VALUE_SENTINEL),
+        up_kbps=fields.opt_integer("qos_rate_max_up", RATE_CAP_RANGE, sentinel=NO_VALUE_SENTINEL),
+    )
+
+
+def parse_user_groups(payload: Json, observe: Observer | None = None) -> ParsedList[UserGroup]:
+    return parse_isolated(
+        data_list(payload, MAX_USER_GROUPS), "$.data", parse_user_group, USER_GROUPS_ENDPOINT, observe
+    )
 
 
 def parse_ap_groups(payload: Json, observe: Observer | None = None) -> ParsedList[ApGroup]:

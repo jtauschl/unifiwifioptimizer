@@ -143,6 +143,7 @@ CHECK_LABELS: Mapping[str, str] = {
     "wlan_enabled": "WLAN Enabled",
     "roaming_assistant": "Handoff Suggestions (802.11v)",
     "roaming_assistant_6g": "Handoff Suggestions (802.11v) 6 GHz",
+    "speed_limit": "WiFi Speed Limit",
 }
 SCOPE_NOTE = (
     "Scope note: this tool works from UniFi controller configuration and AP-to-AP neighbour scans. It cannot "
