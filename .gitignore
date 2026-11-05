@@ -11,13 +11,18 @@ Desktop.ini
 .mcp.json.example
 CLAUDE.md
 AGENTS.md
+GEMINI.md
+.github/copilot-instructions.md
+.github/instructions/
 
 # Local-only scratch, umbrella level only
 HANDOFF.md
 PLANTREE.md
 
-# Local secrets
-.env
+# Local secrets: a glob, so .env.production and fastlane-style .env.<name> files are covered too
+.env*
+!.env.example
+local.properties
 config.yaml
 
 # Design source files

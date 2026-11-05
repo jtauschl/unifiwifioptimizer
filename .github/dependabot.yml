@@ -1,6 +1,9 @@
 # Dependabot reads this file only from the repository's default branch (main). Changes made on an
 # open release/* branch become active once that branch is fast-forward-promoted to main.
 #
+# A new release is proposed only after it has been public for 7 days, so a withdrawn or hijacked release
+# is usually gone before a pull request exists.
+#
 # Not covered here: build-constraints.txt (refreshed as a release-checklist step), tool versions
 # inlined in workflow run steps (semgrep, shfmt, actionlint, gitleaks), and the uv pin, which is
 # declared in `dev` (UV_VERSION) and repeated in the workflows' `env.UV_VERSION`.
@@ -15,6 +18,8 @@ updates:
       time: "06:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     labels:
       - "ci/cd"
 
@@ -26,6 +31,8 @@ updates:
       time: "06:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
 
@@ -37,5 +44,7 @@ updates:
       time: "06:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
