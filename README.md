@@ -60,7 +60,7 @@ Check the installation with `unifiwifioptimizer --version`. Upgrade with `uv too
 
 ## Upgrading from 0.4.x
 
-0.5.0 is a rewrite. The Bash tool, `install.sh` and the Ruby dependency are gone, and several defaults became safer. The command line is subcommand-based now: the analysis is `unifiwifioptimizer run` (a bare call no longer runs it), and `--sites`, `--site` and `--config` became `sites`, `site` and `config`; update scripts and cron entries. Do the steps in this order — the 0.4.x uninstaller deletes `~/.local/share/unifiwifioptimizer`, where an installed 0.4.x keeps its `config.yaml` and `profiles.yaml`:
+0.5.0 is a rewrite. The Bash tool, `install.sh` and the Ruby dependency are gone, and several defaults became safer. The command line is subcommand-based now: the analysis is `unifiwifioptimizer run` (a bare call no longer runs it), and `--sites`, `--site` and `--config` became `sites`, `site` and `config`; update scripts and cron entries. What changed and why is in [docs/MIGRATION.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md). Do the steps in this order — the 0.4.x uninstaller deletes `~/.local/share/unifiwifioptimizer`, where an installed 0.4.x keeps its `config.yaml` and `profiles.yaml`:
 
 1. **Move your configuration** to the new location and keep it private:
 
