@@ -1,11 +1,8 @@
 """The profile rule table: one entry per checked WLAN setting, evaluated to a `CheckResult`.
 
 A rule returns None only for a setting the controller UI does not offer on this WLAN (a band it does not
-broadcast). Otherwise it reports the setting: `NOT_PRESCRIBED` when the profile gives no value for it (the
-note says what the setting does), `NOT_APPLICABLE` when the WLAN's own state makes it moot, `INCOMPLETE`
-when the controller did not send it, `NOT_EVALUABLE` for a 6 GHz value (detect-only), and `PASSED`/`FAILED`
-otherwise — a combination the controller sent but the tool has no name for fails and shows the raw
-combination. UI paths are the renderer's business and stay out of here.
+broadcast). Every other setting is reported with a status defined on `CheckStatus`. UI paths are the
+renderer's business and stay out of here.
 """
 
 from collections.abc import Callable, Iterable, Mapping
@@ -27,6 +24,7 @@ from unifiwifioptimizer.domain.profile import DtimMode, MinRateMode, Profile, Se
 from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 
 NOT_SENT = "the controller did not send this setting"
+MODE_DEVIATES = "the profile expects {want}; it applies only under {mode} (see the mode setting)"
 UNRECOGNISED = "the controller sent a value or combination this tool has no name for"
 SIX_GHZ_DETECT_ONLY = "6 GHz is detect-only"
 
@@ -176,6 +174,15 @@ def _rate_rule(code: str, label: str, band: Band) -> Rule:
         if want is None:
             shown = None if enabled is None else rate_label(kbps) if enabled and kbps is not None else "not enforced"
             return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, shown, note)
+        if minrate_mode(wlan) is MinRateMode.AUTO:
+            return _result(
+                code,
+                wlan,
+                CheckStatus.NOT_APPLICABLE,
+                rate_label(want),
+                None,
+                MODE_DEVIATES.format(want=rate_label(want), mode="Manual minimum data rates"),
+            )
         if enabled is None:
             return _result(code, wlan, CheckStatus.INCOMPLETE, rate_label(want), None, NOT_SENT)
         if not enabled:
@@ -206,10 +213,20 @@ def _dtim_rule(code: str, label: str, band: Band) -> Rule:
         have = actual(wlan)
         shown = None if have is None else str(have)
         want = expected(profile)
+        mode = dtim_mode(wlan)
         if want is None:
-            if dtim_mode(wlan) is not DtimMode.CUSTOM:
+            if mode is not DtimMode.CUSTOM:
                 return None
             return _unjudged(code, wlan, CheckStatus.NOT_PRESCRIBED, shown, note)
+        if mode is DtimMode.DEFAULT:
+            return _result(
+                code,
+                wlan,
+                CheckStatus.NOT_APPLICABLE,
+                str(want),
+                None,
+                MODE_DEVIATES.format(want=str(want), mode="a custom DTIM interval"),
+            )
         if band is Band.GHZ_6:
             return _result(code, wlan, CheckStatus.NOT_EVALUABLE, str(want), shown, SIX_GHZ_DETECT_ONLY)
         return _compare(code, wlan, str(want), shown, have == want)

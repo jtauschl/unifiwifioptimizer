@@ -22,8 +22,10 @@ def test_a_group_with_a_cap_names_the_group_and_both_rates() -> None:
     assert shown("g3", DOWN_ONLY) == "On: Down, 10 Mbit/s down, unlimited up"
 
 
-def test_a_group_the_controller_did_not_list_or_a_wlan_without_one_has_no_value() -> None:
-    assert shown("missing", UNLIMITED) is None and shown(None, UNLIMITED) is None
+def test_a_group_the_controller_did_not_list_or_a_wlan_without_one_is_incomplete() -> None:
+    for group_id in ("missing", None):
+        result = speed_limit_check(wlan(usergroup_id=group_id), (UNLIMITED,))
+        assert result.status is CheckStatus.INCOMPLETE and result.actual is None
 
 
 def test_the_limit_is_listed_with_a_note_and_never_judged() -> None:

@@ -9,6 +9,7 @@ from unifiwifioptimizer.domain.report import CheckResult, CheckStatus
 CODE = "speed_limit"
 LABEL = "WiFi Speed Limit"
 NOTE = "caps each client's rate on this WLAN; the right cap depends on the site"
+NOT_RESOLVED = "the controller sent no speed-limit profile that this WLAN refers to"
 
 
 def _rate(kbps: int | None) -> str:
@@ -20,8 +21,8 @@ def _rate(kbps: int | None) -> str:
 def speed_limit_check(wlan: WlanConfig, groups: Sequence[UserGroup]) -> CheckResult:
     group = next((g for g in groups if g.id == wlan.usergroup_id), None) if wlan.usergroup_id is not None else None
     if group is None:
-        shown = None
-    elif group.down_kbps is None and group.up_kbps is None:
+        return CheckResult(code=CODE, subject=wlan.name, status=CheckStatus.INCOMPLETE, detail=NOT_RESOLVED)
+    if group.down_kbps is None and group.up_kbps is None:
         shown = "Off"
     else:
         shown = f"On: {group.name}, {_rate(group.down_kbps)} down, {_rate(group.up_kbps)} up"

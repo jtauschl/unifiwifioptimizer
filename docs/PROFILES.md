@@ -142,6 +142,8 @@ profiles:
 | `multicast_suppressor_mode` | Multicast Suppression | optional `off`, `conservative`, `aggressive`; unset = listed, not judged |
 
 A setting the controller did not send is reported as **incomplete**, never as a pass or a deviation. A
+minimum data rate or DTIM value is **not applicable** while the WLAN is on the other mode (Automatic rates,
+Default DTIM): the controller does not offer the field there, and the mode row is the deviation. A
 combination the controller did send but the tool has no name for (for example `wpapsk/wpa1`) is a
 **deviation** and shows the raw pair. 6 GHz values (`dtim_6`) are **not evaluable** (6 GHz is detect-only).
 

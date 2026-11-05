@@ -182,6 +182,22 @@ def test_rates_and_dtim_values_are_prescribed_only_under_the_matching_mode_and_l
     assert "minrate_5" in codes and "dtim_5" in codes and "minrate_24" not in codes and "dtim_24" not in codes
 
 
+def test_a_value_the_controller_hides_under_the_other_mode_is_not_applicable_not_passed() -> None:
+    # The stored value equals the expectation; the mode row is the deviation and the value row must not pass it.
+    auto = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_setting_preference="auto")))
+    assert auto["minrate_mode"].status is CheckStatus.FAILED
+    assert {auto[c].status for c in ("minrate_24", "minrate_5")} == {CheckStatus.NOT_APPLICABLE}
+    assert (auto["minrate_24"].expected, auto["minrate_5"].expected) == ("12 Mbps", "12 Mbps")
+    assert "12 Mbps" in auto["minrate_5"].detail
+    default = by_code(evaluate_rules(STANDARD, standard_wlan(dtim_mode="default")))
+    assert default["dtim_mode"].status is CheckStatus.FAILED
+    assert {default[c].status for c in ("dtim_24", "dtim_5")} == {CheckStatus.NOT_APPLICABLE}
+    assert (default["dtim_24"].expected, default["dtim_5"].expected) == ("3", "3")
+    assert "expects 3" in default["dtim_5"].detail
+    unknown = by_code(evaluate_rules(STANDARD, standard_wlan(minrate_setting_preference=None, dtim_mode=None)))
+    assert {unknown[c].status for c in ("minrate_24", "minrate_5", "dtim_24", "dtim_5")} == {CheckStatus.PASSED}
+
+
 def test_a_6_ghz_dtim_value_is_detect_only_never_passed_or_failed() -> None:
     with_6g = replace(STANDARD, wifi_bands=frozenset({Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}), dtim_6=2)
     on_6g = frozenset({Band.GHZ_2, Band.GHZ_5, Band.GHZ_6})

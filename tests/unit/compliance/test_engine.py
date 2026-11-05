@@ -4,12 +4,13 @@ from pathlib import Path
 
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.compliance.engine import evaluate_site, evaluate_wlan
-from unifiwifioptimizer.domain.models import Band
+from unifiwifioptimizer.domain.models import Band, UserGroup
 from unifiwifioptimizer.domain.report import CheckStatus, Severity
 
 from .builders import PROFILES, profile, standard_wlan, wlan
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
+UNLIMITED = UserGroup(id="g1", name="Unlimited", down_kbps=None, up_kbps=None)
 
 
 def test_a_disabled_wlan_is_reported_as_that_and_nothing_else() -> None:
@@ -20,7 +21,9 @@ def test_a_disabled_wlan_is_reported_as_that_and_nothing_else() -> None:
 
 
 def test_a_compliant_wlan_passes_every_prescribed_check_and_lists_the_rest_with_a_note() -> None:
-    evaluation = evaluate_wlan(standard_wlan(), profile(), roaming_threshold_dbm=-70)
+    evaluation = evaluate_wlan(
+        standard_wlan(usergroup_id="g1"), profile(), roaming_threshold_dbm=-70, user_groups=(UNLIMITED,)
+    )
     statuses = {c.code: c.status for c in evaluation.checks}
     assert statuses.pop("roaming_assistant") is CheckStatus.PASSED
     unprescribed = {code for code, status in statuses.items() if status is CheckStatus.NOT_PRESCRIBED}
@@ -79,7 +82,8 @@ def fixture_wlans() -> list:  # type: ignore[type-arg]
 def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> None:
     wlans = fixture_wlans()
     assert len(wlans) == 5
-    compliance = evaluate_site(wlans, {w.name: "Standard" for w in wlans}, PROFILES)
+    groups = parse.parse_user_groups(json.loads((FIXTURES / "usergroup.json").read_text())).items
+    compliance = evaluate_site(wlans, {w.name: "Standard" for w in wlans}, PROFILES, user_groups=groups)
     assert compliance.findings == ()
     golden = {
         e.wlan: (
@@ -103,8 +107,6 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
             [
                 "fast_roaming",
                 "group_rekey",
-                "minrate_24",
-                "minrate_5",
                 "minrate_mode",
                 "multicast_to_unicast",
                 "pmf",
@@ -119,8 +121,6 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
             [
                 "client_device_isolation",
                 "fast_roaming",
-                "minrate_24",
-                "minrate_5",
                 "minrate_mode",
                 "multicast_to_unicast",
                 "pmf",
@@ -134,8 +134,6 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
         "SSID-4": (
             [
                 "fast_roaming",
-                "minrate_24",
-                "minrate_5",
                 "minrate_mode",
                 "multicast_to_unicast",
                 "proxy_arp",
@@ -148,8 +146,6 @@ def test_the_anonymised_controller_fixture_yields_a_pinned_golden_result() -> No
         "SSID-5": (
             [
                 "fast_roaming",
-                "minrate_24",
-                "minrate_5",
                 "minrate_mode",
                 "multicast_to_unicast",
                 "proxy_arp",
