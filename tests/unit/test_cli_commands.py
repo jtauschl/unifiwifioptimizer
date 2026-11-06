@@ -2,6 +2,7 @@
 
 import argparse
 import contextlib
+import inspect
 import io
 import json
 import subprocess
@@ -12,15 +13,23 @@ from unittest import mock
 import pytest
 
 from unifiwifioptimizer.adapters.unifi import parse
+from unifiwifioptimizer.app.run import RunResult, SiteOutcome
 from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.locations import ConfigLocation
 from unifiwifioptimizer.config.profiles import shipped_profiles_text
 from unifiwifioptimizer.config.schema import Config
+from unifiwifioptimizer.domain import errors
+from unifiwifioptimizer.domain.analysis import PartialReason
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
+    ConfigTimeoutError,
     ControllerError,
+    HostKeyMismatchError,
+    HostKeyTrustError,
+    HostKeyUnknownError,
+    ResponseTooLargeError,
     ScanError,
     SchemaError,
     TlsError,
@@ -131,18 +140,44 @@ def test_legacy_location_is_announced_on_stderr(
     assert "move it to /xdg-config/unifiwifioptimizer/config.yaml" in err and "chmod 600" in err
 
 
-@pytest.mark.parametrize(
-    ("error", "code"),
-    [
-        (ConfigError("controller.url", "bad"), ExitCode.CONFIG),
-        (TlsError("handshake"), ExitCode.TLS),
-        (TlsPinMismatchError(bytes(32), bytes(32)), ExitCode.TLS),
-        (ToolEnvironmentError("no docker"), ExitCode.ENVIRONMENT),
-        (ControllerError("/x", "status 500"), ExitCode.UNEXPECTED_ERROR),
-        (SchemaError("$.data", "expected a list"), ExitCode.UNEXPECTED_ERROR),
-        (UwoError("other"), ExitCode.UNEXPECTED_ERROR),
-    ],
-)
+# One entry per error class of `domain.errors`: a new class cannot reach the boundary without its exit code
+# being decided here (`test_every_domain_error_has_a_decided_exit_code`).
+EXIT_CODE_BY_ERROR: dict[type[UwoError], tuple[UwoError, ExitCode]] = {
+    errors.UwoError: (UwoError("other"), ExitCode.UNEXPECTED_ERROR),
+    errors.ConfigError: (ConfigError("controller.url", "bad"), ExitCode.CONFIG),
+    errors.ConfigTimeoutError: (ConfigTimeoutError("$", "too slow"), ExitCode.CONFIG),
+    errors.TlsError: (TlsError("handshake"), ExitCode.TLS),
+    errors.TlsPinMismatchError: (TlsPinMismatchError(bytes(32), bytes(32)), ExitCode.TLS),
+    errors.ToolEnvironmentError: (ToolEnvironmentError("no docker"), ExitCode.ENVIRONMENT),
+    errors.HostKeyTrustError: (HostKeyTrustError("no match"), ExitCode.HOST_KEY),
+    errors.SchemaError: (SchemaError("$.data", "expected a list"), ExitCode.UNEXPECTED_ERROR),
+    errors.ControllerError: (ControllerError("/x", "status 500"), ExitCode.UNEXPECTED_ERROR),
+    errors.ResponseTooLargeError: (ResponseTooLargeError("/x", "too large"), ExitCode.UNEXPECTED_ERROR),
+    # A scan failure is isolated per access point and reported; one that reaches the boundary is a defect.
+    errors.ScanError: (ScanError("scan broke"), ExitCode.UNEXPECTED_ERROR),
+    errors.HostKeyUnknownError: (HostKeyUnknownError("no key"), ExitCode.UNEXPECTED_ERROR),
+    errors.HostKeyMismatchError: (HostKeyMismatchError("changed"), ExitCode.UNEXPECTED_ERROR),
+    errors.SshAuthenticationError: (errors.SshAuthenticationError("rejected"), ExitCode.UNEXPECTED_ERROR),
+    errors.ScanTimeoutError: (errors.ScanTimeoutError("slow"), ExitCode.UNEXPECTED_ERROR),
+    errors.ScanOutputTooLargeError: (errors.ScanOutputTooLargeError("big"), ExitCode.UNEXPECTED_ERROR),
+    errors.ScanTransportError: (errors.ScanTransportError("broke"), ExitCode.UNEXPECTED_ERROR),
+    errors.RemoteScriptError: (errors.RemoteScriptError("status 3"), ExitCode.UNEXPECTED_ERROR),
+    errors.ScanParseError: (errors.ScanParseError("protocol"), ExitCode.UNEXPECTED_ERROR),
+    errors.AddressRefusedError: (errors.AddressRefusedError("public"), ExitCode.UNEXPECTED_ERROR),
+}
+
+
+def test_every_domain_error_has_a_decided_exit_code() -> None:
+    declared = {
+        cls
+        for _, cls in inspect.getmembers(errors, inspect.isclass)
+        if issubclass(cls, UwoError) and cls.__module__ == errors.__name__
+    }
+    assert declared == set(EXIT_CODE_BY_ERROR)
+    assert all(type(error) is cls for cls, (error, _) in EXIT_CODE_BY_ERROR.items())
+
+
+@pytest.mark.parametrize(("error", "code"), list(EXIT_CODE_BY_ERROR.values()), ids=lambda v: type(v).__name__)
 @pytest.mark.security("T19")
 def test_exit_codes_follow_the_error_class(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], error: UwoError, code: ExitCode
@@ -443,8 +478,6 @@ def test_run_refuses_an_unknown_site_selector(run_faked: None, capsys: pytest.Ca
 @pytest.fixture
 def scanner_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     """Replaces the analysis with a recorder that builds the scanner the way `run` would."""
-    from unifiwifioptimizer.app.run import RunResult
-
     seen: dict[str, object] = {}
 
     class RecordingScanner:
@@ -489,9 +522,6 @@ def test_run_defaults_to_the_state_directory_of_its_own_environment_snapshot(
 
 
 def test_run_exit_codes_follow_the_verdict() -> None:
-    from unifiwifioptimizer.app.run import RunResult, SiteOutcome
-    from unifiwifioptimizer.domain.analysis import PartialReason
-
     def result(**overrides: object) -> RunResult:
         values: dict[str, object] = {
             "site_id": "default", "scanning": True, "partial_reasons": (), "scanned_ap_count": 4,
@@ -586,3 +616,44 @@ def test_run_leaves_the_terminal_output_plain_for_no_color_and_for_json(
     assert "\x1b" not in _run_on_terminal(["run", "--no-scan"])
     monkeypatch.delenv("NO_COLOR")
     assert "\x1b" not in _run_on_terminal(["run", "--no-scan", "--json"])
+
+
+def test_a_defect_that_is_no_domain_error_surfaces_instead_of_becoming_an_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def defective(explicit: Path | None = None) -> LoadedConfig:
+        raise RuntimeError("defect")
+
+    monkeypatch.setattr(cli, "load_config", defective)
+    with pytest.raises(RuntimeError, match="defect"):
+        cli.main(["sites"])
+
+
+@pytest.mark.parametrize(
+    ("overrides", "code"),
+    [
+        ({}, ExitCode.OK),
+        ({"partial_reasons": (PartialReason.BAND_EMPTY,)}, ExitCode.PARTIAL),
+        (
+            {
+                "verifiable_ap_count": 0,
+                "host_key_failed_ap_count": 1,
+                "partial_reasons": (PartialReason.SCAN_FAILED,),
+            },
+            ExitCode.HOST_KEY,
+        ),
+    ],
+)
+def test_run_exits_with_the_verdict_of_the_analysis_through_the_real_entry(
+    monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object], code: ExitCode
+) -> None:
+    values: dict[str, object] = {
+        "site_id": "default", "scanning": True, "partial_reasons": (), "scanned_ap_count": 4,
+        "verifiable_ap_count": 4, "host_key_failed_ap_count": 0,
+    }  # fmt: skip
+    values.update(overrides)
+    result = RunResult(reports=(), outcomes=(SiteOutcome(**values),))  # type: ignore[arg-type]
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)
+    assert cli.main(["run"]) == code

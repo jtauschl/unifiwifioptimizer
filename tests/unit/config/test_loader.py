@@ -1,7 +1,10 @@
+import contextlib
 import threading
 import time
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from unifiwifioptimizer.config.loader import (
     MAX_ALIASES,
@@ -223,3 +226,16 @@ def test_explicit_core_tags_still_work() -> None:
     assert parse_yaml('a: !!str 12\nb: !!int "0x1f"\nc: !!float "2"\nd: !!bool "true"\ne: !!null "x"\n') == {
         "a": "12", "b": 31, "c": 2.0, "d": True, "e": None,
     }  # fmt: skip
+
+
+_HOSTILE_FRAGMENTS = st.sampled_from(
+    [*"ab01 :-[]{}!&*#?|>'\"\n,%@`\\.xe_+~<=", "!!int ", "!!str ", "!!float ", "!!map ", "!!seq ", "!!null ", "!!bool ",
+     "&a ", "*a", "0x", "1e", ".inf", "- ", "? ", ": "]
+)  # fmt: skip
+
+
+@settings(max_examples=2000, deadline=None)
+@given(st.lists(_HOSTILE_FRAGMENTS, max_size=40).map("".join))
+def test_no_document_escapes_the_boundary_as_anything_but_config_error(text: str) -> None:
+    with contextlib.suppress(ConfigError):
+        parse_yaml(text)
