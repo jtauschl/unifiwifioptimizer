@@ -123,3 +123,48 @@ in a `profiles.yaml` next to the configuration file in use (never the legacy dat
   controller's Multicast Suppression).
 - `roaming_assistant` and `band_steering` are required in every profile of an override file, which replaces a shipped
   profile whole.
+
+## 6 GHz radios
+
+A 6 GHz radio is its own band and is reported as not evaluated. 0.4.x had no 6 GHz band and could take a lone `6e`
+radio for the 5 GHz one.
+
+No action: the 2.4 GHz and 5 GHz radios of the same access point are still analysed.
+
+## YAML booleans
+
+YAML booleans are `true` and `false` only; `yes`, `no`, `on` and `off` are plain strings, so
+`dns_assistance_mode: off` stays the text `off`. A 0.4.x `config.yaml` has no such values.
+
+In a hand-written `profiles.yaml`, write `true` or `false` on a yes/no key; `yes`, `no`, `on` and `off` there are refused
+with exit code 3. A mode such as `dns_assistance_mode: off` needs no change.
+
+## Recommendation basis
+
+The recommendations changed their inputs, so the numbers differ from 0.4.x on the same site:
+
+- Transmit power rests on the effective power (`radio_table_stats.tx_power`), not the configured one.
+- The weakest configured neighbour decides, not the mean; the missing-peer +1 dB nudge is gone.
+- A zero sighting raises to the maximum only after a miss in both directions with working scans.
+- Readings are the median over passes on the peer's channel.
+
+No configuration change is needed. Treat 0.4.x results as obsolete and read the first 0.5.0 report as a fresh
+baseline (`docs/ALGORITHM.md` has the derivation).
+
+## Channel and roaming checks
+
+- The colouring check replaces the 60/320 MHz width budgets and the "more than three 2.4 GHz peers" rule.
+- Roaming Assistant is read from the WLAN only; 0.4.x read it per radio. On a controller without the WLAN-level field
+  the check reports the older API instead of a verdict.
+- An enabled Minimum RSSI is no longer flagged by itself: it is a change only when it differs from the value to set
+  (the derived value moved into the controller's range; a setting at that end counts as confirmed). On a 5 GHz radio
+  an advisory appears when the disconnect would fire before a neighbour can take over (`docs/ALGORITHM.md` §6).
+
+No configuration change is needed.
+
+## Output and failures
+
+- The report is plain text without the 0.4.x colour codes in files and pipes; the check marks are coloured only on a
+  terminal. Use `--json` where a script reads the result.
+- 0.5.0 reads `apgroups`, `networkconf`, `usergroup` and `setting` in addition to the endpoints 0.4.x read. A failing
+  endpoint aborts the run with exit code 1; the error text names it. Fix the cause, then run again.

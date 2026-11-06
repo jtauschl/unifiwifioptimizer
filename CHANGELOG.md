@@ -110,17 +110,17 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - **Breaking:** `ssh.auth` is explicit; a `user` without a password is now an error. Add `auth: key` or `auth: controller` ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#ssh-authentication)).
 - **Breaking:** a scan interface that is down is no longer brought up unless `ssh.scan_interface_toggle: true` ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#scan-interface-toggle)).
 - All passes of one site run before the next site starts, and access points are scanned one at a time; `ssh.scan_concurrency` opts in to more.
-- **Breaking:** 6 GHz radios are their own band and reported as not evaluated; 0.4.x could take a lone `6e` radio for the 5 GHz one.
-- **Breaking:** YAML booleans are `true` and `false` only; quote or rewrite `yes`, `no`, `on` or `off` in a hand-written `profiles.yaml`.
-- **Breaking:** recommendations rest on the effective transmit power (`radio_table_stats.tx_power`), not the configured one.
-- **Breaking:** the weakest configured neighbour decides, not the mean, and the missing-peer +1 dB nudge is gone.
-- **Breaking:** a zero sighting raises to the maximum only after a miss in both directions with working scans.
-- **Breaking:** readings are the median over passes on the peer's channel.
-- **Breaking:** the colouring check replaces the 60/320 MHz width budgets and the "more than three 2.4 GHz peers" rule.
-- **Breaking:** the per-radio Roaming Assistant fallback is gone; the check reports the older API instead.
+- **Breaking:** 6 GHz radios are their own band and reported as not evaluated; 0.4.x could take a lone `6e` radio for the 5 GHz one ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#6-ghz-radios)).
+- **Breaking:** YAML booleans are `true` and `false` only; a yes/no key in a hand-written `profiles.yaml` refuses `yes`, `no`, `on` and `off` ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#yaml-booleans)).
+- **Breaking:** recommendations rest on the effective transmit power (`radio_table_stats.tx_power`), not the configured one ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#recommendation-basis)).
+- **Breaking:** the weakest configured neighbour decides, not the mean, and the missing-peer +1 dB nudge is gone ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#recommendation-basis)).
+- **Breaking:** a zero sighting raises to the maximum only after a miss in both directions with working scans ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#recommendation-basis)).
+- **Breaking:** readings are the median over passes on the peer's channel ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#recommendation-basis)).
+- **Breaking:** the colouring check replaces the 60/320 MHz width budgets and the "more than three 2.4 GHz peers" rule ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#channel-and-roaming-checks)).
+- **Breaking:** Roaming Assistant is read from the WLAN only, not per radio as in 0.4.x; a controller without the WLAN field reports the older API ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#channel-and-roaming-checks)).
 - An enabled Minimum RSSI is no longer flagged by itself.
-- **Breaking:** the report is plain text without the 0.4.x colour codes in files and pipes; `--json` is the machine format.
-- **Breaking:** a controller endpoint that fails (for example `apgroups`) aborts the run with exit 1 instead of being skipped.
+- **Breaking:** the report is plain text without the 0.4.x colour codes in files and pipes; `--json` is the machine format ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#output-and-failures)).
+- **Breaking:** 0.5.0 also reads `apgroups`, `networkconf`, `usergroup` and `setting`; a failing endpoint aborts the run with exit 1 ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#output-and-failures)).
 - A configured access point the controller reports as disconnected is not contacted.
 - **Breaking:** the shipped profiles are recommendations grouped by device class (`Standard`, `Compat`, `IoT`, `Hotspot`); review the deviations they report ([profile changes](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#shipped-profiles)).
 - **Breaking:** `Throughput` is now `Standard` and `Latency` is removed; a WLAN mapped to either name reports "profile is not defined" ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#profile-names)).
