@@ -26,7 +26,7 @@ For the full RF derivation, see [docs/ALGORITHM.md](https://github.com/jtauschl/
 ## Requirements
 
 - Python 3.11 or newer and OpenSSH 8.4 or newer (`ssh`) on the machine that runs the tool. No other tool is needed.
-- A **UniFi OS gateway** (for example a UDM or Cloud Gateway) running UniFi Network Application **10.x**. The tool is verified against 10.6.106. It does not check the version: a setting the controller does not send is reported as `incomplete` instead of being compared with an assumed default. A self-hosted standalone Network Application without UniFi OS is not supported in this release.
+- A **UniFi OS gateway** (for example a UDM or Cloud Gateway) running UniFi Network Application **10.x** or **11.x**. The tool is verified against 10.6.106; on 11.0.99 the controller-side read (`run --no-scan`) completes without field problems, and the neighbour scan is not yet verified there. It does not check the version: a setting the controller does not send is reported as `incomplete` instead of being compared with an assumed default. A self-hosted standalone Network Application without UniFi OS is not supported in this release.
 - A UniFi Network API key of an account with the **full Administrator role**: `ssh.auth: controller` reads the controller-managed SSH credentials through that key, which a View Only account cannot read.
 - UniFi access points managed by that application, with `Device SSH Authentication` enabled. Firmware `6.7.x` or later (U6 series) / `8.0.x` or later (U7 series) for the SSH neighbor scan.
 
