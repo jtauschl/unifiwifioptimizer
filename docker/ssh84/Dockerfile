@@ -2,11 +2,12 @@
 # introduced SSH_ASKPASS_REQUIRE; the floor tests run the tool's exact argv from inside this container.
 FROM debian:bullseye-slim@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd
 
-# bullseye left the regular mirrors in 2026; archive.debian.org keeps every published package.
+# bullseye left the regular mirrors in 2026; archive.debian.org keeps every published package. The exact Debian revision
+# keeps two builds identical; the `ssh -V` check below guards the 8.4 floor itself.
 RUN printf 'deb http://archive.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n' >/etc/apt/sources.list \
   && rm -f /etc/apt/sources.list.d/*.sources \
   && apt-get -o Acquire::Check-Valid-Until=false update \
-  && apt-get install -y --no-install-recommends openssh-client \
+  && apt-get install -y --no-install-recommends openssh-client=1:8.4p1-5+deb11u7 \
   && rm -rf /var/lib/apt/lists/* \
   && ssh -V 2>&1 | grep -q 'OpenSSH_8.4' \
   && useradd -m -s /bin/sh tester \

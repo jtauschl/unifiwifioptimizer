@@ -3,7 +3,9 @@
 # small state directory. Nothing here is a real radio.
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
 
-RUN apk add --no-cache dropbear openssh-server openssh-keygen netcat-openbsd \
+# Exact versions: the digest pins the base image, not what its package index serves on build day. A version that
+# leaves the index fails the build; bump the digest and these pins together.
+RUN apk add --no-cache dropbear=2025.88-r1 openssh-server=10.0_p1-r11 openssh-keygen=10.0_p1-r11 netcat-openbsd=1.229.1-r0 \
   && adduser -D -s /bin/sh scanuser \
   && echo "scanuser:scan-pass" | chpasswd \
   && mkdir -p /run/ifstate /run/stub /home/scanuser/.ssh /etc/dropbear \
