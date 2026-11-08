@@ -5,6 +5,14 @@ processes, one place that parses controller JSON, one place that is allowed to d
 verification. The rules are checked on the AST with import aliases resolved, so a violation fails here
 before a reviewer sees it. The checkers are also run against a table of known-bad snippets, which keeps
 the gate logic itself under test.
+
+The gates stop accidents and the evasions a maintainer would reach for: a module (the process modules and
+the import machinery included), an import function or an evaluation function passed around as a value, a
+string turned into a module (the import machinery is closed except for the public names of resources and
+metadata), a star import (it hides the names it binds), and the interpreter's globals and import machinery
+reached by name, by attribute or by string. They do not model a module reached as the attribute of another
+module (`typing.sys.modules`), object introspection, a library that evaluates or resolves a string or
+serialized code, or names computed at run time.
 """
 
 import ast
@@ -67,7 +75,48 @@ JSON_ALLOWED = frozenset({"adapters/unifi/client.py"})
 SSL_ALLOWED = frozenset({"adapters/unifi/tls.py"})
 TLS_BYPASS_ALLOWED = ("adapters/unifi/tls.py", "PinnedHTTPSConnection", "__init__")
 
-DYNAMIC_IMPORTS = frozenset({"__import__", "builtins.__import__", "importlib.import_module", "importlib.__import__"})
+# `breakpoint` runs whatever PYTHONBREAKPOINT names, the entry point does not isolate the environment.
+DYNAMIC_IMPORTS = frozenset(
+    {"__import__", "builtins.__import__", "breakpoint", "sys.breakpointhook", "sys.__breakpointhook__"}
+)
+# The import machinery as a whole is closed: anything that turns a name, a path or an entry point into a module.
+# Only the resource and version lookups the package needs stay open.
+IMPORT_MACHINERY = frozenset({"imp", "importlib", "pkgutil", "pydoc", "runpy", "zipimport"})
+IMPORT_MACHINERY_OPEN = frozenset({"importlib.metadata", "importlib.metadata.version"})
+# importlib.resources stays open for its public names; a private module below it resolves any name to a module.
+IMPORT_MACHINERY_OPEN_PREFIX = "importlib.resources"
+# Attributes that lead from any object back to the interpreter's globals or its import machinery, whatever module
+# the object came from.
+INTERPRETER_REACH_ATTRIBUTES = frozenset(
+    {
+        "__builtins__",
+        "__globals__",
+        "__import__",
+        "__self__",
+        "__loader__",
+        "__spec__",
+        "f_builtins",
+        "f_globals",
+        "f_locals",
+    }
+)
+# Reaching a module or an import function without naming it at a call: the module object handed on as a value, and
+# the lookups that turn a string into a module.
+LOOKUP_MODULES = frozenset({"importlib", "importlib.metadata", "importlib.resources", "builtins", "sys"})
+REFLECTION_NAMES = frozenset(
+    {
+        "__builtins__",
+        "__loader__",
+        "__spec__",
+        "sys.modules",
+        "sys.meta_path",
+        "sys.path_hooks",
+        "sys.path_importer_cache",
+        "globals",
+        "locals",
+        "vars",
+    }
+)
 SHELL_CALLS = frozenset(
     {
         "eval",
@@ -85,6 +134,11 @@ SHELL_CALLS = frozenset(
 SHELL_CALL_PREFIXES = ("os.exec", "os.spawn", "os.posix_spawn")
 # Event-loop spawn methods; the loop's type is not statically resolvable, so the attribute name alone counts.
 LOOP_SPAWN_ATTRIBUTES = frozenset({"subprocess_exec", "subprocess_shell"})
+# The transports and the private loop method start a process with a positional `shell` flag, so the keyword rule
+# never sees it.
+ASYNCIO_PRIVATE_SPAWN = frozenset(
+    {"base_subprocess", "unix_events", "windows_events", "windows_utils", "_make_subprocess_transport"}
+)
 PROCESS_SPAWN_PREFIXES = (
     "subprocess.",
     "asyncio.create_subprocess",
@@ -98,6 +152,15 @@ PROCESS_CREATION_NAMES = frozenset(
     {"os.fork", "os.forkpty", "pty.fork", "concurrent.futures.ProcessPoolExecutor", "os.posix_spawn", "os.posix_spawnp"}
 )
 PROCESS_MODULES = frozenset({"subprocess", "multiprocessing"})
+# Handing one of these modules on as a value (`o = os; o.system(c)`, `getattr(os, "system")`) reaches the names
+# above without a chain the checks can read. The set is derived from those name lists, so it cannot drift from them.
+SPAWN_VALUE_MODULES = frozenset(
+    name.rsplit(".", 1)[0]
+    for name in (*SHELL_CALLS, *PROCESS_CREATION_NAMES, *SHELL_CALL_PREFIXES, *PROCESS_SPAWN_PREFIXES)
+    if "." in name
+)
+# The modules behind os and subprocess (and pty, which spawns a child itself) expose the same calls under other names.
+SPAWN_PRIVATE_MODULES = frozenset({"posix", "nt", "_posixsubprocess", "pty"})
 # `env` counts as an interpreter: a local spawn passes its environment via `env=`, never through env(1).
 SHELL_INTERPRETERS = frozenset(
     {"sh", "ash", "bash", "dash", "zsh", "ksh", "mksh", "csh", "tcsh", "fish", "busybox", "env"}
@@ -269,9 +332,61 @@ def check_layer_imports(tree: ast.Module, relpath: str) -> list[str]:
     return found
 
 
+def modules_used_as_values(tree: ast.Module, aliases: Aliases, modules: frozenset[str]) -> list[str]:
+    """Imported modules in `modules` that appear as a value instead of the base of an attribute access.
+
+    `getattr(json, "loads")`, `vars(json)` and `j = json` reach the module's contents without a `json.<name>`
+    chain, which the attribute-based rules cannot see; a submodule reference (`getattr(importlib.metadata, ...)`)
+    is the same thing one level down. A bare name counts only when an import bound it, so a parameter that
+    happens to be called `json` is not the module.
+    """
+    attribute_bases = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name | ast.Attribute) or not isinstance(node.ctx, ast.Load):
+            continue
+        if id(node) in attribute_bases or (isinstance(node, ast.Name) and node.id not in aliases):
+            continue
+        found.extend(f"uses {origin} as a value" for origin in sorted(qualified_names(node, aliases) & modules))
+    return found
+
+
+def in_closed_machinery(name: str) -> bool:
+    if name.startswith(IMPORT_MACHINERY_OPEN_PREFIX):
+        return any(part.startswith("_") for part in name.split("."))
+    return name.split(".")[0] in IMPORT_MACHINERY and name not in IMPORT_MACHINERY_OPEN
+
+
+def machinery_import_problem(module: str, names: list[str]) -> bool:
+    """Whether an import statement reaches the closed import machinery, judged name by name for a from-import."""
+    if module == "importlib":
+        return not names or not set(names) <= {"resources", "metadata"}
+    if module == "importlib.metadata":
+        return not set(names) <= {"version"}
+    if module.startswith(IMPORT_MACHINERY_OPEN_PREFIX):
+        return in_closed_machinery(module) or any(n == "*" or n.startswith("_") for n in names)
+    return in_closed_machinery(module)
+
+
 def check_dynamic_imports(tree: ast.Module, relpath: str) -> list[str]:
     aliases = aliases_of(tree, relpath)
-    return [f"dynamic import via {name}" for _, names in calls(tree, aliases) for name in names & DYNAMIC_IMPORTS]
+    found = modules_used_as_values(tree, aliases, LOOKUP_MODULES)
+    for module, names in imported_modules(tree, relpath):
+        if machinery_import_problem(module, names) or module.split(".")[0] == "builtins":
+            found.append(f"imports {module}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value in INTERPRETER_REACH_ATTRIBUTES:
+            found.append(f"names {node.value}, which looks it up by string")
+        if not isinstance(node, ast.Name | ast.Attribute):
+            continue
+        for name in qualified_names(node, aliases, through_calls=False):
+            if name in DYNAMIC_IMPORTS or (name not in IMPORT_MACHINERY and in_closed_machinery(name)):
+                found.append(f"dynamic import via {name}")
+            elif name in REFLECTION_NAMES:
+                found.append(f"reflective module lookup via {name}")
+        if isinstance(node, ast.Attribute) and node.attr in INTERPRETER_REACH_ATTRIBUTES:
+            found.append(f"reaches the interpreter through .{node.attr}")
+    return found
 
 
 def is_spawn_import(module: str, names: list[str]) -> bool:
@@ -289,13 +404,13 @@ def check_process_spawn_location(tree: ast.Module, relpath: str) -> list[str]:
         return []
     aliases = aliases_of(tree, relpath)
     found = [f"imports {module}" for module, names in imported_modules(tree, relpath) if is_spawn_import(module, names)]
-    for call, names in calls(tree, aliases):
+    for _call, names in calls(tree, aliases):
         found.extend(f"calls {n}" for n in names if n.startswith(PROCESS_SPAWN_PREFIXES) or n in PROCESS_CREATION_NAMES)
-        if isinstance(call.func, ast.Attribute) and call.func.attr in LOOP_SPAWN_ATTRIBUTES:
-            found.append(f"calls .{call.func.attr}()")
     for node in ast.walk(tree):
         if isinstance(node, ast.Name | ast.Attribute):
             found.extend(f"references {n}" for n in qualified_names(node, aliases) & PROCESS_CREATION_NAMES)
+        if isinstance(node, ast.Attribute) and node.attr in LOOP_SPAWN_ATTRIBUTES:
+            found.append(f"references .{node.attr}")
     return found
 
 
@@ -329,12 +444,32 @@ def spawns_an_interpreter(call: ast.Call) -> bool:
 
 def check_shell_execution(tree: ast.Module, relpath: str) -> list[str]:
     aliases = aliases_of(tree, relpath)
-    found: list[str] = []
+    found = modules_used_as_values(tree, aliases, SPAWN_VALUE_MODULES)
+    found.extend(
+        f"imports {module}"
+        for module, _ in imported_modules(tree, relpath)
+        if module.split(".")[0] in SPAWN_PRIVATE_MODULES
+    )
+    found.extend(
+        f"imports {module}"
+        for module, names in imported_modules(tree, relpath)
+        if (module.startswith("asyncio.") and module.split(".")[1] in ASYNCIO_PRIVATE_SPAWN)
+        or (module == "asyncio" and ASYNCIO_PRIVATE_SPAWN.intersection(names))
+    )
+    for node in ast.walk(tree):
+        # A reference, not only a call: `run = os.system` or `partial(exec, src)` runs the same code later.
+        if isinstance(node, ast.Attribute) and node.attr == "subprocess_shell":
+            found.append("references .subprocess_shell")
+        if isinstance(node, ast.Attribute) and node.attr in ASYNCIO_PRIVATE_SPAWN:
+            found.append(f"references .{node.attr}")
+        if isinstance(node, ast.Name | ast.Attribute):
+            found.extend(
+                f"references {n}"
+                for n in qualified_names(node, aliases, through_calls=False)
+                if n in SHELL_CALLS or n.startswith(SHELL_CALL_PREFIXES)
+            )
     for call, names in calls(tree, aliases):
         label = "/".join(sorted(names)) or "<call>"
-        found.extend(f"calls {n}" for n in names if n in SHELL_CALLS or n.startswith(SHELL_CALL_PREFIXES))
-        if isinstance(call.func, ast.Attribute) and call.func.attr == "subprocess_shell":
-            found.append("calls .subprocess_shell()")
         is_spawn = any(n.split(".")[0] in PROCESS_SPAWN_ROOTS for n in names) or (
             isinstance(call.func, ast.Attribute) and call.func.attr in LOOP_SPAWN_ATTRIBUTES
         )
@@ -369,6 +504,7 @@ def check_json_parse_location(tree: ast.Module, relpath: str) -> list[str]:
         for name in qualified_names(node, aliases, through_calls=False):
             if name.split(".")[0] in {"json", "_json"} and name != "json" and name not in JSON_WRITE_ALLOWED:
                 found.append(f"references {name}, which is not a JSON writer")
+    found.extend(modules_used_as_values(tree, aliases, frozenset({"json", "_json"})))
     return found
 
 
@@ -430,12 +566,23 @@ def check_spawn_env(tree: ast.Module, relpath: str) -> list[str]:
     return found
 
 
+def check_star_imports(tree: ast.Module, relpath: str) -> list[str]:
+    # A star import binds names that alias resolution cannot see, so every rule keyed on a resolved name is blind
+    # to what it brings in.
+    return [
+        f"star-imports {absolute_module(node, relpath)}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names)
+    ]
+
+
 CHECKERS: dict[str, Checker] = {
     "core-imports": check_core_imports,
     "dynamic-imports": check_dynamic_imports,
     "layer-imports": check_layer_imports,
     "process-spawn-location": check_process_spawn_location,
     "spawn-env-required": check_spawn_env,
+    "star-imports": check_star_imports,
     "shell-execution": check_shell_execution,
     "json-parse-location": check_json_parse_location,
     "ssl-location": check_ssl_location,
@@ -482,6 +629,97 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("dynamic-imports", "cli/x.py", "from importlib import import_module as im\nim('os')\n"),
     ("dynamic-imports", "cli/x.py", "from builtins import __import__ as imp\nimp('subprocess')\n"),
     ("dynamic-imports", "cli/x.py", "import builtins\nbuiltins.__import__('subprocess')\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib\nim = importlib.import_module\nim('json')\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib\ngetattr(importlib, 'import_module')('json')\n"),
+    ("dynamic-imports", "cli/x.py", "import builtins\ngetattr(builtins, '__import__')('json')\n"),
+    ("dynamic-imports", "rf/x.py", "__builtins__.__import__('subprocess')\n"),
+    ("dynamic-imports", "rf/x.py", "__builtins__['__import__']('subprocess')\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.modules['json'].loads(x)\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\ngetattr(sys, 'modules')['json']\n"),
+    ("dynamic-imports", "cli/x.py", "import json\nglobals()['json'].loads(x)\n"),
+    ("dynamic-imports", "cli/x.py", "import json\nvars(json)\n"),
+    ("dynamic-imports", "cli/x.py", "import pkgutil\npkgutil.resolve_name('json.loads')\n"),
+    ("dynamic-imports", "cli/x.py", "import pydoc\npydoc.locate('json.loads')\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.util\nimportlib.util.find_spec('json')\n"),
+    ("dynamic-imports", "cli/x.py", "import runpy\nrunpy.run_module('json')\n"),
+    ("dynamic-imports", "rf/x.py", "import re\nre.__builtins__['__import__']('subprocess')\n"),
+    ("dynamic-imports", "rf/x.py", "import re\nre.escape.__globals__['x']\n"),
+    ("dynamic-imports", "rf/x.py", "import re\ngetattr(re, '__builtins__')['__import__']('subprocess')\n"),
+    ("dynamic-imports", "rf/x.py", "import re\nre.__dict__['__builtins__']['__import__']('subprocess')\n"),
+    ("dynamic-imports", "cli/x.py", "getattr(f, '__globals__')\n"),
+    (
+        "dynamic-imports",
+        "cli/x.py",
+        "from importlib.metadata import EntryPoint\nEntryPoint('a', 'json:loads', 'g').load()\n",
+    ),
+    ("dynamic-imports", "cli/x.py", "import pkgutil\npkgutil.get_loader('json')\n"),
+    (
+        "dynamic-imports",
+        "cli/x.py",
+        "import importlib.machinery\nimportlib.machinery.SourceFileLoader('a', p).load_module()\n",
+    ),
+    ("dynamic-imports", "cli/x.py", "import imp\nimp.load_source('a', p)\n"),
+    ("dynamic-imports", "cli/x.py", "import zipimport\nzipimport.zipimporter(p)\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.metadata\nimportlib.machinery.SourceFileLoader\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.resources import _common\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.resources import *\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.metadata import *\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.metadata import EntryPoint\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.resources._common\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.resources\nimportlib.resources._common.x\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.meta_path.append(f)\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.path_hooks.append(f)\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.path_importer_cache.clear()\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.metadata\ngetattr(importlib.metadata, 'x')\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib import metadata\nvars(metadata)\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib import resources\nr = resources\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.resources\nr = importlib.resources\n"),
+    ("dynamic-imports", "cli/x.py", "import builtins\n"),
+    ("dynamic-imports", "cli/x.py", "from builtins import open\n"),
+    ("shell-execution", "cli/x.py", "import os\ngetattr(os, 'system')(cmd)\n"),
+    ("shell-execution", "cli/x.py", "import os\no = os\no.system(cmd)\n"),
+    ("shell-execution", "cli/x.py", "import os\nvars(os)['system'](cmd)\n"),
+    ("shell-execution", "cli/x.py", "import asyncio\nasyncio.subprocess\n"),
+    ("shell-execution", "cli/x.py", "import asyncio\ngetattr(asyncio, 'create_subprocess_shell')(cmd)\n"),
+    ("shell-execution", "cli/x.py", "import pty\npty.spawn(['sh'])\n"),
+    ("shell-execution", "cli/x.py", "import posix\nposix.system(cmd)\n"),
+    ("shell-execution", "cli/x.py", "import nt\nnt.system(cmd)\n"),
+    ("shell-execution", "cli/x.py", "import _posixsubprocess\n"),
+    ("shell-execution", "cli/x.py", "from posix import system\n"),
+    ("star-imports", "cli/x.py", "from os import *\nsystem(cmd)\n"),
+    ("star-imports", "adapters/unifi/tls.py", "from ssl import *\n"),
+    ("star-imports", "cli/x.py", "from asyncio import *\n"),
+    ("star-imports", "cli/x.py", "from . import *\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.__loader__.load_module('posix')\n"),
+    ("dynamic-imports", "rf/x.py", "import re\nre.__spec__.loader\n"),
+    ("dynamic-imports", "cli/x.py", "breakpoint(cmd)\n"),
+    ("dynamic-imports", "rf/x.py", "import types\ntypes.FunctionType(__loader__.source_to_code(b'x', 'y'), {})()\n"),
+    ("dynamic-imports", "cli/x.py", "__spec__.loader\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nhook = sys.breakpointhook\n"),
+    ("dynamic-imports", "cli/x.py", "import sys\nsys.__breakpointhook__(cmd)\n"),
+    (
+        "shell-execution",
+        "adapters/ssh/openssh.py",
+        "loop._make_subprocess_transport(P, 'ls', True, None, None, None, 0)\n",
+    ),
+    ("shell-execution", "adapters/ssh/openssh.py", "from asyncio.unix_events import _UnixSubprocessTransport\n"),
+    ("shell-execution", "cli/x.py", "from asyncio import base_subprocess\n"),
+    ("shell-execution", "cli/x.py", "import asyncio.unix_events\n"),
+    ("shell-execution", "cli/x.py", "import asyncio\nasyncio.base_subprocess.BaseSubprocessTransport\n"),
+    ("shell-execution", "cli/x.py", "sh = loop.subprocess_shell\n"),
+    ("shell-execution", "cli/x.py", "import functools\nfunctools.partial(loop.subprocess_shell, P)\n"),
+    ("process-spawn-location", "cli/x.py", "ex = loop.subprocess_exec\n"),
+    ("process-spawn-location", "cli/x.py", "sh = loop.subprocess_shell\n"),
+    ("dynamic-imports", "cli/x.py", "len.__self__.exec(src)\n"),
+    ("dynamic-imports", "cli/x.py", "import os\nos.getcwd.__self__.system('ls')\n"),
+    ("dynamic-imports", "cli/x.py", "(i for i in ()).gi_frame.f_builtins['exec'](src)\n"),
+    ("dynamic-imports", "cli/x.py", "frame.f_globals['x']\n"),
+    ("dynamic-imports", "cli/x.py", "frame.f_locals['x']\n"),
+    ("shell-execution", "rf/x.py", "run = exec\nrun(src)\n"),
+    ("shell-execution", "cli/x.py", "e = eval\n"),
+    ("shell-execution", "cli/x.py", "import os\nrun = os.system\n"),
+    ("shell-execution", "cli/x.py", "import functools, os\nfunctools.partial(os.system, cmd)\n"),
     ("process-spawn-location", "cli/x.py", "import subprocess\n"),
     ("process-spawn-location", "cli/x.py", "import subprocess as sp\nsp.run(['ls'])\n"),
     ("process-spawn-location", "cli/x.py", "from subprocess import run\n"),
@@ -596,6 +834,11 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
     ("json-parse-location", "cli/x.py", "import json\njson.scanner.py_make_scanner(ctx)\n"),
     ("json-parse-location", "cli/x.py", "from json.decoder import scanstring\n"),
     ("json-parse-location", "cli/x.py", "import _json\n"),
+    ("json-parse-location", "cli/x.py", "import json\nparse = getattr(json, 'loads')\nparse(b'{}')\n"),
+    ("json-parse-location", "cli/x.py", "import json\nparse = vars(json)['loads']\n"),
+    ("json-parse-location", "cli/x.py", "import json\nj = json\nj.loads('{}')\n"),
+    ("json-parse-location", "cli/x.py", "import json\nparse = [json][0].loads\n"),
+    ("json-parse-location", "cli/x.py", "import json as j\nrun(j)\n"),
     ("ssl-location", "cli/x.py", "import ssl\n"),
     ("ssl-location", "adapters/ssh/openssh.py", "from ssl import create_default_context\n"),
     ("ssl-location", "app/x.py", "import ssl as s\n"),
@@ -702,6 +945,29 @@ GOOD_SNIPPETS: list[tuple[str, str, str]] = [
         "import hashlib\nimport json\nh = hashlib.sha256(json.dumps([o, s, m], sort_keys=True).encode()).hexdigest()\n",
     ),
     ("json-parse-location", "adapters/unifi/dump.py", "import json\np.write_bytes(json.dumps(d).encode('utf-8'))\n"),
+    ("json-parse-location", "cli/x.py", "def f(json: str) -> str:\n    return json\n"),
+    (
+        "dynamic-imports",
+        "cli/x.py",
+        "from importlib import resources\nfrom importlib.metadata import version\nresources.files(p)\n",
+    ),
+    ("dynamic-imports", "cli/x.py", "import sys\nprint(sys.argv, file=sys.stderr)\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.metadata\nimportlib.metadata.version('x')\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib import metadata, resources\nmetadata.version('x')\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.resources import files\nfiles(p)\n"),
+    ("dynamic-imports", "cli/x.py", "from importlib.resources import as_file, files\nas_file(files(p))\n"),
+    ("dynamic-imports", "cli/x.py", "import importlib.resources\nimportlib.resources.files(p)\n"),
+    ("shell-execution", "cli/x.py", "import os\nos.getcwd()\nos.environ.get('A')\n"),
+    ("star-imports", "cli/x.py", "from os import getcwd\nfrom . import util\n"),
+    ("dynamic-imports", "cli/x.py", "x = 'breakpoint in prose'\n# breakpoint() is not called here\n"),
+    (
+        "shell-execution",
+        "adapters/ssh/openssh.py",
+        "from asyncio import TimeoutError\nawait loop.subprocess_exec(P, 'ssh', 'h')\n",
+    ),
+    ("process-spawn-location", "adapters/ssh/openssh.py", "import asyncio\nloop.subprocess_exec(P, 'ssh')\n"),
+    ("shell-execution", "cli/x.py", "import asyncio\nasyncio.run(main())\n"),
+    ("dynamic-imports", "cli/x.py", "# __globals__ is not touched here\nx = 'about __globals__ in prose'\n"),
     ("json-parse-location", "report/json.py", "import json\ntext = json.JSONEncoder(indent=2).encode(x)\n"),
     (
         "json-parse-location",
