@@ -227,12 +227,10 @@ cmd_lower_bound() {
   require_uv
   local probe
   new_temp_dir probe
-  # The tests of the build helpers, the release workflow, the harness images and the documentation read scripts/,
-  # .github/, docker/, docs/, dev, the README and the config starters beside src/.
-  cp -R src tests scripts .github docker dev pyproject.toml .python-version README.md LICENSE config.example.yaml config.minimal.yaml "$probe/" ||
-    fail "could not copy the project into the probe directory"
-  mkdir "$probe/docs" || fail "could not create the probe documentation directory"
-  cp docs/*.md "$probe/docs/" || fail "could not copy the documentation into the probe directory"
+  # Tests read paths all over the tree, so the probe is the working tree minus what git ignores: tracked and
+  # new untracked files, never the local config.yaml. docs/img only carries binaries (14 MB) no test reads.
+  git ls-files -z --cached --others --exclude-standard -- . ':!docs/img' | tar --null -T - -cf - | tar -xf - -C "$probe" ||
+    fail "could not copy the working tree into the probe directory (needs a git checkout)"
   (
     cd "$probe" || exit 1
     export UV_RESOLUTION=lowest-direct
@@ -554,7 +552,7 @@ cmd_help() {
   printf "  %-20s %s\n" "test-integration" "pytest -m integration against the Docker harness"
   printf "  %-20s %s\n" "coverage" "unit tests with the hard coverage floor"
   printf "  %-20s %s\n" "coverage-layers" "per-layer soft targets over the unit + integration data"
-  printf "  %-20s %s\n" "lower-bound" "resolve direct dependencies at their floor on a throwaway copy"
+  printf "  %-20s %s\n" "lower-bound" "resolve direct dependencies at their floor on a throwaway copy of the working tree (git checkout)"
   printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt are current"
   printf "  %-20s %s\n" "lock-refresh" "recompile build-constraints.txt with hashes"
   printf "  %-20s %s\n" "licenses" "runtime dependency licenses against the allowlist"
