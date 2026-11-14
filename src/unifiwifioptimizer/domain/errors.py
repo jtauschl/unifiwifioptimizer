@@ -72,7 +72,10 @@ class ScanError(UwoError):
 
 
 class HostKeyUnknownError(ScanError):
-    """No host key is stored for the access point's alias; nothing was sent (run `trust-host-keys`)."""
+    """No host key is stored for the access point's alias; nothing was sent.
+
+    A terminal run asks to store it; otherwise run `trust-host-keys`.
+    """
 
 
 class HostKeyMismatchError(ScanError):

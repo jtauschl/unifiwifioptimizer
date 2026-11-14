@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.integration.local.race import swap_outcomes
-from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostEntry, KnownHostsStore
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostEntry, KnownHostsWriter
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
 
 pytestmark = pytest.mark.integration
@@ -21,7 +21,7 @@ ED25519_BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIGxVt7Hq4oY0q8u2f9KX8c1n7q9Lk8E6o1m4Hc5f
 
 @pytest.mark.security("T14")
 def test_first_write_creates_a_private_directory_and_file(tmp_path: Path) -> None:
-    store = KnownHostsStore(tmp_path / "state" / "unifiwifioptimizer" / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "state" / "unifiwifioptimizer" / "known_hosts")
     assert store.entries() == () and store.has_alias(ALIAS_A) is False
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     assert stat.S_IMODE(store.path.parent.stat().st_mode) == 0o700
@@ -33,7 +33,7 @@ def test_first_write_creates_a_private_directory_and_file(tmp_path: Path) -> Non
 
 @pytest.mark.security("T14")
 def test_adding_the_same_key_twice_is_idempotent_and_a_different_key_is_a_conflict(tmp_path: Path) -> None:
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     store.add(KnownHostEntry(ALIAS_B, "ssh-rsa", ED25519_BLOB))
@@ -48,7 +48,7 @@ def test_adding_the_same_key_twice_is_idempotent_and_a_different_key_is_a_confli
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o604])
 @pytest.mark.security("T14")
 def test_a_store_readable_by_others_is_refused(tmp_path: Path, mode: int) -> None:
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     store.path.chmod(mode)
     with pytest.raises(ConfigError, match="accessible to other users"):
@@ -60,7 +60,7 @@ def test_a_store_readable_by_others_is_refused(tmp_path: Path, mode: int) -> Non
 def test_a_directory_writable_by_others_is_refused(tmp_path: Path, mode: int) -> None:
     directory = tmp_path / "dir"
     directory.mkdir(mode=0o700)
-    store = KnownHostsStore(directory / "known_hosts")
+    store = KnownHostsWriter(directory / "known_hosts")
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     directory.chmod(mode)
     try:
@@ -82,16 +82,16 @@ def test_symlinked_file_and_directory_are_refused(tmp_path: Path) -> None:
     link = real_dir / "known_hosts"
     link.symlink_to(target)
     with pytest.raises(ConfigError, match="cannot open"):
-        KnownHostsStore(link).entries()
+        KnownHostsWriter(link).entries()
     dir_link = tmp_path / "dirlink"
     dir_link.symlink_to(real_dir)
     with pytest.raises(ConfigError, match="cannot open directory"):
-        KnownHostsStore(dir_link / "other").entries()
+        KnownHostsWriter(dir_link / "other").entries()
 
 
 @pytest.mark.security("T14")
 def test_a_file_this_tool_did_not_write_is_refused_not_interpreted(tmp_path: Path) -> None:
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     store.path.write_text(f"192.168.1.20 ssh-ed25519 {ED25519_BLOB}\n")
     store.path.chmod(0o600)
     with pytest.raises(ConfigError, match=r"line 1.*not an entry this tool wrote"):
@@ -104,12 +104,12 @@ def test_a_file_this_tool_did_not_write_is_refused_not_interpreted(tmp_path: Pat
         store.entries()
     os.mkfifo(tmp_path / "fifo", 0o600)
     with pytest.raises(ConfigError, match=r"cannot open|not a regular file"):
-        KnownHostsStore(tmp_path / "fifo").entries()
+        KnownHostsWriter(tmp_path / "fifo").entries()
 
 
 @pytest.mark.security("T14")
 def test_removing_the_last_entry_by_hand_leaves_a_usable_empty_store(tmp_path: Path) -> None:
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     store.path.write_text("")
     assert store.entries() == () and store.has_alias(ALIAS_A) is False
@@ -125,7 +125,7 @@ def test_removing_the_last_entry_by_hand_leaves_a_usable_empty_store(tmp_path: P
 def test_concurrent_writers_never_lose_an_entry(tmp_path: Path, round_number: int) -> None:
     # Repeated on purpose: Darwin's openat(O_CREAT) raced against concurrent creators roughly one round in
     # five before the lock was created with O_EXCL.
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     aliases = ["uwo-" + f"{i:02x}" * 16 for i in range(12)]
     errors: list[BaseException] = []
 
@@ -149,7 +149,7 @@ def test_concurrent_writers_never_lose_an_entry(tmp_path: Path, round_number: in
 def test_a_store_owned_by_someone_else_is_refused_for_reading_and_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = KnownHostsStore(tmp_path / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "known_hosts")
     store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     someone_else = os.getuid() + 1
     monkeypatch.setattr(os, "getuid", lambda: someone_else)
@@ -167,7 +167,7 @@ def test_a_symlinked_lock_file_or_store_file_refuses_the_write(tmp_path: Path) -
     decoy.write_text("")
     decoy.chmod(0o600)
     (directory / "known_hosts.lock").symlink_to(decoy)
-    store = KnownHostsStore(directory / "known_hosts")
+    store = KnownHostsWriter(directory / "known_hosts")
     with pytest.raises(ConfigError, match="cannot open lock"):
         store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     assert decoy.read_text() == "" and not (directory / "known_hosts").exists()
@@ -183,7 +183,7 @@ def test_a_store_directory_that_cannot_be_created_is_a_configuration_error(tmp_p
     blocker = tmp_path / "state"
     blocker.write_text("")
     with pytest.raises(ConfigError, match="cannot create directory"):
-        KnownHostsStore(blocker / "known_hosts").add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
+        KnownHostsWriter(blocker / "known_hosts").add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
 
 
 @pytest.mark.parametrize("case", ["file", "directory"])
@@ -198,10 +198,10 @@ def test_a_swap_of_the_store_between_check_and_read_never_yields_the_attackers_e
     attacker_entry = KnownHostEntry(ALIAS_B, "ssh-ed25519", ED25519_BLOB)
     attacker_line = f"{ALIAS_B} ssh-ed25519 {ED25519_BLOB}\n"
 
-    def fresh() -> tuple[KnownHostsStore, Callable[[], None]]:
+    def fresh() -> tuple[KnownHostsWriter, Callable[[], None]]:
         base = tmp_path / f"run-{os.urandom(4).hex()}"
         base.mkdir(mode=0o700)
-        store = KnownHostsStore(base / "state" / "known_hosts")
+        store = KnownHostsWriter(base / "state" / "known_hosts")
         store.add(original)
         if case == "file":
             attacker = base / "attacker"
@@ -223,7 +223,7 @@ def test_a_swap_of_the_store_between_check_and_read_never_yields_the_attackers_e
 
         return store, swap
 
-    stores: dict[Path, KnownHostsStore] = {}
+    stores: dict[Path, KnownHostsWriter] = {}
 
     def fresh_path() -> tuple[Path, Callable[[], None]]:
         store, swap = fresh()
@@ -234,3 +234,91 @@ def test_a_swap_of_the_store_between_check_and_read_never_yields_the_attackers_e
         swap_outcomes(monkeypatch, fresh_path, lambda p: stores[p].entries(), (original,)), start=1
     ):
         assert outcome != (attacker_entry,), f"swap after call {k} ({case})"
+
+
+OTHER_BLOB = ED25519_BLOB[:-4] + "ZZZZ"
+THIRD_BLOB = ED25519_BLOB[:-4] + "YYYY"
+
+
+@pytest.mark.security("T8", "T14")
+def test_replace_swaps_only_the_named_alias_and_keeps_the_other_lines_in_order(tmp_path: Path) -> None:
+    store = KnownHostsWriter(tmp_path / "known_hosts")
+    first = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
+    second = KnownHostEntry(ALIAS_B, "ssh-rsa", ED25519_BLOB)
+    store.add(first)
+    store.add(second)
+    new = KnownHostEntry(ALIAS_A, "ssh-ed25519", OTHER_BLOB)
+    store.replace(new, first)
+    assert store.path.read_text() == f"{new.line}\n{second.line}\n"
+    assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
+    assert sorted(p.name for p in store.path.parent.iterdir()) == ["known_hosts", "known_hosts.lock"]
+
+
+@pytest.mark.security("T8", "T14")
+def test_replace_is_idempotent_and_refuses_a_key_other_than_the_one_that_was_shown(tmp_path: Path) -> None:
+    store = KnownHostsWriter(tmp_path / "known_hosts")
+    old = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
+    new = KnownHostEntry(ALIAS_A, "ssh-ed25519", OTHER_BLOB)
+    store.add(old)
+    store.replace(new, old)
+    before = store.path.read_bytes()
+    store.replace(new, old)
+    assert store.path.read_bytes() == before
+    with pytest.raises(HostKeyTrustError, match="changed since it was shown"):
+        store.replace(KnownHostEntry(ALIAS_A, "ssh-ed25519", THIRD_BLOB), old)
+    assert store.path.read_bytes() == before
+
+
+@pytest.mark.security("T8", "T14")
+def test_replace_refuses_an_absent_alias_and_an_alias_with_two_lines(tmp_path: Path) -> None:
+    path = tmp_path / "known_hosts"
+    store = KnownHostsWriter(path)
+    entry = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
+    new = KnownHostEntry(ALIAS_A, "ssh-ed25519", OTHER_BLOB)
+    with pytest.raises(HostKeyTrustError, match="0 entries are stored"):
+        store.replace(new, entry)
+    assert not path.exists() or path.read_bytes() == b""
+    path.write_text(f"{entry.line}\n{ALIAS_A} ssh-rsa {THIRD_BLOB}\n")
+    path.chmod(0o600)
+    before = path.read_bytes()
+    with pytest.raises(HostKeyTrustError, match="2 entries are stored"):
+        store.replace(new, entry)
+    assert path.read_bytes() == before
+    with pytest.raises(HostKeyTrustError, match="different host key is already stored"):
+        store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", THIRD_BLOB))
+
+
+@pytest.mark.security("T14")
+def test_replace_keeps_the_ownership_and_permission_checks(tmp_path: Path) -> None:
+    store = KnownHostsWriter(tmp_path / "known_hosts")
+    old = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
+    store.add(old)
+    store.path.chmod(0o644)
+    with pytest.raises(ConfigError, match="accessible to other users"):
+        store.replace(KnownHostEntry(ALIAS_A, "ssh-ed25519", OTHER_BLOB), old)
+
+
+@pytest.mark.security("T13")
+def test_concurrent_replaces_of_one_alias_leave_exactly_one_entry_with_one_winner(tmp_path: Path) -> None:
+    store = KnownHostsWriter(tmp_path / "known_hosts")
+    old = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
+    store.add(old)
+    store.add(KnownHostEntry(ALIAS_B, "ssh-rsa", ED25519_BLOB))
+    candidates = [KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB[:-4] + f"{n:04d}") for n in range(8)]
+    outcomes: list[object] = []
+
+    def attempt(entry: KnownHostEntry) -> None:
+        try:
+            store.replace(entry, old)
+            outcomes.append("replaced")
+        except HostKeyTrustError:
+            outcomes.append("refused")
+
+    threads = [threading.Thread(target=attempt, args=(c,)) for c in candidates]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert outcomes.count("replaced") == 1 and outcomes.count("refused") == len(candidates) - 1
+    assert [e.alias for e in store.entries()] == [ALIAS_A, ALIAS_B]
+    assert store.entry(ALIAS_A) in candidates

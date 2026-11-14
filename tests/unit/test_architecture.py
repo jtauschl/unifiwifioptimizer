@@ -73,6 +73,11 @@ CORE_ALLOWED_STDLIB = frozenset(
 SUBPROCESS_ALLOWED = frozenset({"adapters/ssh/openssh.py", "adapters/ssh/hostkeys.py"})
 JSON_ALLOWED = frozenset({"adapters/unifi/client.py"})
 SSL_ALLOWED = frozenset({"adapters/unifi/tls.py"})
+# The only type that changes the host-key store: the trust step, the composition root that builds it, and its
+# own module. The scan sees a read-only view and cannot name the writer.
+HOSTKEYS_MODULE = "unifiwifioptimizer.adapters.ssh.hostkeys"
+STORE_WRITER = f"{HOSTKEYS_MODULE}.KnownHostsWriter"
+STORE_WRITER_ALLOWED = frozenset({"app/trust.py", "cli/main.py", "adapters/ssh/hostkeys.py"})
 TLS_BYPASS_ALLOWED = ("adapters/unifi/tls.py", "PinnedHTTPSConnection", "__init__")
 
 # `breakpoint` runs whatever PYTHONBREAKPOINT names, the entry point does not isolate the environment.
@@ -516,6 +521,29 @@ def check_ssl_location(tree: ast.Module, relpath: str) -> list[str]:
     ]
 
 
+def check_store_writer_location(tree: ast.Module, relpath: str) -> list[str]:
+    if relpath in STORE_WRITER_ALLOWED:
+        return []
+    aliases = aliases_of(tree, relpath)
+    found = [
+        "imports KnownHostsWriter"
+        for module, names in imported_modules(tree, relpath)
+        if module == HOSTKEYS_MODULE and "KnownHostsWriter" in names
+    ]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name | ast.Attribute) and STORE_WRITER in qualified_names(node, aliases):
+            found.append("references KnownHostsWriter")
+    found.extend(modules_used_as_values(tree, aliases, frozenset({HOSTKEYS_MODULE})))
+    # A dotted path handed to `importlib` or `getattr` names the module or the class as a string; the
+    # dynamic-import gate closes the machinery, this closes the claim by itself.
+    found.extend(
+        f"names {node.value!r} as a string"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and node.value in {HOSTKEYS_MODULE, STORE_WRITER}
+    )
+    return found
+
+
 def check_tls_bypass_confinement(tree: ast.Module, relpath: str) -> list[str]:
     aliases = aliases_of(tree, relpath)
     allowed_file, allowed_class, allowed_function = TLS_BYPASS_ALLOWED
@@ -586,6 +614,7 @@ CHECKERS: dict[str, Checker] = {
     "shell-execution": check_shell_execution,
     "json-parse-location": check_json_parse_location,
     "ssl-location": check_ssl_location,
+    "store-writer-location": check_store_writer_location,
     "tls-bypass-confinement": check_tls_bypass_confinement,
 }
 
@@ -889,6 +918,36 @@ BAD_SNIPPETS: list[tuple[str, str, str]] = [
 ]
 
 
+BAD_SNIPPETS += [
+    (
+        "store-writer-location",
+        "adapters/ssh/openssh.py",
+        "from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsWriter\n",
+    ),
+    ("store-writer-location", "adapters/ssh/openssh.py", "from .hostkeys import KnownHostsWriter as W\nW(p)\n"),
+    (
+        "store-writer-location",
+        "app/run.py",
+        "from unifiwifioptimizer.adapters.ssh import hostkeys as h\nstore = h.KnownHostsWriter(path)\n",
+    ),
+    (
+        "store-writer-location",
+        "app/run.py",
+        "from unifiwifioptimizer.adapters.ssh import hostkeys\ncls = getattr(hostkeys, 'KnownHostsWriter')\n",
+    ),
+    (
+        "store-writer-location",
+        "app/run.py",
+        "import unifiwifioptimizer.adapters.ssh.hostkeys as hk\nclass Mine(hk.KnownHostsWriter):\n    pass\n",
+    ),
+    (
+        "store-writer-location",
+        "app/run.py",
+        "import importlib\nK = importlib.import_module('unifiwifioptimizer.adapters.ssh.hostkeys').KnownHostsWriter\n",
+    ),
+]
+
+
 @pytest.mark.parametrize(("checker_name", "relpath", "snippet"), BAD_SNIPPETS)
 def test_checker_rejects_known_bad_snippet(checker_name: str, relpath: str, snippet: str) -> None:
     assert CHECKERS[checker_name](ast.parse(snippet), relpath) != []
@@ -1024,6 +1083,31 @@ GOOD_SNIPPETS: list[tuple[str, str, str]] = [
         "tls-bypass-confinement",
         "adapters/unifi/tls.py",
         "import ssl\nctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\nctx.minimum_version = ssl.TLSVersion.TLSv1_2\n",
+    ),
+]
+
+
+GOOD_SNIPPETS += [
+    (
+        "store-writer-location",
+        "app/trust.py",
+        "from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsWriter\nKnownHostsWriter(p)\n",
+    ),
+    (
+        "store-writer-location",
+        "cli/main.py",
+        "from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsWriter\nKnownHostsWriter(p)\n",
+    ),
+    (
+        "store-writer-location",
+        "adapters/ssh/openssh.py",
+        "from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsReader, KnownHostsStore\n"
+        "def f(r: KnownHostsReader) -> None:\n    r.has_alias('x')\n",
+    ),
+    (
+        "store-writer-location",
+        "app/run.py",
+        "from unifiwifioptimizer.adapters.ssh import hostkeys\nhostkeys.default_store_path(e)\n",
     ),
 ]
 

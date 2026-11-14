@@ -383,7 +383,7 @@ def test_an_unknown_alias_ends_the_call_before_any_process_is_started() -> None:
         FakeStore(set()), process_factory=lambda a, e: FakeProcess(OK_OUTPUT), askpass=ASKPASS, script=SCRIPT,
         environ=ENVIRON, version_check=lambda: checks.append(1),
     )  # fmt: skip
-    with pytest.raises(HostKeyUnknownError, match="run `trust-host-keys` first"):
+    with pytest.raises(HostKeyUnknownError, match="run `trust-host-keys` or run again in a terminal"):
         scanner.scan(target())
     # Neither the connection process nor the `ssh -V` probe runs for an alias nobody trusted.
     assert checks == []

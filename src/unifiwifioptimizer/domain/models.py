@@ -138,7 +138,7 @@ class AccessPoint:
     radio_stats: tuple[RadioStats, ...]
     vaps: tuple[Vap, ...]
     # `x_ssh_hostkey_fingerprint` as the controller reports it (SHA256:… or MD5 colon-hex), None when the
-    # controller has not learnt the key; compared, never trusted, by `trust-host-keys`.
+    # controller has not learnt the key; compared, never trusted, by the trust step.
     ssh_host_key_fingerprint: str | None
 
     @property

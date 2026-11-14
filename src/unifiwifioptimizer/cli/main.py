@@ -14,17 +14,18 @@ from pathlib import Path
 
 from unifiwifioptimizer import __version__
 from unifiwifioptimizer.adapters.clock import SystemClock
-from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, default_store_path
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, KnownHostsWriter, default_store_path
 from unifiwifioptimizer.adapters.ssh.openssh import OpenSshScanner, check_openssh_version
 from unifiwifioptimizer.adapters.unifi.client import UnifiClient
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.adapters.unifi.tls import TlsPolicy, observe_fingerprint
 from unifiwifioptimizer.app import use_cases
 from unifiwifioptimizer.app.run import RunResult, RunVerdict, run_analysis
-from unifiwifioptimizer.app.trust import trust_host_keys
+from unifiwifioptimizer.app.trust import TrustPolicy, TrustResult, TrustSubject, check_host_keys, trust_host_keys
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.cli.progress import StderrProgress
+from unifiwifioptimizer.cli.prompt import can_ask, terminal_confirm
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
 from unifiwifioptimizer.config.locations import ConfigLocation, default_config_path, resolve_config_location
 from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
@@ -119,12 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument(
                 "--yes",
                 action="store_true",
-                help="store keys that match the configuration pin or the controller without asking",
+                help="store or replace keys that match the configuration pin or the controller without asking",
             )
             sub.add_argument(
                 "--accept-unverified",
                 action="store_true",
-                help="store keys nothing can verify (trust on first use) without asking",
+                help="store new keys nothing can verify (trust on first use) without asking; never replaces a key",
             )
             _add_known_hosts_option(sub)
     return parser
@@ -139,8 +140,8 @@ def _add_known_hosts_option(sub: argparse.ArgumentParser) -> None:
     )
 
 
-def _known_hosts_store(args: argparse.Namespace, environ: Mapping[str, str]) -> KnownHostsStore:
-    return KnownHostsStore(args.known_hosts if args.known_hosts is not None else default_store_path(environ))
+def _known_hosts_path(args: argparse.Namespace, environ: Mapping[str, str]) -> Path:
+    return args.known_hosts if args.known_hosts is not None else default_store_path(environ)
 
 
 def _client(loaded: LoadedConfig, args: argparse.Namespace) -> tuple[UnifiClient, DumpWriter | None]:
@@ -236,27 +237,34 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
     loaded = load_config(args.config_file)
     _warn_legacy(loaded)
     client, _ = _client(loaded, args)
-    store = _known_hosts_store(args, os.environ)
-
-    def confirm(question: str) -> bool:
-        if not sys.stdin.isatty():
-            print(
-                f"{PROG}: {safe_text(question, max_chars=MAX_ERROR_CHARS)} — no terminal to ask; declined",
-                file=sys.stderr,
-            )
-            return False
-        answer = input(f"{safe_text(question, max_chars=MAX_ERROR_CHARS)} [y/N] ")
-        return answer.strip().lower() in ("y", "yes")
-
+    writer = KnownHostsWriter(_known_hosts_path(args, os.environ))
     report = trust_host_keys(
-        client, loaded, store, args.site, args.ap,
-        assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=confirm,
+        client, loaded, writer, args.site, args.ap,
+        assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=terminal_confirm,
     )  # fmt: skip
     for result in report.results:
-        basis = f" ({result.basis})" if result.basis is not None else ""
-        detail = f" {result.detail}" if result.detail else ""
-        print(safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}", max_chars=MAX_ERROR_CHARS))
+        print(_result_line(result))
     return ExitCode.HOST_KEY if report.failed else ExitCode.OK
+
+
+def _result_line(result: TrustResult) -> str:
+    basis = f" ({result.basis})" if result.basis is not None else ""
+    detail = f" {result.detail}" if result.detail else ""
+    return safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}", max_chars=MAX_ERROR_CHARS)
+
+
+def _host_key_gate(args: argparse.Namespace, environ: Mapping[str, str]) -> Callable[[Sequence[TrustSubject]], None]:
+    """The questions a scanning `run` asks before its first scan; the answers come from the terminal only."""
+    writer = KnownHostsWriter(_known_hosts_path(args, environ))
+    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=terminal_confirm)
+
+    def gate(subjects: Sequence[TrustSubject]) -> None:
+        print(f"{PROG}: checking host keys...", file=sys.stderr)
+        check_host_keys(
+            subjects, writer, policy, lambda result: print(f"{PROG}: {_result_line(result)}", file=sys.stderr)
+        )
+
+    return gate
 
 
 def _warn_legacy(loaded: LoadedConfig) -> None:
@@ -286,7 +294,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
             loaded,
             profiles,
             client,
-            lambda: OpenSshScanner(_known_hosts_store(args, environ), environ=environ),
+            lambda: OpenSshScanner(KnownHostsStore(_known_hosts_path(args, environ)), environ=environ),
             SystemClock(),
             time.sleep,
             progress,
@@ -295,6 +303,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
             skip_scan=args.no_scan,
             extended=args.extended,
             environment_check=lambda: check_openssh_version(environ),
+            host_key_gate=_host_key_gate(args, environ) if _can_ask_host_keys(args) else None,
         )
     finally:
         progress.finish()
@@ -308,6 +317,11 @@ def _run(args: argparse.Namespace) -> ExitCode:
         for report in result.reports:
             print(paint(render_report(report) if args.details else render_overview(report)), end="")
     return exit_code_for_run(result)
+
+
+def _can_ask_host_keys(args: argparse.Namespace) -> bool:
+    # A report on stdout that is piped or redirected, or a pager, competes with the question for the terminal.
+    return not args.no_scan and can_ask() and sys.stdout.isatty()
 
 
 def exit_code_for_run(result: RunResult) -> ExitCode:

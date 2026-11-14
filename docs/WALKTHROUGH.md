@@ -191,13 +191,13 @@ The Handoff Suggestions threshold depends on how strongly the access points hear
 
 ## 5. Trust the Access Points' Host Keys and Scan
 
-The scan connects to every access point over SSH and refuses one whose host key it does not know. Store the keys once; the command asks per access point before it stores a key:
+The scan connects to every access point over SSH and refuses one whose host key it does not know. In a terminal, `run` asks per access point before the first scan whether to store the key. Without a terminal, store the keys beforehand; the command asks per access point before it stores a key:
 
 ```bash
 unifiwifioptimizer trust-host-keys --site default
 ```
 
-Then run the full analysis. Scans run one access point at a time and take a while:
+Run the full analysis. Scans run one access point at a time and take a while:
 
 ```bash
 unifiwifioptimizer run

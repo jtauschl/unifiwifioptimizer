@@ -81,7 +81,7 @@ Check the installation with `unifiwifioptimizer --version`. Upgrade with `uv too
    - The `ROAM_OFFSET_DB`, `ROAM_MARGIN_DB`, `ROAM_FLOOR` and `ROAM_CEILING` environment variables are replaced by `rf.roam_offset_db`, `rf.roam_margin_db`, `rf.roam_floor_dbm` and `rf.roam_ceiling_dbm`. The floor and ceiling defaults moved from −78/−67 dBm to −75/−65 dBm, and both now bound the client-side trigger before it is converted to the uplink value UniFi applies ([docs/ALGORITHM.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/ALGORITHM.md) §7), so re-derive a value you had tuned instead of copying it. See [Configuration](https://github.com/jtauschl/unifiwifioptimizer#configuration).
    - Boolean values in YAML are `true` and `false` only; `yes`, `no`, `on` and `off` are plain strings.
    - A U6 Lite needs `ssh.scan_interface_toggle: true`; the toggle is off by default now.
-5. **Trust the access points' host keys once**: `unifiwifioptimizer trust-host-keys --site <site-id>`. A scan refuses an access point whose key it does not know.
+5. **Host keys**: in a terminal, `run` asks before the first scan whether to store the key of an access point it does not know or whose key changed. For a run without a terminal, store the keys beforehand with `unifiwifioptimizer trust-host-keys --site <site-id>`. A scan itself refuses an access point whose key it does not know.
 
 ## Workflow
 
@@ -124,14 +124,14 @@ For a complete step-by-step example, see [docs/WALKTHROUGH.md](https://github.co
    unifiwifioptimizer run --no-scan
    ```
 
-7. Store the access points' SSH host keys once, then run the full analysis:
+7. Run the full analysis. In a terminal, `run` asks per access point before the first scan whether to store a missing host key or replace a changed one; the question names the site and the access point, the fingerprint and what verified it (your pin, the fingerprint the controller reports, or nothing). A replace shows the old and the new key and needs the first eight characters of the new key's SHA-256 typed. A refusal or a "no" changes nothing and the scan reports that access point as before. For a run without a terminal (cron, a pipe, a redirected report), store the keys beforehand:
 
    ```bash
    unifiwifioptimizer trust-host-keys --site <site-id>
    unifiwifioptimizer run
    ```
 
-   `trust-host-keys` asks per access point before it stores a key. `--yes` skips the question for a key that matches a configured pin or the fingerprint the controller reports; `--accept-unverified` skips it for a key nothing can verify (trust on first use). Without a terminal it declines every question it would ask, so only keys covered by `--yes` or `--accept-unverified` are stored; a declined key does not change the exit code. It exits 5 when an access point failed (a key that does not match or differs from the stored one, a public address, a failed key scan); a name that is not on the controller is reported and exits 0.
+   `trust-host-keys` asks per access point before it stores a key or replaces a different stored one. `--yes` skips the question for a key that matches a configured pin or the fingerprint the controller reports, a replace included; `--accept-unverified` skips it for a new key nothing can verify (trust on first use) and never replaces a stored key. Without a terminal it declines every question it would ask, so only keys covered by `--yes` or `--accept-unverified` are stored; a declined key does not change the exit code. It exits 5 when an access point failed (a key that does not match or differs from the stored one, a public address, a failed key scan); a name that is not on the controller is reported and exits 0.
 
 8. Establish a channel baseline with Channel AI, or inspect the optional `run --extended` candidate proposal after a scan.
 9. Fix per-WLAN profile deviations first.
@@ -168,7 +168,7 @@ unifiwifioptimizer run --extended         # add a bounded, read-only site-wide c
 unifiwifioptimizer run --details          # full WLAN, RF and per-radio evidence
 ```
 
-`--no-scan` is the natural first run: it needs no SSH access and no stored host keys. A scanning run needs `trust-host-keys` first and OpenSSH 8.4 or newer on the host. By default scans run site after site and access point after access point (`ssh.scan_concurrency` allows more at once); an access point the controller reports as disconnected is not contacted.
+`--no-scan` is the natural first run: it needs no SSH access and no stored host keys. A scanning run needs the access points' host keys (the question in a terminal, or `trust-host-keys` first) and OpenSSH 8.4 or newer on the host. Each run checks the stored keys with one extra connection per access point before the first scan; an access point that does not answer delays the start by up to a minute. By default scans run site after site and access point after access point (`ssh.scan_concurrency` allows more at once); an access point the controller reports as disconnected is not contacted.
 
 The text report lists the WLANs with their settings as the controller UI shows them, then every access point's radios (channel width, channel, transmit power, Minimum RSSI), the RF notes and the gaps in the evidence. `--details` prints the complete report, including every neighbour reading and RF assumption. `--json` keeps its schema and is not affected by `--details`. An interactive terminal shows scan progress on one updating stderr line; redirected output shows only site milestones and failures.
 
@@ -313,7 +313,7 @@ For the settings of every profile and the reasoning behind them, see [docs/PROFI
 ## Security Notes
 
 - **TLS is always verified.** There is no switch to turn it off. A self-signed controller certificate is accepted only when you pin its fingerprint (`controller.cert_fingerprint`) or give its CA (`controller.ca_cert`).
-- **SSH host keys are always verified.** The tool keeps its own `known_hosts` (`$XDG_STATE_HOME/unifiwifioptimizer/known_hosts`), a scan never adds a key, and `trust-host-keys` is the only way to store one.
+- **SSH host keys are always verified.** The tool keeps its own `known_hosts` (`$XDG_STATE_HOME/unifiwifioptimizer/known_hosts`), a scan never adds a key, and a key is stored or replaced only through the trust step: `trust-host-keys`, or the question `run` asks in a terminal.
 - **Secrets stay out of arguments, logs and temporary files.** The SSH password reaches `ssh` only through `SSH_ASKPASS`; the configuration file must be private (`0600`).
 - The tool performs `GET` requests against the controller and no write; on an access point it runs one scan script and, only with `scan_interface_toggle: true`, brings a scan interface up and down.
 

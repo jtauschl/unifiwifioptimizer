@@ -35,7 +35,8 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - A derived value outside the accepted range moves to the nearer end; the report and the JSON (`derived_dbm`) name the derived value.
 - New subcommand `init` creates the configuration file interactively and never overwrites one.
 - New subcommand `controller-fingerprint [--url URL]` prints the controller's certificate fingerprint for pinning.
-- New subcommand `trust-host-keys --site ID [--ap NAME]... [--yes] [--accept-unverified]` stores the access points' SSH host keys after verifying them.
+- New subcommand `trust-host-keys --site ID [--ap NAME]... [--yes] [--accept-unverified]` stores the access points' SSH host keys after verifying them and replaces a changed one on a verified basis or after you typed the first eight characters of the new key's SHA-256.
+- In a terminal, `run` asks before its first scan whether to store a missing host key or replace a changed one; a "no", a refusal or a missing terminal leaves the store alone, and the scan still never adds a key.
 - `config --profiles` prints the effective WLAN profiles with their evidence annotations.
 - Global options: `--config-file PATH`, `--profiles-file PATH` and `--dump-api DIR` (models with secrets masked, plus counts of unused fields).
 - `run` and `trust-host-keys` take `--known-hosts PATH` for the host-key store.
@@ -102,7 +103,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 ### Changed
 - `run` prints the WLANs first, then each access point's radios, the RF notes and the limits of the data; `--details` prints the complete report.
 - **Breaking:** TLS certificates are always verified; a controller with a self-signed certificate fails with exit 4. Set `controller.cert_fingerprint` or `controller.ca_cert` ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#tls-certificates)).
-- **Breaking:** SSH host keys are always verified; run `trust-host-keys --site <site-id>` once per site before scanning ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#ssh-host-keys)).
+- **Breaking:** SSH host keys are always verified; answer the question `run` asks in a terminal, or run `trust-host-keys --site <site-id>` once per site before an unattended scan ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#ssh-host-keys)).
 - **Breaking:** the Bash tool, `install.sh`, Ruby and `sshpass` are gone; install with `uv tool install unifiwifioptimizer` (Python 3.11, OpenSSH 8.4). Move your configuration first ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#installation)).
 - **Breaking:** the command line is subcommand-based; the analysis is `unifiwifioptimizer run` and usage errors exit 2. Update scripts and cron entries ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#command-line)).
 - **Breaking:** the configuration file is `~/.config/unifiwifioptimizer/config.yaml` or `--config-file`, mode `0600`. Move it and `chmod 600` it ([migration](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/MIGRATION.md#configuration-file)).

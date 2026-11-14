@@ -2,6 +2,7 @@
 
 Everything that can refuse the run happens before the first scan: the environment (OpenSSH) when a site
 scans, the scan passwords, every site's existence, every snapshot, every site's credentials and targets.
+With a terminal, the host-key questions come next (`host_key_gate`), once, for every target of every site.
 Then the sites are scanned one after the other (access points serial within a site, docs/ALGORITHM.md §2) and
 analysed. The outcome per site is typed; the command line maps it onto exit codes.
 """
@@ -14,6 +15,7 @@ from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.app.scanning import ScanOrchestrator, build_targets, configured_access_points
 from unifiwifioptimizer.app.snapshot import build_snapshot
+from unifiwifioptimizer.app.trust import TrustSubject, subject_for_target
 from unifiwifioptimizer.app.use_cases import resolve_site
 from unifiwifioptimizer.config.load import LoadedConfig, require_scan_passwords
 from unifiwifioptimizer.config.schema import SiteConfig
@@ -31,6 +33,7 @@ from unifiwifioptimizer.ports.scanner import Scanner
 Sleep = Callable[[float], None]
 ScannerFactory = Callable[[], Scanner]
 EnvironmentCheck = Callable[[], object]
+HostKeyGate = Callable[[Sequence[TrustSubject]], None]
 
 
 class RunVerdict(StrEnum):
@@ -117,6 +120,7 @@ def run_analysis(
     skip_scan: bool = False,
     extended: bool = False,
     environment_check: EnvironmentCheck | None = None,
+    host_key_gate: HostKeyGate | None = None,
 ) -> RunResult:
     selected = select_sites(loaded, sites)
     scanning_sites = [s for s in selected if s.scans and not skip_scan]
@@ -141,6 +145,16 @@ def run_analysis(
                 site=site, config=site_cfg, snapshot=snapshot, targets=targets, unknown_names=unknown, scanning=scanning
             )
         )
+    if host_key_gate is not None:
+        # After every site is prepared: a configuration error in a later site must not follow a store write.
+        subjects = [
+            subject_for_target(target, access_points[target.ap_mac], item.config)
+            for item in prepared
+            for access_points in [{ap.mac: ap for ap in item.snapshot.access_points}]
+            for target in item.targets
+        ]
+        if subjects:
+            host_key_gate(subjects)
     orchestrator = ScanOrchestrator(scanner_factory(), sleep) if scanning_sites else None
     reports: list[SiteReport] = []
     outcomes: list[SiteOutcome] = []

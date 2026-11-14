@@ -1,16 +1,19 @@
 """`trust-host-keys` through `main`: arguments, confirmation wiring, exit codes, no raw strings on the terminal."""
 
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from tests.unit.test_cli_commands import SCANNING_SITE, FixtureApi, configured, loaded
-from unifiwifioptimizer.adapters.ssh.hostkeys import TrustBasis
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsWriter, TrustBasis
+from unifiwifioptimizer.app.run import RunResult
 from unifiwifioptimizer.app.trust import TrustOutcome, TrustReport, TrustResult
 from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.cli.exit_codes import ExitCode
+from unifiwifioptimizer.cli.prompt import terminal_confirm
 from unifiwifioptimizer.domain.errors import HostKeyTrustError
 
 
@@ -67,25 +70,15 @@ def test_trust_host_keys_wires_arguments_prints_each_result_and_exits_5_on_a_fai
 
 
 @pytest.mark.security("T8")
-def test_trust_host_keys_defaults_to_the_xdg_store_and_asks_through_the_terminal(
-    wired: dict[str, object], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_trust_host_keys_defaults_to_the_xdg_store_and_asks_through_the_terminal_prompt(
+    wired: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", "/xdg-state")
     assert cli.main(["trust-host-keys", "--site", "default", "--accept-unverified"]) == ExitCode.HOST_KEY
     assert str(getattr(wired["store"], "path", "")) == "/xdg-state/unifiwifioptimizer/known_hosts"
     assert wired["accept_unverified"] is True and wired["assume_yes"] is False
-    confirm = wired["confirm"]
-    assert callable(confirm)
-    # Without a terminal the question is printed and declined — never answered by default.
-    monkeypatch.setattr("sys.stdin", type("NoTty", (), {"isatty": staticmethod(lambda: False)})())
-    assert confirm("AP-1: store key\x1b[31m?") is False
-    err = capsys.readouterr().err
-    assert "no terminal to ask; declined" in err and "\x1b" not in err
-    monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": staticmethod(lambda: True)})())
-    monkeypatch.setattr("builtins.input", lambda prompt: "y")
-    assert confirm("AP-1: store key?") is True
-    monkeypatch.setattr("builtins.input", lambda prompt: "")
-    assert confirm("AP-1: store key?") is False
+    assert wired["confirm"] is terminal_confirm
+    assert type(wired["store"]) is KnownHostsWriter
 
 
 def test_trust_host_keys_requires_the_site_option() -> None:
@@ -125,3 +118,80 @@ def test_trust_host_keys_exits_7_when_ssh_keyscan_is_missing(
         == ExitCode.ENVIRONMENT
     )
     assert "ssh-keyscan not found" in capsys.readouterr().err
+
+
+# --- the host-key gate of `run` ---------------------------------------------------------------------------------
+
+
+class Stream:
+    def __init__(self, tty: bool) -> None:
+        self._tty = tty
+        self.written: list[str] = []
+
+    def isatty(self) -> bool:
+        return self._tty
+
+    def write(self, text: str) -> int:
+        self.written.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+
+@pytest.fixture
+def gate_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    seen: dict[str, object] = {}
+
+    def record(*args: object, **kwargs: object) -> RunResult:
+        seen["gate"] = kwargs.get("host_key_gate")
+        return RunResult(reports=(), outcomes=())
+
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "run_analysis", record)
+    return seen
+
+
+def streams(monkeypatch: pytest.MonkeyPatch, *, stdin: bool, stdout: bool, stderr: bool) -> None:
+    monkeypatch.setattr("sys.stdin", Stream(stdin))
+    monkeypatch.setattr("sys.stdout", Stream(stdout))
+    monkeypatch.setattr("sys.stderr", Stream(stderr))
+
+
+@pytest.mark.security("T8")
+def test_run_asks_about_host_keys_only_with_a_terminal_on_stdin_stdout_and_stderr(
+    gate_wiring: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streams(monkeypatch, stdin=True, stdout=True, stderr=True)
+    assert cli.main(["run"]) == ExitCode.OK
+    assert callable(gate_wiring["gate"])
+    for missing in ("stdin", "stdout", "stderr"):
+        flags = {"stdin": True, "stdout": True, "stderr": True, missing: False}
+        streams(monkeypatch, **flags)
+        assert cli.main(["run"]) == ExitCode.OK
+        assert gate_wiring["gate"] is None, f"{missing} is not a terminal"
+
+
+@pytest.mark.security("T8")
+def test_run_never_asks_with_no_scan_and_the_gate_stores_nothing_on_its_own(
+    gate_wiring: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streams(monkeypatch, stdin=True, stdout=True, stderr=True)
+    assert cli.main(["run", "--no-scan"]) == ExitCode.OK
+    assert gate_wiring["gate"] is None
+    seen: dict[str, object] = {}
+
+    def fake_check(
+        subjects: object, writer: object, policy: object, report: object, *args: object, **kwargs: object
+    ) -> None:
+        seen.update(subjects=subjects, writer=writer, policy=policy)
+
+    monkeypatch.setattr(cli, "check_host_keys", fake_check)
+    assert cli.main(["run", "--known-hosts", "/state/kh"]) == ExitCode.OK
+    gate = cast("Callable[[list[str]], None]", gate_wiring["gate"])
+    gate(["subject"])
+    policy = seen["policy"]
+    assert getattr(policy, "assume_yes", None) is False and getattr(policy, "accept_unverified", None) is False
+    assert getattr(policy, "confirm", None) is terminal_confirm
+    assert type(seen["writer"]) is KnownHostsWriter and getattr(seen["writer"], "path", None) == Path("/state/kh")

@@ -81,11 +81,15 @@ refused, so the cap cannot be bypassed. Every call has a timeout.
   updates). The key of each access point is stored under an alias derived from the controller, the site and the
   access point's MAC.
 - **A scan never adds a host key.** An access point without a stored key is reported and skipped before any connection.
-- Keys are stored only by `trust-host-keys`, on one of three bases, in this order: a pin you configured
+- Keys are stored or replaced only by the trust step: `trust-host-keys`, or the question `run` asks before its first scan
+  when stdin, stdout and stderr are terminals. A key is offered on one of three bases, in this order: a pin you configured
   (`ssh.host_keys`), the fingerprint the controller itself reports for that access point, or — when neither exists —
   trust on first use, which needs your confirmation per access point or `--accept-unverified`. `--yes` confirms
-  verified matches only. If a configured pin and the controller's fingerprint both exist and differ, that access
-  point is refused.
+  verified matches only, a replace of a changed key included; `--accept-unverified` never replaces a stored key. A
+  replace in a terminal needs the first eight characters of the new key's SHA-256 typed, a guard against answering
+  by routine, not a verification. If a configured pin and the controller's fingerprint both exist and differ, or no
+  offered key matches them, that access point is refused. `ssh-keyscan` output is no proof that the access point holds
+  the key; the scan that follows connects with `StrictHostKeyChecking=yes`, which is.
 - Access-point addresses must be private addresses unless you set `allow_public_ap_addresses: true` for the site.
 
 ### What runs on the access point

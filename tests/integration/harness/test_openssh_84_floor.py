@@ -131,3 +131,18 @@ def test_an_unknown_alias_is_refused_by_strict_host_key_checking(
     argv = [a if not a.startswith("HostKeyAlias=") else "HostKeyAlias=uwo-" + "00" * 16 for a in argv]
     result = ssh84(*argv, stdin=stdin, env=env)
     assert result.returncode == 255 and b"Host key verification failed" in result.stderr
+
+
+@pytest.mark.security("T17")
+def test_ssh_keyscan_on_the_floor_accepts_the_full_key_type_names_of_the_fast_path(
+    harness: Harness, ap_address: IPv4Address
+) -> None:
+    """The trust step checks a stored key with `ssh-keyscan -t <stored type>`; the 8.4 client must take the
+    names the store holds and answer with the same key as the unrestricted scan."""
+    full = ssh84("ssh-keyscan", "-T", "5", "-p", "22", "--", str(ap_address)).stdout.decode()
+    keys = [line.split() for line in full.splitlines() if line and not line.startswith("#")]
+    assert keys, "ssh-keyscan from the 8.4 container returned nothing"
+    for _host, key_type, key in keys:
+        only = ssh84("ssh-keyscan", "-T", "5", "-t", key_type, "-p", "22", "--", str(ap_address))
+        answered = [line.split() for line in only.stdout.decode().splitlines() if line and not line.startswith("#")]
+        assert [(t, k) for _h, t, k in answered] == [(key_type, key)]

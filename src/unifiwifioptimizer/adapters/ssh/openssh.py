@@ -2,7 +2,7 @@
 
 Every option is passed on the command line (`-F none`), so no user, system or agent configuration can
 reach the connection; the host key is looked up under a per-access-point alias in the tool's own store,
-and a missing alias ends the call before a single packet (`trust-host-keys` is the only way in). The
+and a missing alias ends the call before a single packet (the trust step is the only way in). The
 password travels through `SSH_ASKPASS` to a helper that reads it from the child's environment — never in
 argv, never on this process's command line, never in a `repr`. Output is read in threads with cumulative
 byte and line caps; a cap or the call budget kills the whole process group.
@@ -407,7 +407,8 @@ class OpenSshScanner:
     def scan(self, target: ScanTarget) -> ScanPass:
         if not self._known_hosts.has_alias(target.host_key_alias):
             raise HostKeyUnknownError(
-                f"{target.ap_name}: no stored host key for this access point; run `trust-host-keys` first"
+                f"{target.ap_name}: no stored host key for this access point; "
+                "run `trust-host-keys` or run again in a terminal"
             )
         if not self._version_checked:
             self._version_check()

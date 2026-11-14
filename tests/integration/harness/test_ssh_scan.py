@@ -9,9 +9,17 @@ from pathlib import Path
 import pytest
 
 from tests.integration.harness.conftest import SCAN_PASSWORD, SCAN_USER, Harness
-from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, keyscan
+from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, KnownHostsWriter, expected_fingerprint, keyscan
 from unifiwifioptimizer.adapters.ssh.iw_parser import parse_scan_output
 from unifiwifioptimizer.adapters.ssh.openssh import CALL_TIMEOUT_S, OpenSshScanner, build_invocation, load_script
+from unifiwifioptimizer.app.trust import (
+    Replace,
+    TrustOutcome,
+    TrustPolicy,
+    TrustSubject,
+    apply_decision,
+    plan_trust,
+)
 from unifiwifioptimizer.domain.errors import (
     HostKeyMismatchError,
     HostKeyUnknownError,
@@ -50,7 +58,7 @@ def target(
 
 
 def trusted_store(tmp_path: Path, harness: Harness, port: int) -> KnownHostsStore:
-    store = KnownHostsStore(tmp_path / "state" / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "state" / "known_hosts")
     candidates = keyscan(harness.address, port)
     assert candidates, "the harness server offered no host key"
     store.add(candidates[0].entry(host_key_alias(ORIGIN, "default", MAC)))
@@ -141,7 +149,7 @@ def test_an_unknown_alias_never_connects_and_a_wrong_stored_key_is_refused_befor
     empty = KnownHostsStore(tmp_path / "empty" / "known_hosts")
     with pytest.raises(HostKeyUnknownError):
         scanner(empty).scan(target(fresh_ap, port))
-    wrong = KnownHostsStore(tmp_path / "wrong" / "known_hosts")
+    wrong = KnownHostsWriter(tmp_path / "wrong" / "known_hosts")
     alias = host_key_alias(ORIGIN, "default", MAC)
     # The other server's key under this alias: a real key, the wrong one.
     wrong.add(keyscan(fresh_ap.address, fresh_ap.sshd_port)[0].entry(alias))
@@ -256,7 +264,7 @@ def test_trust_on_first_use_against_dropbear_then_a_scan(fresh_ap: Harness, tmp_
     assert len(candidates) >= 2, [c.key_type for c in candidates]
     chosen = select_candidate(candidates, Expectation((), TrustBasis.UNVERIFIED))
     assert chosen.key_type == "ssh-ed25519"
-    store = KnownHostsStore(tmp_path / "tofu" / "known_hosts")
+    store = KnownHostsWriter(tmp_path / "tofu" / "known_hosts")
     store.add(chosen.entry(host_key_alias(ORIGIN, "default", MAC)))
     assert scanner(store).scan(target(fresh_ap, port)).band(Band.GHZ_2).status is BandScanStatus.OK  # type: ignore[union-attr]
 
@@ -451,3 +459,54 @@ def test_the_store_entry_is_what_openssh_reads(fresh_ap: Harness, tmp_path: Path
         ["ssh-keygen", "-F", entry.alias, "-f", str(store.path)], capture_output=True, text=True
     ).stdout
     assert entry.key_base64 in found
+
+
+@pytest.mark.security("T8")
+def test_the_fast_path_scan_for_the_stored_type_returns_the_stored_key(fresh_ap: Harness) -> None:
+    port = fresh_ap.dropbear_port
+    for stored in keyscan(fresh_ap.address, port):
+        quick = keyscan(fresh_ap.address, port, key_type=stored.key_type)
+        assert [(c.key_type, c.key_base64) for c in quick] == [(stored.key_type, stored.key_base64)]
+
+
+@pytest.mark.security("T8")
+def test_a_rotated_key_is_replaced_on_a_verified_basis_and_the_next_scan_passes(
+    fresh_ap: Harness, tmp_path: Path
+) -> None:
+    port = fresh_ap.dropbear_port
+    alias = host_key_alias(ORIGIN, "default", MAC)
+    store = KnownHostsWriter(tmp_path / "state" / "known_hosts")
+    # The other server's key stands for the key the access point had before it was rotated.
+    stale = keyscan(fresh_ap.address, fresh_ap.sshd_port)[0].entry(alias)
+    store.add(stale)
+    with pytest.raises(HostKeyMismatchError):
+        scanner(store).scan(target(fresh_ap, port))
+    offered = keyscan(fresh_ap.address, port)
+    current = (
+        next(c for c in offered if c.key_type == "ssh-ed25519")
+        if any(c.key_type == "ssh-ed25519" for c in offered)
+        else offered[0]
+    )
+    decision = plan_trust(store.entries_for(alias), offered, expected_fingerprint(None, current.sha256))
+    assert isinstance(decision, Replace) and decision.old == stale
+    refused = apply_decision(
+        trust_subject(fresh_ap, port), decision, store,
+        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda prompt: False),
+    )  # fmt: skip
+    assert refused.outcome is TrustOutcome.DECLINED and store.entries() == (stale,)
+    with pytest.raises(HostKeyMismatchError):
+        scanner(store).scan(target(fresh_ap, port))
+    result = apply_decision(
+        trust_subject(fresh_ap, port), decision, store,
+        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda prompt: False),
+    )  # fmt: skip
+    assert result.outcome is TrustOutcome.REPLACED and store.entries() == (current.entry(alias),)
+    scanned = scanner(store).scan(target(fresh_ap, port))
+    assert scanned.bands[0].status is BandScanStatus.OK
+
+
+def trust_subject(harness: Harness, port: int) -> TrustSubject:
+    return TrustSubject(
+        site_id="default", name="AP-harness", alias=host_key_alias(ORIGIN, "default", MAC),
+        address=harness.address, port=port, allow_public_address=False, config_pin=None, controller_fingerprint=None,
+    )  # fmt: skip

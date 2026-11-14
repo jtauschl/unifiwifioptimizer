@@ -1,11 +1,11 @@
-"""The tool's own `known_hosts` and the only way into it: `trust-host-keys`.
+"""The tool's own `known_hosts` and the only way into it: the trust step.
 
 Entries are keyed by the per-access-point alias, never by address. The store is read and written through
 a descriptor chain like the configuration file (directory and file opened without following symlinks,
 owner and mode checked), writes take a lock and replace the file atomically relative to the locked
 directory descriptor. Trusting a key means scanning the access point with `ssh-keyscan`, computing the
 fingerprints locally, picking the one key that matches what the configuration and the controller expect,
-and storing it under the alias.
+and storing it under the alias. `KnownHostsStore` reads; `KnownHostsWriter` is the only type that writes.
 """
 
 import fcntl
@@ -138,32 +138,8 @@ class KnownHostsStore:
     def entry(self, alias: str) -> KnownHostEntry | None:
         return next((e for e in self.entries() if e.alias == alias), None)
 
-    def add(self, entry: KnownHostEntry) -> None:
-        """Append one entry under a lock; an existing different key under the same alias is a conflict
-        the caller has to resolve by hand (the tool never silently rotates a host key)."""
-        try:
-            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        except OSError as exc:
-            raise ConfigError("known_hosts", f"cannot create directory {self._path.parent} ({exc.strerror})") from None
-        dir_fd = self._open_directory()
-        try:
-            lock_fd = self._open_lock(dir_fd)
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX)
-                existing = self._read(dir_fd)
-                known = next((e for e in existing if e.alias == entry.alias), None)
-                if known is not None:
-                    if known.key_type == entry.key_type and known.key_base64 == entry.key_base64:
-                        return
-                    raise HostKeyTrustError(
-                        f"a different host key is already stored for alias {entry.alias}; remove it from "
-                        f"{self._path} by hand if the access point was really replaced"
-                    )
-                self._replace(dir_fd, "".join(e.line + "\n" for e in (*existing, entry)))
-            finally:
-                os.close(lock_fd)
-        finally:
-            os.close(dir_fd)
+    def entries_for(self, alias: str) -> tuple[KnownHostEntry, ...]:
+        return tuple(e for e in self.entries() if e.alias == alias)
 
     def _open_directory(self) -> int:
         try:
@@ -176,28 +152,6 @@ class KnownHostsStore:
             os.close(dir_fd)
             raise
         return dir_fd
-
-    def _open_lock(self, dir_fd: int) -> int:
-        # Darwin's openat(O_CREAT) races against a concurrent creator and reports ENOENT; creating with
-        # O_EXCL and falling back to a plain open is race-free on every platform.
-        try:
-            try:
-                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
-            except FileExistsError:
-                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_NOFOLLOW, dir_fd=dir_fd)
-        except OSError as exc:
-            raise ConfigError(
-                "known_hosts", f"cannot open lock {self._path.parent / LOCK_NAME} ({exc.strerror})"
-            ) from None
-        try:
-            st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode):
-                raise ConfigError("known_hosts", f"{self._path.parent / LOCK_NAME} is not a regular file")
-            _check_owner(st, "the known_hosts lock", 0o077)
-        except ConfigError:
-            os.close(fd)
-            raise
-        return fd
 
     def _read(self, dir_fd: int) -> tuple[KnownHostEntry, ...]:
         try:
@@ -225,6 +179,86 @@ class KnownHostsStore:
             raise ConfigError("known_hosts", f"{self._path} is not ASCII") from None
         return parse_known_hosts(text, str(self._path))
 
+
+class KnownHostsWriter(KnownHostsStore):
+    """The only type that changes the store. Everything that writes a key goes through the trust step; the
+    scan sees a `KnownHostsReader`, which has no way in (a gate allows only the trust step and the composition
+    root to name this class)."""
+
+    def add(self, entry: KnownHostEntry) -> None:
+        """Append one entry under a lock. An alias that already holds a different key is a conflict for
+        `replace` to resolve, which needs the key the owner was shown."""
+
+        def append(existing: tuple[KnownHostEntry, ...]) -> tuple[KnownHostEntry, ...] | None:
+            held = [e for e in existing if e.alias == entry.alias]
+            if not held:
+                return (*existing, entry)
+            if all(e == entry for e in held):
+                return None
+            raise HostKeyTrustError(f"a different host key is already stored for alias {entry.alias}")
+
+        self._rewrite(append)
+
+    def replace(self, entry: KnownHostEntry, expected_old: KnownHostEntry) -> None:
+        """Swap the one entry of an alias for a new key, only if it still is the key the owner was shown.
+        An alias with several lines is refused: OpenSSH trusts any line under an alias, so swapping one would
+        leave the old key trusted."""
+
+        def swap(existing: tuple[KnownHostEntry, ...]) -> tuple[KnownHostEntry, ...] | None:
+            held = [e for e in existing if e.alias == entry.alias]
+            if held == [entry]:
+                return None
+            if len(held) != 1:
+                raise HostKeyTrustError(
+                    f"{len(held)} entries are stored for alias {entry.alias}; remove the extra lines from "
+                    f"{self._path} by hand"
+                )
+            if held[0] != expected_old:
+                raise HostKeyTrustError(f"the stored key for alias {entry.alias} changed since it was shown")
+            return tuple(entry if e.alias == entry.alias else e for e in existing)
+
+        self._rewrite(swap)
+
+    def _rewrite(self, change: Callable[[tuple[KnownHostEntry, ...]], tuple[KnownHostEntry, ...] | None]) -> None:
+        try:
+            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConfigError("known_hosts", f"cannot create directory {self._path.parent} ({exc.strerror})") from None
+        dir_fd = self._open_directory()
+        try:
+            lock_fd = self._open_lock(dir_fd)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                updated = change(self._read(dir_fd))
+                if updated is not None:
+                    self._replace(dir_fd, "".join(e.line + "\n" for e in updated))
+            finally:
+                os.close(lock_fd)
+        finally:
+            os.close(dir_fd)
+
+    def _open_lock(self, dir_fd: int) -> int:
+        # Darwin's openat(O_CREAT) races against a concurrent creator and reports ENOENT; creating with
+        # O_EXCL and falling back to a plain open is race-free on every platform.
+        try:
+            try:
+                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
+            except FileExistsError:
+                fd = os.open(LOCK_NAME, os.O_RDWR | os.O_NOFOLLOW, dir_fd=dir_fd)
+        except OSError as exc:
+            raise ConfigError(
+                "known_hosts", f"cannot open lock {self._path.parent / LOCK_NAME} ({exc.strerror})"
+            ) from None
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise ConfigError("known_hosts", f"{self._path.parent / LOCK_NAME} is not a regular file")
+            _check_owner(st, "the known_hosts lock", 0o077)
+        except ConfigError:
+            os.close(fd)
+            raise
+        return fd
+
     def _replace(self, dir_fd: int, text: str) -> None:
         # ssh reads the store by path, so the swap has to be atomic for it as well as for us; everything
         # happens relative to the checked directory descriptor so no path component can be swapped meanwhile.
@@ -244,7 +278,7 @@ class KnownHostsStore:
         os.fsync(dir_fd)
 
 
-# --- trust-host-keys -------------------------------------------------------------------------------------
+# --- the trust step -------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,10 +316,15 @@ def _run_keyscan(argv: Sequence[str]) -> str:
 
 
 def keyscan(
-    address: IPv4Address | IPv6Address, port: int = 22, run: KeyscanRunner = _run_keyscan
+    address: IPv4Address | IPv6Address,
+    port: int = 22,
+    run: KeyscanRunner = _run_keyscan,
+    key_type: str | None = None,
 ) -> tuple[HostKeyCandidate, ...]:
-    """Every key `ssh-keyscan` can obtain from the access point, with fingerprints computed locally."""
-    output = run(["ssh-keyscan", "-T", str(KEYSCAN_TIMEOUT_S), "-p", str(port), "--", str(address)])
+    """Every key `ssh-keyscan` can obtain from the access point (only `key_type` when given), with
+    fingerprints computed locally."""
+    type_option = ["-t", key_type] if key_type is not None else []
+    output = run(["ssh-keyscan", "-T", str(KEYSCAN_TIMEOUT_S), *type_option, "-p", str(port), "--", str(address)])
     candidates: list[HostKeyCandidate] = []
     for raw in output.splitlines():
         fields = raw.strip().split()

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from unifiwifioptimizer.adapters.ssh.hostkeys import HostKeyCandidate, KnownHostEntry, KnownHostsStore, TrustBasis
+from unifiwifioptimizer.adapters.ssh.hostkeys import HostKeyCandidate, KnownHostEntry, KnownHostsWriter, TrustBasis
 from unifiwifioptimizer.adapters.unifi import parse
-from unifiwifioptimizer.app.trust import TrustOutcome, TrustResult, trust_host_keys
+from unifiwifioptimizer.app.trust import Prompt, TrustOutcome, TrustResult, trust_host_keys
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.locations import ConfigLocation
 from unifiwifioptimizer.config.schema import Config
@@ -61,7 +61,7 @@ class FixtureApi:
         return parse.parse_clients(load("stat_sta.json"))
 
 
-class MemoryStore(KnownHostsStore):
+class MemoryStore(KnownHostsWriter):
     def __init__(self) -> None:
         super().__init__(Path("/state/known_hosts"))
         self.rows: list[KnownHostEntry] = []
@@ -77,6 +77,11 @@ class MemoryStore(KnownHostsStore):
             raise HostKeyTrustError("a different host key is already stored")
         if known is None:
             self.rows.append(entry)
+
+    def replace(self, entry: KnownHostEntry, expected_old: KnownHostEntry) -> None:
+        held = [e for e in self.rows if e.alias == entry.alias]
+        assert held == [expected_old], "replace must name the key that was shown"
+        self.rows = [entry if e.alias == entry.alias else e for e in self.rows]
 
 
 def key_for(seed: int) -> HostKeyCandidate:
@@ -95,6 +100,9 @@ def loaded(site: dict[str, object]) -> LoadedConfig:
 
 def access_points() -> list[AccessPoint]:
     return list(FixtureApi().devices("default").access_points)
+
+
+names_by_ip = {ap.ip: ap.name for ap in access_points()}
 
 
 def controller_fingerprints() -> dict[str, str | None]:
@@ -124,14 +132,14 @@ def test_verified_keys_are_stored_under_the_alias_and_the_basis_is_reported() ->
     store = MemoryStore()
     asked: list[str] = []
 
-    def confirm(question: str) -> bool:
-        asked.append(question)
+    def confirm(question: Prompt) -> bool:
+        asked.append(question.text)
         return False
 
     cfg = loaded({"ssh": {}, "neighbors": {"AP-1": ["AP-2", "AP-3", "AP-4"]}})
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [], assume_yes=True, accept_unverified=False, confirm=confirm,
-        scan=lambda ap: offered[ap.name],
+        scan=lambda address, port, key_type: offered[names_by_ip[address]],
     )  # fmt: skip
     outcomes = {r.ap_name: (r.outcome, r.basis) for r in report.results}
     verified = [name for name, text in controller_fingerprints().items() if text]
@@ -159,7 +167,7 @@ def test_config_pin_wins_and_a_conflict_with_the_controller_aborts_that_access_p
     store = MemoryStore()
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [with_controller.name], assume_yes=True, accept_unverified=False,
-        confirm=lambda q: False, scan=lambda ap: [pinned],
+        confirm=lambda q: False, scan=lambda address, port, key_type: [pinned],
     )  # fmt: skip
     (result,) = report.results
     assert (
@@ -173,7 +181,8 @@ def test_config_pin_wins_and_a_conflict_with_the_controller_aborts_that_access_p
     )
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [], assume_yes=False, accept_unverified=False,
-        confirm=lambda q: "matches the configuration pin" in q, scan=lambda ap: [key_for(3), pinned],
+        confirm=lambda q: "matches the configuration pin" in q.text,
+        scan=lambda address, port, key_type: [key_for(3), pinned],
     )  # fmt: skip
     (result,) = report.results
     assert (
@@ -190,15 +199,15 @@ def test_unverified_keys_need_the_flag_or_a_yes_and_yes_alone_is_not_enough() ->
     cfg = loaded({"ssh": {}, "neighbors": {unverified.name: []}})
     store = MemoryStore()
 
-    def run(*, assume_yes: bool, accept_unverified: bool, confirm: Callable[[str], bool]) -> TrustResult:
+    def run(*, assume_yes: bool, accept_unverified: bool, confirm: Callable[[Prompt], bool]) -> TrustResult:
         return trust_host_keys(
             FixtureApi(), cfg, store, "default", [], assume_yes=assume_yes, accept_unverified=accept_unverified,
-            confirm=confirm, scan=lambda ap: [key_for(5)],
+            confirm=confirm, scan=lambda address, port, key_type: [key_for(5)],
         ).results[0]  # fmt: skip
 
     assert run(assume_yes=True, accept_unverified=False, confirm=lambda q: False).outcome is TrustOutcome.DECLINED
     assert (
-        run(assume_yes=False, accept_unverified=False, confirm=lambda q: "on first use" in q).outcome
+        run(assume_yes=False, accept_unverified=False, confirm=lambda q: "on first use" in q.text).outcome
         is TrustOutcome.STORED
     )
     assert (
@@ -223,7 +232,7 @@ def test_ambiguity_a_stored_different_key_and_unknown_names_are_reported_not_fat
     store = MemoryStore()
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [], assume_yes=True, accept_unverified=True, confirm=lambda q: True,
-        scan=lambda ap: [key_for(1), key_for(2)],
+        scan=lambda address, port, key_type: [key_for(1), key_for(2)],
     )  # fmt: skip
     outcomes = {r.ap_name: r for r in report.results}
     assert (
@@ -233,14 +242,13 @@ def test_ambiguity_a_stored_different_key_and_unknown_names_are_reported_not_fat
     assert outcomes["Ghost"].outcome is TrustOutcome.NOT_ON_CONTROLLER
     alias = host_key_alias("https://unifi.example:443", "default", unverified.mac)
     store.rows.append(KnownHostEntry(alias, "ssh-ed25519", key_for(9).key_base64))
+    # An unverified key never replaces a stored one on a flag: both flags together still ask, and a "no" stands.
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [unverified.name], assume_yes=True, accept_unverified=True,
-        confirm=lambda q: True, scan=lambda ap: [key_for(1)],
+        confirm=lambda q: False, scan=lambda address, port, key_type: [key_for(1)],
     )  # fmt: skip
-    assert (
-        report.results[0].outcome is TrustOutcome.FAILED
-        and "different host key is already stored" in report.results[0].detail
-    )
+    assert report.results[0].outcome is TrustOutcome.DECLINED
+    assert [e.key_base64 for e in store.rows] == [key_for(9).key_base64]
 
 
 @pytest.mark.security("T8")
@@ -253,7 +261,7 @@ def test_trust_on_first_use_takes_the_preferred_key_type_from_a_multi_key_server
     ed = HostKeyCandidate("ssh-ed25519", key_for(2).key_base64, key_for(2).sha256, key_for(2).md5)
     report = trust_host_keys(
         FixtureApi(), cfg, store, "default", [], assume_yes=False, accept_unverified=True, confirm=lambda q: False,
-        scan=lambda ap: [rsa, ed],
+        scan=lambda address, port, key_type: [rsa, ed],
     )  # fmt: skip
     (result,) = report.results
     assert result.outcome is TrustOutcome.STORED and result.detail == ed.sha256.text
@@ -275,8 +283,8 @@ def test_a_public_address_is_refused_before_any_keyscan_unless_the_site_opts_in(
 
     scanned: list[str] = []
 
-    def scan(ap: AccessPoint) -> list[HostKeyCandidate]:
-        scanned.append(ap.name)
+    def scan(address: object, port: int, key_type: str | None) -> list[HostKeyCandidate]:
+        scanned.append(str(address))
         return [key_for(1)]
 
     cfg = loaded({"ssh": {}, "neighbors": {public.name: []}})
@@ -307,7 +315,7 @@ def test_a_public_address_is_refused_before_any_keyscan_unless_the_site_opts_in(
         confirm=lambda q: True,
         scan=scan,
     )
-    assert report.results[0].outcome is TrustOutcome.STORED and scanned == [public.name]
+    assert report.results[0].outcome is TrustOutcome.STORED and scanned == ["8.8.8.8"]
 
 
 def test_sites_without_ssh_or_without_pairs_are_configuration_errors() -> None:
@@ -367,6 +375,6 @@ def test_a_garbled_controller_fingerprint_fails_that_access_point_only() -> None
         assume_yes=True,
         accept_unverified=True,
         confirm=lambda q: True,
-        scan=lambda ap: [key_for(1)],
+        scan=lambda address, port, key_type: [key_for(1)],
     )
     assert report.results[0].outcome is TrustOutcome.FAILED and "unknown form" in report.results[0].detail

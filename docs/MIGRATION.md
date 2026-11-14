@@ -15,12 +15,16 @@ controller that still has its factory (self-signed) certificate now fails with e
 
 ## SSH host keys
 
-0.4.x ran `StrictHostKeyChecking=no`. 0.5.0 refuses an access point whose key it does not know and never stores
-one while scanning.
+0.4.x ran `StrictHostKeyChecking=no`. 0.5.0 refuses an access point whose key it does not know; the scan itself
+never stores one.
 
-Run `unifiwifioptimizer trust-host-keys --site <site-id>` once per site. A key is accepted against a pin in
-`ssh.host_keys`, against the fingerprint the controller reports, or, only with your confirmation or
-`--accept-unverified`, on first use.
+In a terminal, `unifiwifioptimizer run` asks before the first scan whether to store a key it does not know or to
+replace a changed one. Without a terminal, run `unifiwifioptimizer trust-host-keys --site <site-id>` once per site.
+A key is accepted against a pin in `ssh.host_keys`, against the fingerprint the controller reports, or, only with
+your confirmation or `--accept-unverified`, on first use. A changed key is replaced after you typed the first
+eight characters of the new key's SHA-256, or under `trust-host-keys --yes` when the new key matches a pin or the
+controller's fingerprint. Changing the controller host or port changes every alias, so every access point asks
+again.
 
 ## Installation
 

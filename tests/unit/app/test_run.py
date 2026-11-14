@@ -2,7 +2,7 @@
 credential is resolved, the n6 error text, and two sites with two corridors."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +14,7 @@ from hypothesis import strategies as st
 
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.app.run import RunResult, RunVerdict, SiteOutcome, run_analysis, select_sites
+from unifiwifioptimizer.app.trust import TrustSubject
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.locations import ConfigLocation
 from unifiwifioptimizer.config.schema import Config
@@ -409,3 +410,51 @@ def test_a_scanning_run_feeds_the_matrix_and_reports_what_the_scanner_heard() ->
     assert one_2g.neighbours and one_2g.neighbours[0].rssi_dbm == -70 and one_2g.neighbours[0].samples == 2
     assert result.verdict is RunVerdict.OK
     assert replace(result.outcomes[0], site_id="x").scanned_ap_count == 4
+
+
+# --- the host-key gate ------------------------------------------------------------------------------------------
+
+
+def test_the_host_key_gate_runs_once_after_every_site_is_prepared_and_before_the_first_scan() -> None:
+    cfg = loaded({"default": scanning_site(), "site-2": scanning_site()})
+    api = FakeApi()
+    seen: list[list[tuple[str, str]]] = []
+
+    def gate(subjects: Sequence[TrustSubject]) -> None:
+        api.calls.append("gate")
+        seen.append([(s.site_id, s.name) for s in subjects])
+
+    run(cfg, api=api, host_key_gate=gate)
+    assert api.calls.count("gate") == 1
+    gate_at = api.calls.index("gate")
+    assert any(c.startswith("devices:site-2") for c in api.calls[:gate_at])
+    assert all(not c.startswith("scan:") for c in api.calls[:gate_at])
+    assert api.calls.index("scan:AP-1") > gate_at
+    assert {site for site, _ in seen[0]} == {"default", "site-2"}
+
+
+def test_a_configuration_error_ends_the_run_before_the_gate_asks_anything() -> None:
+    bad = scanning_site(ssh={"auth": "password", "user": "u"})
+    cfg = loaded({"default": scanning_site(), "site-2": bad})
+    asked: list[object] = []
+    with pytest.raises(ConfigError):
+        run(cfg, host_key_gate=asked.append)
+    assert asked == []
+
+
+def test_there_is_no_gate_call_without_a_scan() -> None:
+    cfg = loaded({"default": scanning_site()})
+    asked: list[object] = []
+    run(cfg, skip_scan=True, host_key_gate=asked.append)
+    quiet = loaded({"default": {"wlans": {"SSID-1": "Standard"}}})
+    run(quiet, host_key_gate=asked.append)
+    assert asked == []
+
+
+def test_a_gate_subject_carries_the_target_the_pin_and_the_controller_fingerprint() -> None:
+    cfg = loaded({"default": scanning_site(ssh={"host_keys": {"1c:0b:8b:be:b9:7c": "SHA256:" + "A" * 43}})})
+    seen: list[TrustSubject] = []
+    run(cfg, host_key_gate=lambda subjects: seen.extend(subjects))
+    assert [s.name for s in seen] == ["AP-1", "AP-2", "AP-3", "AP-4"]
+    first = seen[0]
+    assert first.alias.startswith("uwo-") and first.port == 22 and first.allow_public_address is False
