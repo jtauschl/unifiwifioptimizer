@@ -72,3 +72,4 @@ sites:
 #   roam_margin_db: 5         # margin of the Roaming Assistant threshold, 0..30
 #   roam_floor_dbm: -75       # lowest roaming trigger, -95..-50, below the ceiling
 #   roam_ceiling_dbm: -65     # highest roaming trigger, -95..-50
+#   plan_search_budget: 8000000 # candidates the extended channel plan may consider per group of coupled radios, 0..1000000000

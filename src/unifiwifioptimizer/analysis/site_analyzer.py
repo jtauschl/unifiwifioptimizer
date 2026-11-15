@@ -581,7 +581,9 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     )
     offline_macs = {ap.mac for ap in snapshot.access_points if ap.offline}
     problems = tuple(p for p in snapshot.problems if not (p.device_mac in offline_macs and STATS_PATH_MARKER in p.path))
-    plan = extended_channel_plan(inp.snapshot, scan, inp.neighbours) if inp.extended else None
+    plan = (
+        extended_channel_plan(inp.snapshot, scan, inp.neighbours, inp.rf.plan_search_budget) if inp.extended else None
+    )
     deferred = apply_deferrals(
         ap_reports, compliance, {t.wlan: t.broadcasting for t in targets.values()}, wants_handoff, plan
     )

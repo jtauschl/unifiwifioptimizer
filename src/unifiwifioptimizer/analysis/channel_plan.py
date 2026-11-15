@@ -96,7 +96,11 @@ def _stable_power(ap_scan: ApScan | None) -> PhyChannelPower | None:
 
 
 def _band(
-    band: Band, snapshot: SiteSnapshot, scan: SiteScan | None, neighbours: Mapping[str, frozenset[str]]
+    band: Band,
+    snapshot: SiteSnapshot,
+    scan: SiteScan | None,
+    neighbours: Mapping[str, frozenset[str]],
+    search_budget: int,
 ) -> BandChannelPlan:
     if scan is None:
         return _unavailable(band, "neighbour scan was not run")
@@ -223,7 +227,7 @@ def _band(
                 continue
             signal = max(v for v in (a_at_b, b_at_a) if v is not None)
             edges.append(PlanEdge(a=a.name, b=b.name, rssi_dbm=signal, a_at_b_dbm=a_at_b, b_at_a_dbm=b_at_a))
-    outcome = optimize(tuple(radios), tuple(edges))
+    outcome = optimize(tuple(radios), tuple(edges), search_budget)
     before, after = outcome.before, outcome.after
     status = ChannelPlanStatus.RECOMMENDED if outcome.improved else ChannelPlanStatus.NO_IMPROVEMENT
     assignments = tuple(
@@ -297,7 +301,16 @@ def _band(
 
 
 def extended_channel_plan(
-    snapshot: SiteSnapshot, scan: SiteScan | None, neighbours: Mapping[str, frozenset[str]]
+    snapshot: SiteSnapshot,
+    scan: SiteScan | None,
+    neighbours: Mapping[str, frozenset[str]],
+    search_budget: int,
 ) -> ExtendedChannelPlan:
-    """Provide independent 2.4/5 GHz plans or explicit evidence gaps, without exposing scan identifiers."""
-    return ExtendedChannelPlan(bands=tuple(_band(band, snapshot, scan, neighbours) for band in EVALUATED_BANDS))
+    """Provide independent 2.4/5 GHz plans or explicit evidence gaps, without exposing scan identifiers.
+
+    `search_budget` is the effort the search may spend per coupled group; the plan carries it so the report can say
+    which budget a "not proven" label refers to."""
+    return ExtendedChannelPlan(
+        bands=tuple(_band(band, snapshot, scan, neighbours, search_budget) for band in EVALUATED_BANDS),
+        search_budget=search_budget,
+    )

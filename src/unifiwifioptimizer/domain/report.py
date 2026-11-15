@@ -378,6 +378,7 @@ class BandChannelPlan:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExtendedChannelPlan:
     bands: tuple[BandChannelPlan, ...]
+    search_budget: int
 
     @property
     def has_changes(self) -> bool:

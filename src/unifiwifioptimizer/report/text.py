@@ -10,6 +10,7 @@ from unifiwifioptimizer.app.use_cases import SiteOverview, SitesOverview
 from unifiwifioptimizer.compliance.rules import RULE_BY_CODE
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
+    ChannelPlanMethod,
     MissDirection,
     MissingReason,
     NeighbourMarker,
@@ -641,11 +642,22 @@ def _scan(report: SiteReport) -> list[str]:
     return lines
 
 
+def _search_note(method: ChannelPlanMethod | None, budget: int) -> str:
+    """The proof status of a plan: a search that ended on its budget has not proven the optimum."""
+    if method is ChannelPlanMethod.HEURISTIC:
+        return f"heuristic search, optimality not proven (budget {budget})"
+    return f"{method} search"
+
+
 def _channel_plan(report: SiteReport) -> list[str]:
     plan = report.extended_channel_plan
     if plan is None:
         return []
     lines = [RULE, "  Extended channel plan", RULE, ""]
+    lines += [
+        f"  Search budget: {plan.search_budget} candidates per group of coupled radios (rf.plan_search_budget)",
+        "",
+    ]
     for band in plan.bands:
         if band.status is ChannelPlanStatus.UNAVAILABLE:
             lines += [f"  {band.band.label}: unavailable — {safe_text(band.reason or '', LINE_MAX)}", ""]
@@ -655,7 +667,7 @@ def _channel_plan(report: SiteReport) -> list[str]:
             if band.status is ChannelPlanStatus.RECOMMENDED
             else "no measured own-AP improvement"
         )
-        lines.append(f"  {band.band.label}: {label} ({band.method} search)")
+        lines.append(f"  {band.band.label}: {label} ({_search_note(band.method, plan.search_budget)})")
         lines.append(
             f"    Consequential own AP overlaps: {band.own_conflicts_before} → {band.own_conflicts_after}; "
             f"signal proxy: {band.own_pressure_before} → {band.own_pressure_after}"
@@ -993,7 +1005,8 @@ def _overview_plan(report: SiteReport) -> list[str]:
         if not item.has_changes:
             continue
         lines.append(
-            f"    {item.band.label} ({item.method} search): own AP overlaps {item.own_conflicts_before} → "
+            f"    {item.band.label} ({_search_note(item.method, plan.search_budget)}): "
+            f"own AP overlaps {item.own_conflicts_before} → "
             f"{item.own_conflicts_after}, signal proxy {item.own_pressure_before} → {item.own_pressure_after}"
         )
         if item.own_conflicts_after:

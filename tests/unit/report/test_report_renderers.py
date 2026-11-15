@@ -206,7 +206,8 @@ def _plan(*assignments: ChannelAssignment, after: int = 0) -> ExtendedChannelPla
                 foreign_overlaps_after=2,
                 data_gaps=(),
             ),
-        )
+        ),
+        search_budget=1_000,
     )
 
 
@@ -711,3 +712,30 @@ def test_the_wlan_title_names_the_network_and_its_vlan_and_says_untagged_without
     assert titles("Network-9", 40) == ["  WLAN       SSID-1  (profile Standard)  → network Network-9, VLAN 40"]
     assert titles("Network-9", None) == ["  WLAN       SSID-1  (profile Standard)  → network Network-9, untagged"]
     assert titles(None, None) == ["  WLAN       SSID-1  (profile Standard)"]
+
+
+# --- the search budget of the extended plan -------------------------------------------------------------------
+
+
+def _extended_with(method: ChannelPlanMethod, budget: int = 1_234) -> SiteReport:
+    plan = _plan(ChannelAssignment(ap="AP-1", current=100, proposed=36, width_mhz=20))
+    band = replace(plan.bands[0], method=method)
+    return replace(REPORT, extended_channel_plan=replace(plan, bands=(band,), search_budget=budget))
+
+
+def test_the_extended_text_names_the_budget_and_says_when_the_optimum_is_not_proven() -> None:
+    exact = render_report(_extended_with(ChannelPlanMethod.EXACT))
+    not_proven = render_report(_extended_with(ChannelPlanMethod.HEURISTIC))
+    assert "Search budget: 1234 candidates per group of coupled radios (rf.plan_search_budget)" in not_proven
+    assert "(exact search)" in exact and "optimality not proven" not in exact
+    assert "heuristic search, optimality not proven (budget 1234)" in not_proven
+    overview = render_overview(_extended_with(ChannelPlanMethod.HEURISTIC))
+    assert "heuristic search, optimality not proven (budget 1234)" in overview
+
+
+def test_the_budget_appears_in_the_json_only_with_an_extended_plan() -> None:
+    plain_document = json.loads(render_json([REPORT]))["sites"][0]
+    assert "extended_channel_plan" not in plain_document
+    extended = json.loads(render_json([_extended_with(ChannelPlanMethod.HEURISTIC, 77)]))["sites"][0]
+    assert extended["extended_channel_plan"]["search_budget"] == 77
+    assert extended["extended_channel_plan"]["bands"][0]["method"] == "heuristic"

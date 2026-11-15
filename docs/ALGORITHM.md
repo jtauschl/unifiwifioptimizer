@@ -339,11 +339,19 @@ lower power ceiling than its observed TX. It never calls residual reuse unavoida
 Two radios are coupled exactly when some choice of their channels gives their measured pair a cost: the pair is heard at −82 dBm or stronger on overlapping channels, or a candidate channel with a ceiling above the sender's observed TX lets the receiver, which measured the sender, hear it at −82 dBm or stronger and above the pair's current level on overlapping channels. A pair that can never cost anything does not link two searches. Radios that are not coupled form separate
 groups; within a coupled group one radio's gain can still offset another's risk. Each group is searched on its own and changes only if it satisfies the
 conditions above; a group without an improvement keeps its observed channels, and the groups' search spaces add up
-instead of multiplying. Up to 100,000 assignments in a group the search is exact (radios with a single candidate are
-constants and do not multiply the search); above that it uses a deterministic greedy seed and at most 20,000
-candidate evaluations per group including the seed's, run once from the greedy layout and once from the observed
-layout. At most 128 radios take part per band, which bounds the number of such groups and so the total.
-Sites with more than 128 participating radios per band are marked unavailable.
+instead of multiplying. Each group is first searched with a deterministic greedy seed and a local search from the
+greedy layout and from the observed layout; the best acceptable result is the first bound of an exact enumeration of the
+group's radios that have a choice (radios with a single candidate are constants and do not multiply the search). The
+enumeration drops every partial assignment whose keys (own pressure, power risk, power loss, foreign pressure, moved
+radios) already exceed that bound in the order of the ranking, or that has lost power, or whose own pressure plus power
+risk is no longer below the observed pressure; it visits the more strongly coupled radios first. The effort is a count
+of candidates considered, not a time: `rf.plan_search_budget` per group of coupled radios (default 8,000,000; a quarter
+of it for each of the two local-search starts and half of it, rounded up, for the enumeration), so the same input gives
+the same plan on every host. When the enumeration finishes inside its share the plan is the proven optimum (`exact`);
+otherwise the best plan found is reported as `heuristic`, text and JSON say that optimality is not proven, and the
+budget is shown with the plan. A site with several groups that all spend their budget takes the sum of their times.
+At most 128 radios take part per band, a documented scope limit that also bounds the number of such groups and so the
+total; sites with more than 128 participating radios per band are marked unavailable.
 
 The same SSH scan call reads a bounded `iw phy` power table from the 5 GHz PHY attached to an UP AP-mode
 interface. It does so on every scan, with or without `--extended`; the access points only answer read-only queries

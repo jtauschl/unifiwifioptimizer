@@ -24,12 +24,14 @@ from unifiwifioptimizer.rf.constants import (
     DEFAULT_CLIENT_TX_DBM,
     DEFAULT_MIN_RSSI_OFFSET_DB,
     DEFAULT_NOISE_FLOOR_DBM,
+    DEFAULT_PLAN_SEARCH_BUDGET,
     DEFAULT_REQUIRED_SNR_DB,
     DEFAULT_ROAM_CEILING_DBM,
     DEFAULT_ROAM_FLOOR_DBM,
     DEFAULT_ROAM_MARGIN_DB,
     DEFAULT_ROAM_OFFSET_DB,
     NOISE_FLOOR_RANGE,
+    PLAN_SEARCH_BUDGET_RANGE,
     SNR_RANGE,
 )
 from unifiwifioptimizer.rf.corridor import CellEdge, PathLossModel
@@ -57,7 +59,7 @@ RF_KEYS = frozenset(
     {
         "client_tx_dbm", "client_tx_dbm_5g_upper", "noise_floor_dbm", "required_snr_db",
         "min_rssi_offset_db", "roam_offset_db",
-        "roam_margin_db", "roam_floor_dbm", "roam_ceiling_dbm",
+        "roam_margin_db", "roam_floor_dbm", "roam_ceiling_dbm", "plan_search_budget",
     }
 )  # fmt: skip
 MAX_SITES = 64
@@ -437,6 +439,9 @@ def _rf(value: Value) -> RfSettings:
         client_tx_dbm_5g_upper=upper_client_tx,
         min_rssi_offset_db=_integer(mapping, path, "min_rssi_offset_db", DB_TUNABLE_RANGE, DEFAULT_MIN_RSSI_OFFSET_DB),
         roaming=roaming,
+        plan_search_budget=_integer(
+            mapping, path, "plan_search_budget", PLAN_SEARCH_BUDGET_RANGE, DEFAULT_PLAN_SEARCH_BUDGET
+        ),
     )
 
 

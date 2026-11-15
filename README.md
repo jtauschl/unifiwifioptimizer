@@ -272,6 +272,7 @@ Keys (every key not listed is an error):
 | `rf.roam_margin_db` | Margin of the Roaming Assistant threshold below a weak neighbour, default 5 |
 | `rf.roam_floor_dbm` | Lowest roaming trigger, default -75; must be below the ceiling |
 | `rf.roam_ceiling_dbm` | Highest roaming trigger, default -65 |
+| `rf.plan_search_budget` | Candidates the extended channel plan's search may consider per group of coupled radios, default 8,000,000, 0..1,000,000,000; a count of work, not a time, so the plan does not depend on the host |
 <!-- config-keys:end -->
 
 `ssh.auth` decides where the access-point credentials come from:

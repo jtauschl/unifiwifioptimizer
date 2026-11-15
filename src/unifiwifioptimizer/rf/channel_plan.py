@@ -3,15 +3,19 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, lru_cache
-from math import prod
 
 from unifiwifioptimizer.domain.analysis import ChannelPlanMethod
 from unifiwifioptimizer.domain.models import Band
 from unifiwifioptimizer.rf.channels import channel_block_5g, channels_overlap
 
-EXACT_LIMIT = 100_000
-HEURISTIC_LIMIT = 20_000
 RADIO_LIMIT = 128
+# Each local-search start may spend a quarter of a group's budget, the exact search half (rounded up). Every share is
+# non-decreasing in the budget, so a larger budget never loses a proof (docs/ALGORITHM.md §8).
+LOCAL_SEARCH_SHARES = 4
+
+
+class _BudgetSpentError(Exception):
+    """Unwinds the exact enumeration when its units are used up."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -62,6 +66,8 @@ class OptimizedPlan:
     after: PlanScore
     method: ChannelPlanMethod
     evaluations: int
+    exact_evaluations: int = 0
+    groups: int = 1
 
     @property
     def improved(self) -> bool:
@@ -94,13 +100,25 @@ def _edge_cost(a: PlanRadio, channel_a: int, b: PlanRadio, channel_b: int, edge:
     return baseline, max(0, possible - baseline), int(baseline > 0)
 
 
-def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> OptimizedPlan:
-    """Find the lexicographic minimum per group of radios that can influence each other, exactly for small
-    groups and with bounded local search otherwise.
+def optimize(
+    radios: tuple[PlanRadio, ...],
+    edges: tuple[PlanEdge, ...],
+    budget: int | None = None,
+    *,
+    heuristic_only: bool = False,
+) -> OptimizedPlan:
+    """Find the lexicographic minimum per group of radios that can influence each other.
+
+    Each group is searched for the best plan with a greedy seed and two local searches, then enumerated exactly
+    with that result as the first bound. `budget` is the deterministic effort per group in candidates considered
+    (None is unlimited, for tests): the exact search proves the optimum only if its enumeration finishes inside
+    its share, otherwise the best plan found is returned and the method says optimality is not proven.
+    `heuristic_only` skips the exact search.
 
     A group changes only if it strictly improves, so radios that no costly edge couples to a conflict keep their
     channel and the search space is the sum, not the product, of the group sizes. Callers validate candidate
-    geometry and the 128-radio limit before entering this pure function.
+    geometry, that every radio's current channel is among its candidates, and the 128-radio limit before entering
+    this pure function.
     """
     ordered = tuple(sorted(radios, key=lambda r: r.name))
     parent = {r.name: r.name for r in ordered}
@@ -126,7 +144,10 @@ def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> Opti
     for edge in edges:
         if root(edge.a) == root(edge.b):
             group_edges[root(edge.a)].append(edge)
-    plans = {key: _optimize_group(tuple(members), tuple(group_edges[key])) for key, members in groups.items()}
+    plans = {
+        key: _optimize_group(tuple(members), tuple(group_edges[key]), budget, heuristic_only)
+        for key, members in groups.items()
+    }
     if len(plans) == 1:
         return next(iter(plans.values()))
 
@@ -155,13 +176,17 @@ def optimize(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> Opti
         if any(plan.method is ChannelPlanMethod.HEURISTIC for plan in plans.values())
         else ChannelPlanMethod.EXACT,
         evaluations=sum(plan.evaluations for plan in plans.values()),
+        exact_evaluations=sum(plan.exact_evaluations for plan in plans.values()),
+        groups=len(plans),
     )
 
 
-def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) -> OptimizedPlan:
+def _optimize_group(
+    radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...], budget: int | None, heuristic_only: bool
+) -> OptimizedPlan:
     ordered = tuple(sorted(radios, key=lambda r: r.name))
     index = {r.name: i for i, r in enumerate(ordered)}
-    candidates = tuple(r.candidates for r in ordered)
+    candidates = tuple(tuple(sorted(set(r.candidates))) for r in ordered)
 
     @cache
     def foreign_overlap(band: Band, channel: int, width_mhz: int, primary: int) -> bool:
@@ -223,7 +248,6 @@ def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) 
         )
 
     before = score(tuple(r.current for r in ordered))
-    size = prod(map(len, candidates))
     if before.own_pressure == 0:
         return OptimizedPlan(
             before=before,
@@ -231,8 +255,6 @@ def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) 
             method=ChannelPlanMethod.EXACT,
             evaluations=0,
         )
-    if size <= EXACT_LIMIT:
-        return _exact(ordered, candidates, incident, foreign, before, acceptable, pair_cost, edge_cost, loses_power)
 
     # The search order is stable under controller and scan ordering. Greedy assignments only inspect already
     # assigned neighbours; subsequent local improvement considers the complete measured graph.
@@ -266,20 +288,25 @@ def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) 
         assigned[i] = chosen
     greedy = tuple(assigned[i] for i in range(len(ordered)))
     best_safe = before
+    local_share = None if budget is None else budget // LOCAL_SEARCH_SHARES
 
     def improve(start: tuple[int, ...]) -> None:
-        """Local search over single-radio moves from `start`; keeps the best acceptable assignment seen."""
+        """Local search over single-radio moves from `start`, at most `local_share` trial moves; keeps the best
+        acceptable assignment seen. The walk steers by its own best only and never reads the incumbent, so a larger
+        share only continues the same walk."""
         nonlocal best_safe, evaluations
+        spent = 0
         current = start
         best = score(current)
         if acceptable(best) and best.rank < best_safe.rank:
             best_safe = best
-        while evaluations < HEURISTIC_LIMIT:
+        while True:
             improved = False
             for i in order:
                 for channel in candidates[i]:
-                    if evaluations >= HEURISTIC_LIMIT:
-                        break
+                    if local_share is not None and spent >= local_share:
+                        return
+                    spent += 1
                     evaluations += 1
                     trial = (*current[:i], channel, *current[i + 1 :])
                     old = current[i]
@@ -304,16 +331,22 @@ def _optimize_group(radios: tuple[PlanRadio, ...], edges: tuple[PlanEdge, ...]) 
                         best, current, improved = candidate, trial, True
                         if acceptable(candidate) and candidate.rank < best_safe.rank:
                             best_safe = candidate
-                if evaluations >= HEURISTIC_LIMIT:
-                    break
             if not improved:
-                break
+                return
 
     # A greedy seed can end in a local minimum that is worse than the observed layout, so the observed layout is a
     # second start: the result is never worse than either.
     improve(greedy)
     improve(before.channels)
-    return OptimizedPlan(before=before, after=best_safe, method=ChannelPlanMethod.HEURISTIC, evaluations=evaluations)
+    if heuristic_only:
+        return OptimizedPlan(
+            before=before, after=best_safe, method=ChannelPlanMethod.HEURISTIC, evaluations=evaluations
+        )
+    exact_share = None if budget is None else (budget + 1) // 2
+    return _exact(
+        ordered, candidates, incident, foreign, before, acceptable, pair_cost, edge_cost, loses_power,
+        incumbent=best_safe, units=exact_share, spent_before=evaluations,
+    )  # fmt: skip
 
 
 def _exact(
@@ -326,12 +359,28 @@ def _exact(
     pair_cost: Callable[[int, int, int, int, PlanEdge], tuple[int, int, int]],
     edge_cost: Callable[[int, int, int, int, PlanEdge], tuple[int, int, int]],
     loses_power: Callable[[int, int], int],
+    *,
+    incumbent: PlanScore,
+    units: int | None,
+    spent_before: int,
 ) -> OptimizedPlan:
-    """Enumerate every assignment of the radios that have a choice. A radio with one candidate is a constant: its
-    own terms are added once and its edges to a free radio become a per-candidate cost of that radio, so the run
-    time follows the number of assignments and not the number of radios."""
+    """Enumerate the assignments of the radios that have a choice, pruning every partial assignment that cannot beat
+    the incumbent, and say whether the enumeration ran to its end. A radio with one candidate is a constant: its own
+    terms are added once and its edges to a free radio become a per-candidate cost of that radio, so the work follows
+    the number of assignments and not the number of radios.
+
+    Every key of the rank is a sum of non-negative terms, so a partial assignment whose keys already exceed the
+    incumbent's first five (lexicographically) can only grow worse, and so can one that has lost power or whose own
+    pressure plus power risk is no longer below the observed own pressure, the two conditions `acceptable` demands.
+    One unit is one candidate considered, counted before the prune tests; the search stops when a unit is needed and
+    none is left.
+    """
     fixed = {i: c[0] for i, c in enumerate(candidates) if len(c) == 1}
-    free = [i for i in range(len(ordered)) if i not in fixed]
+    # Heavily coupled radios first: their choices cost the most, so the bound bites early. Ties by position.
+    free = sorted(
+        (i for i in range(len(ordered)) if i not in fixed),
+        key=lambda i: (-sum(max(0, e.rssi_dbm + 83) for _, e in incident[i]), i),
+    )
     slot = {radio: position for position, radio in enumerate(free)}
     constant = [0, 0, 0, 0, 0, 0, 0]
     for i, channel in fixed.items():
@@ -360,8 +409,8 @@ def _exact(
                 sum(c[2] for c in costs),
             )
     earlier = {i: [(peer, edge) for peer, edge in incident[i] if peer in slot and slot[peer] < slot[i]] for i in free}
-    best = before
-    evaluated = 0
+    best = incumbent
+    considered = 0
     chosen: list[int] = []
 
     def full_channels() -> tuple[int, ...]:
@@ -370,10 +419,9 @@ def _exact(
         return tuple(by_radio[i] for i in range(len(ordered)))
 
     def enumerate_assignments(position: int, totals: tuple[int, int, int, int, int, int, int]) -> None:
-        nonlocal best, evaluated
+        nonlocal best, considered
         pressure, risk, conflicts, foreign_pressure, foreign_hits, moved, power_loss = totals
         if position == len(free):
-            evaluated += 1
             if (pressure, risk, power_loss, foreign_pressure, moved) > best.rank[:5]:
                 return
             candidate = PlanScore(
@@ -391,31 +439,48 @@ def _exact(
             return
         i = free[position]
         for channel in candidates[i]:
+            if units is not None and considered >= units:
+                raise _BudgetSpentError
+            considered += 1
             hits = [pair_cost(i, channel, peer, chosen[slot[peer]], edge) for peer, edge in earlier[i]]
             base, extra, conflict = unary[i, channel]
             next_pressure = pressure + base + sum(h[0] for h in hits)
-            if next_pressure > best.own_pressure:
-                continue
+            next_risk = risk + extra + sum(h[1] for h in hits)
+            next_loss = power_loss + loses_power(i, channel)
             fp, fh = foreign[i][channel]
+            next_foreign = foreign_pressure + fp
+            next_moved = moved + (channel != ordered[i].current)
+            if next_loss > 0 or next_pressure + next_risk >= before.own_pressure:
+                continue
+            if (next_pressure, next_risk, next_loss, next_foreign, next_moved) > best.rank[:5]:
+                continue
             chosen.append(channel)
             enumerate_assignments(
                 position + 1,
                 (
                     next_pressure,
-                    risk + extra + sum(h[1] for h in hits),
+                    next_risk,
                     conflicts + conflict + sum(h[2] for h in hits),
-                    foreign_pressure + fp,
+                    next_foreign,
                     foreign_hits + fh,
-                    moved + (channel != ordered[i].current),
-                    power_loss + loses_power(i, channel),
+                    next_moved,
+                    next_loss,
                 ),
             )
             chosen.pop()
 
-    enumerate_assignments(
-        0, (constant[0], constant[1], constant[2], constant[3], constant[4], constant[5], constant[6])
+    completed = True
+    try:
+        enumerate_assignments(0, (*constant,))  # type: ignore[arg-type]
+    except _BudgetSpentError:
+        completed = False
+    return OptimizedPlan(
+        before=before,
+        after=best,
+        method=ChannelPlanMethod.EXACT if completed else ChannelPlanMethod.HEURISTIC,
+        evaluations=spent_before + considered,
+        exact_evaluations=considered,
     )
-    return OptimizedPlan(before=before, after=best, method=ChannelPlanMethod.EXACT, evaluations=evaluated)
 
 
 def canonical_candidates(band: Band, width_mhz: int, channels: tuple[int, ...], current: int) -> tuple[int, ...]:

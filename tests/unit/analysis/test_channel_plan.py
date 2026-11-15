@@ -55,8 +55,15 @@ def pair_site() -> tuple[SiteSnapshot, SiteScan]:
     return snap, site_scan(snap, passes)
 
 
+SEARCH_BUDGET = 1_000
+
+
 def band_result(snap: SiteSnapshot, scan: SiteScan | None, band: Band = Band.GHZ_2) -> BandChannelPlan:
-    return next(b for b in extended_channel_plan(snap, scan, {"AP-1": frozenset({"AP-2"})}).bands if b.band is band)
+    return next(
+        b
+        for b in extended_channel_plan(snap, scan, {"AP-1": frozenset({"AP-2"})}, SEARCH_BUDGET).bands
+        if b.band is band
+    )
 
 
 def unavailable_reason(snap: SiteSnapshot, scan: SiteScan | None, band: Band = Band.GHZ_2) -> str:
@@ -428,10 +435,10 @@ def test_an_offline_access_point_is_named_and_blocks_the_plan_when_a_neighbour_d
     snap, scan = pair_site()
     offline = replace(ap_named(fixture_snapshot(), "AP-3"), state_code=0)
     with_offline = replace(snap, access_points=(*snap.access_points, offline))
-    plan = extended_channel_plan(with_offline, scan, {"AP-1": frozenset({"AP-2"})})
+    plan = extended_channel_plan(with_offline, scan, {"AP-1": frozenset({"AP-2"})}, SEARCH_BUDGET)
     band = next(b for b in plan.bands if b.band is Band.GHZ_2)
     assert band.status == "recommended" and "1 offline access point radio(s) are not planned" in band.data_gaps
-    blocked = extended_channel_plan(with_offline, scan, {"AP-1": frozenset({"AP-2", "AP-3"})})
+    blocked = extended_channel_plan(with_offline, scan, {"AP-1": frozenset({"AP-2", "AP-3"})}, SEARCH_BUDGET)
     reason = next(b.reason for b in blocked.bands if b.band is Band.GHZ_2)
     assert reason == "a configured neighbour of a participating access point is offline"
 

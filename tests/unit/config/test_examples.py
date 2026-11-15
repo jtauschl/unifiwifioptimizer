@@ -70,6 +70,7 @@ DOCUMENTED_RF = {
     "min_rssi_offset_db": (0, 30),
     "roam_offset_db": (0, 30),
     "roam_margin_db": (0, 30),
+    "plan_search_budget": (0, 1_000_000_000),
 }
 
 

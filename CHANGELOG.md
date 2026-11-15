@@ -28,6 +28,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - The scan script reads the serving 5 GHz PHY's channel-power limits on every scan (read-only queries; see `SECURITY.md`).
 - The optional 5 GHz channel plan uses those limits, calibrates them against observed TX and labels higher-power channels as downlink trials, not guaranteed range gains.
 - `run --extended` adds a read-only site-wide 2.4/5 GHz channel proposal from the scan evidence and says when a band lacks the evidence.
+- The channel proposal searches each group of coupled radios exactly wherever the effort budget `rf.plan_search_budget` allows (default 8,000,000 candidates per group, a count of work and not a time) and says when it stopped without proving the optimum; the budget is shown with the plan.
 - The Minimum RSSI header line names Ubiquiti's guidance (−80 dBm as a home or office starting point).
 - The `info` finding `roaming_threshold_above_guidance` appears when the Handoff Suggestions threshold to set is not below −70 dBm.
 - `rf.client_tx_dbm` defaults to 14 dBm (Cisco: a typical client transmits about 13–14 dBm).

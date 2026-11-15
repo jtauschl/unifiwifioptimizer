@@ -78,3 +78,7 @@ DBM_TUNABLE_RANGE = range(-95, -49)
 NOISE_FLOOR_RANGE = range(-105, -79)
 SNR_RANGE = range(10, 41)
 CLIENT_TX_RANGE = range(0, 31)
+# Candidates the extended channel plan's search may consider per coupled group (docs/ALGORITHM.md §8). A count of
+# work, never a time: the plan does not depend on how fast the host is.
+DEFAULT_PLAN_SEARCH_BUDGET = 8_000_000
+PLAN_SEARCH_BUDGET_RANGE = range(0, 1_000_000_001)

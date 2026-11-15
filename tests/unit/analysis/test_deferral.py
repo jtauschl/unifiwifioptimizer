@@ -46,7 +46,8 @@ def _plan(band: Band, *moves: tuple[str, int, int]) -> ExtendedChannelPlan:
                 foreign_overlaps_after=0,
                 data_gaps=(),
             ),
-        )
+        ),
+        search_budget=1_000,
     )
 
 
