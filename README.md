@@ -257,7 +257,7 @@ Keys (every key not listed is an error):
 | `sites.<site>.ssh.host_keys` | Pins the host key of an access point: lower-case MAC -> `SHA256:...` fingerprint |
 | `sites.<site>.ssh.scan_interface_toggle` | `true` lets the scan bring a scan interface that is down up and put it down again; default `false` |
 | `sites.<site>.ssh.allow_public_ap_addresses` | `true` allows access points with a public address; default `false` |
-| `sites.<site>.ssh.scan_concurrency` | Access points scanned at the same time, 1..8, default 1 (see [docs/ALGORITHM.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/ALGORITHM.md) §2) |
+| `sites.<site>.ssh.scan_concurrency` | Access points scanned at the same time, 1..8, default 1; two at a time halved the scan time in a measurement but lost some sightings (see [docs/ALGORITHM.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/ALGORITHM.md) §2) |
 | `sites.<site>.ssh.scan_attempts` | Consecutive `iw scan` runs per band in one connection, 1..5, default 2 |
 | `sites.<site>.environment` | RF environment preset (case-insensitive) or custom path-loss exponent used to derive the TX corridor; default `Residential` |
 | `sites.<site>.scan_passes` | Round-robin scan passes per run, 1..10, default 1; the readings are aggregated as the median, so 3 or more passes outvote a single outlier |

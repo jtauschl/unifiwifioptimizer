@@ -29,7 +29,10 @@ cell overlap:
 A pass is one SSH call per access point; passes run round-robin over the site's access points so the
 readings of one pass are close in time. Within a site the access points are scanned one after the other:
 an access point in an off-channel scan sends no beacons, so two neighbours scanning at the same moment
-systematically miss each other. Per band, the remote script repeats `iw scan` (`scan_attempts`) and
+systematically miss each other. A measurement on one site with four access points (twelve single-pass runs, six per
+setting, alternating) found no pair unseen in both directions at either setting, but two at a time lost 6 of 72
+directed sightings (none one at a time), ended one run with a failed SSH transport to an access point, and took
+about 45 s per pass instead of 82 s; one at a time stays the default and `ssh.scan_concurrency` an opt-in. Per band, the remote script repeats `iw scan` (`scan_attempts`) and
 merges the attempts by the strongest reading per BSSID; the passes are then aggregated as the **median**
 of the readings taken on the peer's **current primary frequency**: a reading on another
 channel predates a channel move and is not comparable, and a maximum over 2–4 noisy samples is biased

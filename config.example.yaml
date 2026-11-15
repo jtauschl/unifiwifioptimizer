@@ -37,7 +37,8 @@ sites:
       # Allow access points with a public IP address (default false).
       allow_public_ap_addresses: false
       # Access points scanned at the same time (1..8, default 1). Scanning one at a time avoids
-      # under-counting neighbours that are off-channel while they scan.
+      # under-counting neighbours that are off-channel while they scan; two at a time halved the
+      # scan time in a measurement but lost some sightings (docs/ALGORITHM.md section 2).
       scan_concurrency: 1
       # Consecutive `iw scan` runs per band within one connection (1..5, default 2).
       scan_attempts: 2
