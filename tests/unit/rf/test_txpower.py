@@ -2,6 +2,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from unifiwifioptimizer.domain.analysis import MaxReason, MaxSource
+from unifiwifioptimizer.domain.models import TxPowerMode
 from unifiwifioptimizer.rf.constants import HYSTERESIS_DOWN_DB
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.txpower import (
@@ -69,24 +71,69 @@ def test_clamp_rejects_an_inverted_range() -> None:
         clamp_tx(10, 20, 6)
 
 
+DEMONSTRATED = MaxSource.DEMONSTRATED
+NO_TABLE = MaxReason.NO_TABLE
+
+
 @pytest.mark.parametrize(
     ("configured_max", "configured", "observed", "expected"),
     [
-        (24, 24, 18, EffectiveMax(18, verified=True)),
-        (24, 20, 18, EffectiveMax(18, verified=True)),
+        (24, 24, 18, EffectiveMax(18, DEMONSTRATED)),
+        (24, 20, 18, EffectiveMax(18, DEMONSTRATED)),
         # Observed equals configured below the maximum: the cap lies somewhere above, unverified.
-        (24, 18, 18, EffectiveMax(24, verified=False)),
-        (24, 12, 12, EffectiveMax(24, verified=False)),
+        (24, 18, 18, EffectiveMax(24, MaxSource.MODEL, NO_TABLE)),
+        (24, 12, 12, EffectiveMax(24, MaxSource.MODEL, NO_TABLE)),
         # Running at the configured maximum and reaching it: the maximum is demonstrated.
-        (23, 23, 23, EffectiveMax(23, verified=True)),
-        # An observed value above the configured one is not a physical reading and proves nothing.
-        (24, 18, 20, EffectiveMax(24, verified=False)),
+        (23, 23, 23, EffectiveMax(23, DEMONSTRATED)),
+        # An observed value above the configured one below the maximum is not a cap and proves nothing.
+        (24, 18, 20, EffectiveMax(24, MaxSource.MODEL, NO_TABLE)),
+        # ... unless it is the maximum itself: reached, whatever the stale configured value says.
+        (24, 18, 24, EffectiveMax(24, DEMONSTRATED)),
     ],
 )
 def test_effective_max_is_the_observed_cap_when_the_radio_falls_short(
     configured_max: int, configured: int, observed: int, expected: EffectiveMax
 ) -> None:
-    assert effective_max_tx(configured_max, configured, observed) == expected
+    assert effective_max_tx(TxPowerMode.CUSTOM, configured, observed, configured_max, NO_TABLE) == expected
+
+
+@pytest.mark.parametrize("mode", [TxPowerMode.AUTO, TxPowerMode.HIGH, TxPowerMode.LOW, TxPowerMode.MEDIUM, None])
+def test_the_configured_value_is_stale_outside_custom(mode: TxPowerMode | None) -> None:
+    assert effective_max_tx(mode, 24, 18, 24, NO_TABLE) == EffectiveMax(24, MaxSource.MODEL, NO_TABLE)
+    assert effective_max_tx(mode, 12, 24, 24, NO_TABLE) == EffectiveMax(24, DEMONSTRATED)
+
+
+@pytest.mark.parametrize(
+    ("mode", "configured", "observed", "ceiling", "expected"),
+    [
+        # Below the cap Custom shows nothing, so the limit supplies the maximum (the vacuous case).
+        (TxPowerMode.CUSTOM, 12, 12, 16, EffectiveMax(16, MaxSource.REPORTED, limit_dbm=16)),
+        (TxPowerMode.AUTO, 12, 12, 16, EffectiveMax(16, MaxSource.REPORTED, limit_dbm=16)),
+        (None, None, 12, 16, EffectiveMax(16, MaxSource.REPORTED, limit_dbm=16)),
+        # A radio at the floored limit or one rounding step above it keeps its running power as the maximum.
+        (TxPowerMode.CUSTOM, 16, 16, 16, EffectiveMax(16, MaxSource.REPORTED, limit_dbm=16)),
+        (TxPowerMode.CUSTOM, 17, 17, 16, EffectiveMax(17, MaxSource.REPORTED, limit_dbm=16)),
+        # Two steps above contradicts the table.
+        (TxPowerMode.CUSTOM, 18, 18, 16, EffectiveMax(24, MaxSource.MODEL, MaxReason.REFUTED)),
+        # A radio below its configured power is demonstrated whatever the table says.
+        (TxPowerMode.CUSTOM, 24, 16, 20, EffectiveMax(16, DEMONSTRATED)),
+    ],
+)
+def test_a_reported_ceiling_is_the_maximum_until_the_radio_contradicts_it(
+    mode: TxPowerMode | None, configured: int | None, observed: int, ceiling: int, expected: EffectiveMax
+) -> None:
+    assert effective_max_tx(mode, configured, observed, 24, ceiling) == expected
+
+
+@pytest.mark.parametrize("reason", list(MaxReason))
+def test_every_reason_without_a_ceiling_gives_the_model_maximum(reason: MaxReason) -> None:
+    assert effective_max_tx(TxPowerMode.CUSTOM, 12, 12, 24, reason) == EffectiveMax(24, MaxSource.MODEL, reason)
+
+
+def test_only_a_demonstrated_maximum_is_verified() -> None:
+    assert EffectiveMax(18, DEMONSTRATED).verified is True
+    assert EffectiveMax(18, MaxSource.REPORTED, limit_dbm=18).verified is False
+    assert EffectiveMax(18, MaxSource.MODEL, NO_TABLE).verified is False
 
 
 def test_reverse_rssi_follows_reciprocity() -> None:

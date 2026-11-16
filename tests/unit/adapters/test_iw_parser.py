@@ -274,3 +274,77 @@ def test_a_decimal_megahertz_table_from_a_newer_iw_is_read() -> None:
     body = POWER_HEAD + b"\t* 5260.0 MHz [52] (23.0 dBm) (no IR, radar detection)\n"
     parsed = parse_scan_output(SAMPLE + b"===POWER5G===\n" + body).power_5g
     assert parsed is not None and parsed.limits == ((52, 23.0),)
+
+
+# --- the 2.4 GHz table ---------------------------------------------------------------------------------------
+
+POWER_HEAD_2G = b"STATUS=ok\nPHY_INDEX=1\nCURRENT_FREQ_MHZ=2437\n"
+U7_2G_ROWS = b"".join(f"\t* {2407 + 5 * c} MHz [{c}] (20.0 dBm)\n".encode() for c in range(1, 14))
+
+
+def test_the_two_power_sections_are_read_independently() -> None:
+    both = (
+        SAMPLE
+        + b"===POWER5G===\nSTATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n\t* 5260 MHz [52] (23.0 dBm)\n"
+        + b"===POWER2G===\n"
+        + POWER_HEAD_2G
+        + U7_2G_ROWS
+    )
+    parsed = parse_scan_output(both)
+    assert parsed.power_5g is not None and parsed.power_5g.limits == ((52, 23.0),)
+    assert parsed.power_2g is not None and parsed.power_2g.current_frequency_mhz == 2437
+    assert parsed.power_2g.limits == tuple((c, 20.0) for c in range(1, 14))
+    assert parsed.power(Band.GHZ_2) is parsed.power_2g and parsed.power(Band.GHZ_5) is parsed.power_5g
+
+
+def test_a_two_gigahertz_table_never_feeds_the_five_gigahertz_one_and_the_other_way_round() -> None:
+    only_2g = parse_scan_output(SAMPLE + b"===POWER2G===\n" + POWER_HEAD_2G + U7_2G_ROWS)
+    assert only_2g.power_5g is None and only_2g.power_2g is not None
+    wrong_section = parse_scan_output(SAMPLE + b"===POWER5G===\n" + POWER_HEAD_2G + U7_2G_ROWS)
+    assert wrong_section.power_5g is None and wrong_section.power_2g is None
+
+
+def test_channel_fourteen_sits_on_its_own_frequency() -> None:
+    rows = b"\t* 2484 MHz [14] (20.0 dBm)\n"
+    parsed = parse_scan_output(SAMPLE + b"===POWER2G===\nSTATUS=ok\nPHY_INDEX=1\nCURRENT_FREQ_MHZ=2484\n" + rows)
+    assert parsed.power_2g is not None and parsed.power_2g.limits == ((14, 20.0),)
+
+
+def test_the_u6_zero_table_is_unknown_on_both_bands() -> None:
+    zero_2g = b"".join(f"\t* {2407 + 5 * c} MHz [{c}] (0.0 dBm)\n".encode() for c in range(1, 14))
+    zero_5g = b"".join(f"\t* {5000 + 5 * c} MHz [{c}] (0.0 dBm)\n".encode() for c in (36, 40, 44))
+    parsed = parse_scan_output(
+        SAMPLE
+        + b"===POWER5G===\nSTATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5180\n"
+        + zero_5g
+        + b"===POWER2G===\n"
+        + POWER_HEAD_2G
+        + zero_2g
+    )
+    assert parsed.power_2g is None and parsed.power_5g is None and parsed.band(Band.GHZ_2) is not None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"STATUS=unknown\n",
+        POWER_HEAD_2G + b"\t* 2437 MHz [6] (20.0 dBm)\n\t* 2437 MHz [6] (23.0 dBm)\n",
+        POWER_HEAD_2G + b"\t* 2438 MHz [6] (20.0 dBm)\n",
+        POWER_HEAD_2G + b"\t* 2437 MHz [6] (20.0 dBm)\n\t* 2472 MHz [14] (20.0 dBm)\n",
+        POWER_HEAD_2G + b"\t* 2437 MHz [6] (disabled)\n",
+        b"STATUS=ok\nPHY_INDEX=1\nCURRENT_FREQ_MHZ=2512\n\t* 2437 MHz [6] (20.0 dBm)\n",
+        b"STATUS=ok\nPHY_INDEX=1\nCURRENT_FREQ_MHZ=2442\n\t* 2437 MHz [6] (20.0 dBm)\n",
+        POWER_HEAD_2G + b"".join(f"\t* {2407 + 5 * c} MHz [{c}] (20.0 dBm)\n".encode() for c in range(1, 14)) * 6,
+    ],
+)
+def test_every_inconsistent_two_gigahertz_table_is_unknown(body: bytes) -> None:
+    parsed = parse_scan_output(SAMPLE + b"===POWER2G===\n" + body)
+    assert parsed.power_2g is None and parsed.band(Band.GHZ_2) is not None
+
+
+def test_a_doubled_two_gigahertz_section_is_unknown_and_leaves_the_five_gigahertz_table_alone() -> None:
+    five = b"===POWER5G===\nSTATUS=ok\nPHY_INDEX=2\nCURRENT_FREQ_MHZ=5260\n\t* 5260 MHz [52] (23.0 dBm)\n"
+    section = b"===POWER2G===\n" + POWER_HEAD_2G + U7_2G_ROWS
+    parsed = parse_scan_output(SAMPLE + five + section + section)
+    assert parsed.power_2g is None and parsed.power_5g is not None
+    assert parse_scan_output(SAMPLE + five + section).power_2g is not None

@@ -12,6 +12,7 @@ from unifiwifioptimizer.analysis.neighbors import (
     reduce_band_passes,
     symmetric_neighbours,
 )
+from unifiwifioptimizer.analysis.phy_power import serving_table
 from unifiwifioptimizer.domain.models import DFS_WAIT_STATE, SETTINGS_ENDPOINT, Band, Radio, SiteSnapshot, TxPowerMode
 from unifiwifioptimizer.domain.report import (
     BEACON_EVIDENCE_GAP,
@@ -21,7 +22,7 @@ from unifiwifioptimizer.domain.report import (
     ExtendedChannelPlan,
     PowerOpportunity,
 )
-from unifiwifioptimizer.domain.scan import ApScan, PhyChannelPower, SiteScan
+from unifiwifioptimizer.domain.scan import PhyChannelPower, SiteScan
 from unifiwifioptimizer.rf.channel_plan import RADIO_LIMIT, PlanEdge, PlanRadio, canonical_candidates, optimize
 from unifiwifioptimizer.rf.channel_power import calibrated_ceilings
 from unifiwifioptimizer.rf.channels import (
@@ -83,16 +84,6 @@ def _setting_cap(radio: Radio) -> int | None:
     if radio.tx_power_mode in (TxPowerMode.HIGH, TxPowerMode.AUTO):
         return radio.max_tx_dbm
     return None
-
-
-def _stable_power(ap_scan: ApScan | None) -> PhyChannelPower | None:
-    if ap_scan is None:
-        return None
-    passes = ap_scan.successful_passes
-    if not passes or passes[0].power_5g is None:
-        return None
-    first = passes[0].power_5g
-    return first if all(p.power_5g == first for p in passes) else None
 
 
 def _band(
@@ -188,8 +179,8 @@ def _band(
         canonical = canonical_candidates(band, geom.width_mhz, tuple(candidates), geom.channel)
         power = None
         if band is Band.GHZ_5:
-            table = _stable_power(scan.scan_of(ap.mac))
-            if table is not None and table.current_frequency_mhz == center_frequency_mhz(band, geom.channel):
+            table = serving_table(scan.scan_of(ap.mac), band, geom.channel)
+            if isinstance(table, PhyChannelPower):
                 power = calibrated_ceilings(
                     geom.channel,
                     geom.width_mhz,

@@ -388,18 +388,19 @@ The report is built per access point and band. The first access point shows the 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm
-           (unverified))
+           (model maximum; no per-channel limits reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -70 dBm n=3 offset -12 dB
 […]
   5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm
-         (unverified))
+         (model maximum; no per-channel limits reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -72 dBm n=3 offset -3 dB *
 
-  · the radio has not demonstrated power above 20 dBm on this channel
+  · no power limit stands behind the model maximum 23 dBm (no per-channel limits reported); the
+    radio has not demonstrated power above 20 dBm on this channel
 
   Recommendations:
     ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
@@ -408,7 +409,7 @@ The report is built per access point and band. The first access point shows the 
     · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
 ```
 
-- **TX and `max`**: the radio's effective transmit power is what counts. In automatic mode the configured value is stale, so the tool judges the effective one and phrases a change as "set to Custom, N dBm". `max … (unverified)` marks a ceiling the radio has not demonstrated yet.
+- **TX and `max`**: the radio's effective transmit power is what counts. In automatic mode the configured value is stale, so the tool judges the effective one and phrases a change as "set to Custom, N dBm". The text after `max` says where the ceiling comes from: nothing (the radio demonstrated it), `reported by the access point` (the limits the access point's own radio table reports for the occupied channels, minus the antenna gain), or `model maximum` with the reason no limit was usable (for example an access point whose driver reports no per-channel limits). Only a demonstrated ceiling has been seen on this channel; a raise above the running power is a trial in the other two cases.
 - **Neighbour table**: `RSSI @ neighbour` is how strongly the neighbour hears this access point's beacons, the median of `n` readings taken on this access point's channel. `offset` is the two receivers' disagreement after the power difference; from 5 dB on the report adds a line saying that one reads systematically high or low. `*` marks a pair that stays outside the corridor even after the recommended change, `°` one that is outside now and inside after it, and `~` a reading predicted from the opposite direction because the neighbour did not hear this access point.
 - **Recommendations**: `✗` is a change to make, with the UniFi path under it; `✓` confirms the current value; `-` is a decision without a change; `·` is information. Findings under a band are marked `*` (warning), `!` (worth checking) and `·` (information). A disabled Minimum RSSI is shown with the value to use if you enable it.
 - **`regulatory cap`**: the radio runs below its configured power, so the lower power is its verified maximum.

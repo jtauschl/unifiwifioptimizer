@@ -25,7 +25,8 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - Advice that depends on another pending change carries a `deferred_by` mark in the text, the JSON and the footer counts.
 - `derived.pending_tx_changes` counts only the power changes that can be applied now; `derived.waiting_items` counts the items that wait.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
-- The scan script reads the serving 5 GHz PHY's channel-power limits on every scan (read-only queries; see `SECURITY.md`).
+- The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
+- The effective maximum of a radio says where it comes from: demonstrated by the radio, reported by the access point's own channel limits minus the antenna gain, or the model maximum with the reason no limit was usable. A radio that runs above its reported limit refutes the table. The JSON carries `effective_max_source` and `effective_max_reason`.
 - The optional 5 GHz channel plan uses those limits, calibrates them against observed TX and labels higher-power channels as downlink trials, not guaranteed range gains.
 - `run --extended` adds a read-only site-wide 2.4/5 GHz channel proposal from the scan evidence and says when a band lacks the evidence.
 - The channel proposal searches each group of coupled radios exactly wherever the effort budget `rf.plan_search_budget` allows (default 8,000,000 candidates per group, a count of work and not a time) and says when it stopped without proving the optimum; the budget is shown with the plan.

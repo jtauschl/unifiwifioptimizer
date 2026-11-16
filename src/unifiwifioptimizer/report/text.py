@@ -11,6 +11,7 @@ from unifiwifioptimizer.compliance.rules import RULE_BY_CODE
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
     ChannelPlanMethod,
+    MaxSource,
     MissDirection,
     MissingReason,
     NeighbourMarker,
@@ -37,6 +38,7 @@ from unifiwifioptimizer.domain.report import (
     RecommendationKind,
     Severity,
     SiteReport,
+    TxSummaryReport,
     WlanEvaluation,
     WlanRoamingSummary,
 )
@@ -359,6 +361,25 @@ def _min_rssi_value(rec: Recommendation) -> str:
     return text
 
 
+def _regulatory_cap(tx: TxSummaryReport) -> bool:
+    """A Custom radio running below its configured power is held down by a cap; one above it has a stale value."""
+    return (
+        tx.mode is TxPowerMode.CUSTOM
+        and tx.configured_dbm is not None
+        and tx.effective_dbm is not None
+        and tx.effective_dbm < tx.configured_dbm
+    )
+
+
+def _max_basis(tx: TxSummaryReport) -> str:
+    if tx.effective_max_source is MaxSource.REPORTED:
+        return " (reported by the access point)"
+    if tx.effective_max_source is MaxSource.MODEL:
+        reason = f"; {tx.effective_max_reason.words}" if tx.effective_max_reason is not None else ""
+        return f" (model maximum{reason})"
+    return ""
+
+
 def _band(band: BandReport) -> list[str]:
     tx = band.tx
     channel = "auto" if band.channel is None else str(band.channel)
@@ -374,9 +395,9 @@ def _band(band: BandReport) -> list[str]:
         power += f", configured {tx.configured_dbm} dBm is stale)" if tx.configured_dbm is not None else ")"
     elif tx.configured_dbm is not None and tx.configured_dbm != tx.effective_dbm:
         power += f" (configured {tx.configured_dbm} dBm"
-        power += ", regulatory cap)" if tx.effective_max_verified else ")"
+        power += ", regulatory cap)" if _regulatory_cap(tx) else ")"
     if tx.effective_max_dbm is not None:
-        power += f"; max {tx.effective_max_dbm} dBm" + ("" if tx.effective_max_verified else " (unverified)")
+        power += f"; max {tx.effective_max_dbm} dBm{_max_basis(tx)}"
     width = f"{band.width_mhz} MHz" if band.width_mhz is not None else "n/a"
     lines = [f"  {band.band.label}  (channel {channel}, width {width}, TX {power})", ""]
     if band.outcome in (BandTxOutcome.OFFLINE, BandTxOutcome.SCAN_SKIPPED):
@@ -475,7 +496,7 @@ def _setup_current_tx(band: BandReport) -> str:
         value += f", configured {tx.configured_dbm} dBm"
         if tx.mode is not None and tx.mode is not TxPowerMode.CUSTOM:
             value += " is stale"
-        elif tx.effective_max_verified:
+        elif _regulatory_cap(tx):
             value += " (regulatory cap)"
     return value
 

@@ -1,11 +1,19 @@
-"""Conservative per-channel TX ceiling inference for the optional 5 GHz plan (docs/ALGORITHM.md §8)."""
+"""Per-channel TX ceilings from a serving PHY's `iw` limits: the reported ceiling of the current channel for
+the effective maximum (docs/ALGORITHM.md §4) and the calibrated candidate ceilings of the optional 5 GHz plan
+(docs/ALGORITHM.md §8)."""
 
 from dataclasses import dataclass
 from math import floor
 
+from unifiwifioptimizer.domain.analysis import MaxReason
+from unifiwifioptimizer.domain.models import Band
 from unifiwifioptimizer.rf.channels import occupied_channels_5g
+from unifiwifioptimizer.rf.constants import ROUNDING_TOLERANCE_DB
 
-ROUNDING_TOLERANCE_DB = 1
+# A 20 MHz secondary channel sits four 5 MHz channel numbers from the primary.
+SECONDARY_OFFSET_2G = 4
+# Channel 14 (2484 MHz) is off the 5 MHz grid and never a secondary: primary 10 plus four would not be 2484 MHz.
+SECONDARY_CHANNELS_2G = frozenset(range(1, 14))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -36,6 +44,47 @@ def candidate_ceiling(
         return None
     ceiling = min(setting_cap_dbm, hardware_max_dbm, floor(min(powers) - antenna_gain_dbi))
     return ceiling if ceiling > 0 else None
+
+
+def _occupied_channels_2g(channel: int, width_mhz: int, extension_channel: int | None) -> tuple[int, ...]:
+    """The primary channel and, at 40 MHz, its secondary: the side the controller names, else every side that
+    is a channel of the band."""
+    if width_mhz <= 20:
+        return (channel,)
+    sides = (extension_channel,) if extension_channel in (-1, 1) else (-1, 1)
+    secondaries = (channel + SECONDARY_OFFSET_2G * side for side in sides)
+    named = extension_channel in (-1, 1)
+    return (channel, *(c for c in secondaries if named or c in SECONDARY_CHANNELS_2G))
+
+
+def reported_ceiling(
+    band: Band,
+    channel: int,
+    width_mhz: int,
+    extension_channel: int | None,
+    limits: tuple[tuple[int, float], ...],
+    model_max_dbm: int,
+    antenna_gain_dbi: int | None,
+) -> int | MaxReason:
+    """The conducted power the serving PHY's limits allow on the occupied channels: the weakest limit minus the
+    antenna gain, floored and capped by the model maximum. Every occupied channel needs a limit: a table that
+    lacks one proves no freedom there."""
+    if antenna_gain_dbi is None or antenna_gain_dbi < 0:
+        return MaxReason.NO_ANTENNA_GAIN
+    table = dict(limits)
+    try:
+        occupied = (
+            occupied_channels_5g(channel, width_mhz)
+            if band is Band.GHZ_5
+            else _occupied_channels_2g(channel, width_mhz, extension_channel)
+        )
+    except ValueError:
+        return MaxReason.NO_LIMIT
+    if not set(occupied) <= table.keys():
+        return MaxReason.NO_LIMIT
+    powers = [table[c] for c in occupied]
+    ceiling = min(model_max_dbm, floor(min(powers) - antenna_gain_dbi))
+    return ceiling if ceiling > 0 else MaxReason.NO_LIMIT
 
 
 def calibrated_ceilings(

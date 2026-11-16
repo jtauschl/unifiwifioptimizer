@@ -4,6 +4,7 @@ the footer, one JSON document for several sites, ASCII-only JSON, no secret in t
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -11,12 +12,21 @@ from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.domain.analysis import (
     ChannelPlanMethod,
+    MaxReason,
+    MaxSource,
     PartialReason,
     ReadingSource,
     RoamingCap,
     WlanRoamingStatus,
 )
-from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, MgmtSettings, UnparsableDevice
+from unifiwifioptimizer.domain.models import (
+    Band,
+    DeviceState,
+    FieldProblem,
+    MgmtSettings,
+    TxPowerMode,
+    UnparsableDevice,
+)
 from unifiwifioptimizer.domain.report import (
     BandChannelPlan,
     ChannelAssignment,
@@ -739,3 +749,68 @@ def test_the_budget_appears_in_the_json_only_with_an_extended_plan() -> None:
     extended = json.loads(render_json([_extended_with(ChannelPlanMethod.HEURISTIC, 77)]))["sites"][0]
     assert extended["extended_channel_plan"]["search_budget"] == 77
     assert extended["extended_channel_plan"]["bands"][0]["method"] == "heuristic"
+
+
+def _with_tx(**overrides: Any) -> SiteReport:
+    """The golden report with the first access point's first band carrying the given TX summary values."""
+    ap = REPORT.aps[0]
+    band = replace(ap.bands[0], tx=replace(ap.bands[0].tx, **overrides))
+    return replace(REPORT, aps=(replace(ap, bands=(band, *ap.bands[1:])), *REPORT.aps[1:]))
+
+
+def _tx_line(text: str) -> str:
+    start = text.index("TX ")
+    return " ".join(text[start : text.index("\n\n", start)].split())
+
+
+@pytest.mark.parametrize(
+    ("source", "reason", "basis"),
+    [
+        (MaxSource.DEMONSTRATED, None, "max 23 dBm)"),
+        (MaxSource.REPORTED, None, "max 23 dBm (reported by the access point))"),
+        (MaxSource.MODEL, MaxReason.NO_TABLE, "max 23 dBm (model maximum; no per-channel limits reported))"),
+        (MaxSource.MODEL, MaxReason.REFUTED, "max 23 dBm (model maximum; radio runs above the reported limits))"),
+    ],
+)
+def test_the_text_report_says_where_the_effective_maximum_comes_from(
+    source: MaxSource, reason: MaxReason | None, basis: str
+) -> None:
+    text = render_report(_with_tx(effective_max_source=source, effective_max_reason=reason), width=None)
+    assert _tx_line(text).endswith(basis)
+
+
+def test_a_custom_radio_above_a_stale_lower_configured_power_is_not_called_regulatory_cap() -> None:
+    text = render_report(
+        _with_tx(
+            mode=TxPowerMode.CUSTOM,
+            configured_dbm=18,
+            effective_dbm=24,
+            effective_max_dbm=24,
+            effective_max_verified=True,
+            effective_max_source=MaxSource.DEMONSTRATED,
+            effective_max_reason=None,
+        ),
+        width=None,
+    )
+    line = _tx_line(text)
+    assert "(configured 18 dBm)" in line and "regulatory cap" not in line
+    capped = render_report(
+        _with_tx(
+            mode=TxPowerMode.CUSTOM,
+            configured_dbm=24,
+            effective_dbm=18,
+            effective_max_dbm=18,
+            effective_max_verified=True,
+            effective_max_source=MaxSource.DEMONSTRATED,
+            effective_max_reason=None,
+        ),
+        width=None,
+    )
+    assert "(configured 24 dBm, regulatory cap)" in _tx_line(capped)
+
+
+def test_the_json_report_carries_the_source_and_reason_of_the_effective_maximum() -> None:
+    document = json.loads(render_json([REPORT]))
+    tx = document["sites"][0]["aps"][0]["bands"][0]["tx"]
+    assert tx["effective_max_source"] == "model" and tx["effective_max_reason"] == "no_table"
+    assert tx["effective_max_verified"] is False

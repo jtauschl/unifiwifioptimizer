@@ -73,9 +73,13 @@ class ScanPass:
     bands: tuple[BandScan, ...]
     meta: ScanMeta
     power_5g: PhyChannelPower | None = None
+    power_2g: PhyChannelPower | None = None
 
     def band(self, band: Band) -> BandScan | None:
         return next((b for b in self.bands if b.band is band), None)
+
+    def power(self, band: Band) -> PhyChannelPower | None:
+        return self.power_2g if band is Band.GHZ_2 else self.power_5g
 
 
 class ScanFailureKind(StrEnum):

@@ -10,17 +10,26 @@ from hypothesis import strategies as st
 from unifiwifioptimizer.analysis.neighbors import PeerReading
 from unifiwifioptimizer.analysis.txpower import (
     BandTxResult,
+    TxSummary,
     analyse_band_tx,
     apply_mesh_guard,
     effective_maximum,
     summarise,
 )
-from unifiwifioptimizer.domain.analysis import BandTxOutcome, MissingReason, NeighbourMarker, ReadingSource
+from unifiwifioptimizer.domain.analysis import (
+    BandTxOutcome,
+    MaxReason,
+    MaxSource,
+    MissingReason,
+    NeighbourMarker,
+    ReadingSource,
+)
 from unifiwifioptimizer.domain.models import AccessPoint, Band, TxPowerMode
 from unifiwifioptimizer.domain.report import RecommendationKind, Severity
+from unifiwifioptimizer.domain.scan import PhyChannelPower
+from unifiwifioptimizer.rf.channels import CHANNELS_5G
 from unifiwifioptimizer.rf.constants import HYSTERESIS_DOWN_DB
 from unifiwifioptimizer.rf.corridor import Corridor
-from unifiwifioptimizer.rf.txpower import effective_max_tx
 
 from .builders import ap_named, fixture_snapshot, with_radio, with_stats, without_stats
 
@@ -75,10 +84,28 @@ def auto(name: str, band: Band, current: int, configured: int, max_tx: int = 24)
     return with_stats(ap, band, observed_tx_dbm=current, state="RUN")
 
 
+NO_TABLE = MaxReason.NO_TABLE
+
+
+def phy_table(dbm: float, frequency_mhz: int = 5260) -> PhyChannelPower:
+    return PhyChannelPower(
+        phy_index=1, current_frequency_mhz=frequency_mhz, limits=tuple((c, dbm) for c in sorted(CHANNELS_5G))
+    )
+
+
 def run(
-    ap: AccessPoint, cells: list[PeerReading], corridor: Corridor = FIVE, band: Band = Band.GHZ_5, skipped: bool = False
+    ap: AccessPoint,
+    cells: list[PeerReading],
+    corridor: Corridor = FIVE,
+    band: Band = Band.GHZ_5,
+    skipped: bool = False,
+    table: PhyChannelPower | MaxReason = NO_TABLE,
 ) -> BandTxResult:
-    return analyse_band_tx(ap, band, cells, corridor, scan_skipped=skipped)
+    return analyse_band_tx(ap, band, cells, corridor, skipped, table)
+
+
+def summary_of(ap: AccessPoint, band: Band = Band.GHZ_5, table: PhyChannelPower | MaxReason = NO_TABLE) -> TxSummary:
+    return summarise(ap, band, effective_maximum(ap, band, table))
 
 
 def codes(result: BandTxResult) -> list[str]:
@@ -89,21 +116,87 @@ def codes(result: BandTxResult) -> list[str]:
 
 
 def test_the_effective_maximum_follows_the_configured_power_only_under_custom() -> None:
-    capped = summarise(custom("AP-2", Band.GHZ_5, current=18, configured=24, max_tx=24), Band.GHZ_5)
-    assert (capped.effective_max_dbm, capped.effective_max_verified) == (18, True)
-    at_configured_max = summarise(custom("AP-3", Band.GHZ_5, current=23, configured=23, max_tx=23), Band.GHZ_5)
-    assert (at_configured_max.effective_max_dbm, at_configured_max.effective_max_verified) == (23, True)
-    below_max = summarise(custom("AP-3", Band.GHZ_5, current=15, configured=15, max_tx=23), Band.GHZ_5)
-    assert (below_max.effective_max_dbm, below_max.effective_max_verified) == (23, False)
-    # Fixture AP-1: auto, configured 19 below the observed 20 — never a cap, never verified.
-    stale = summarise(ap_named(SNAP, "AP-1"), Band.GHZ_5)
+    capped = summary_of(custom("AP-2", Band.GHZ_5, current=18, configured=24, max_tx=24))
+    assert (capped.effective_max_dbm, capped.effective_max_source) == (18, MaxSource.DEMONSTRATED)
+    at_configured_max = summary_of(custom("AP-3", Band.GHZ_5, current=23, configured=23, max_tx=23))
+    assert (at_configured_max.effective_max_dbm, at_configured_max.effective_max_source) == (
+        23,
+        MaxSource.DEMONSTRATED,
+    )
+    below_max = summary_of(custom("AP-3", Band.GHZ_5, current=15, configured=15, max_tx=23))
+    assert (below_max.effective_max_dbm, below_max.effective_max_source, below_max.effective_max_reason) == (
+        23,
+        MaxSource.MODEL,
+        MaxReason.NO_TABLE,
+    )
+    # Fixture AP-1: auto, configured 19 below the observed 20 — never a cap, never demonstrated.
+    stale = summary_of(ap_named(SNAP, "AP-1"))
     assert (stale.mode, stale.configured_dbm, stale.effective_dbm) == (TxPowerMode.AUTO, 19, 20)
     assert (stale.effective_max_dbm, stale.effective_max_verified) == (23, False)
-    no_configured = summarise(
-        with_radio(custom("AP-3", Band.GHZ_5, 15), Band.GHZ_5, configured_tx_dbm=None), Band.GHZ_5
-    )
+    no_configured = summary_of(with_radio(custom("AP-3", Band.GHZ_5, 15), Band.GHZ_5, configured_tx_dbm=None))
     assert (no_configured.effective_max_dbm, no_configured.effective_max_verified) == (24, False)
-    assert effective_maximum(summarise(without_stats(ap_named(SNAP, "AP-3"), Band.GHZ_5), Band.GHZ_5)) is None
+    assert effective_maximum(without_stats(ap_named(SNAP, "AP-3"), Band.GHZ_5), Band.GHZ_5, NO_TABLE) is None
+
+
+def test_a_radio_at_the_model_maximum_has_reached_it_in_every_mode() -> None:
+    for mode in TxPowerMode:
+        ap = with_stats(
+            with_radio(ap_named(SNAP, "AP-3"), Band.GHZ_5, tx_power_mode=mode, configured_tx_dbm=12, max_tx_dbm=24),
+            Band.GHZ_5,
+            observed_tx_dbm=24,
+            state="RUN",
+        )
+        assert summary_of(ap).effective_max_source is MaxSource.DEMONSTRATED
+
+
+def test_a_custom_radio_above_a_stale_lower_configured_value_is_not_capped_below() -> None:
+    summary = summary_of(custom("AP-3", Band.GHZ_5, current=24, configured=18, max_tx=24))
+    assert (summary.effective_max_dbm, summary.effective_max_source) == (24, MaxSource.DEMONSTRATED)
+
+
+def test_the_reported_limit_stands_behind_the_maximum_below_the_cap_in_every_mode() -> None:
+    # 5 GHz channel limit 23 dBm, gain 5 dBi: 18 dBm reachable. Custom 12 shows nothing of it.
+    custom_12 = custom("AP-3", Band.GHZ_5, current=12, configured=12, max_tx=24)
+    reported = summary_of(with_radio(custom_12, Band.GHZ_5, antenna_gain_dbi=5), table=phy_table(23.0))
+    assert (reported.effective_max_dbm, reported.effective_max_source, reported.effective_max_reason) == (
+        18,
+        MaxSource.REPORTED,
+        None,
+    )
+    auto_12 = with_radio(auto("AP-3", Band.GHZ_5, current=12, configured=12), Band.GHZ_5, antenna_gain_dbi=5)
+    assert summary_of(auto_12, table=phy_table(23.0)).effective_max_dbm == 18
+
+
+def test_a_radio_running_above_the_reported_limit_refutes_the_table() -> None:
+    # Limit 23 dBm minus 5 dBi is 18; an automatic-mode radio runs at 21: the table is wrong for this radio.
+    radio = with_radio(auto("AP-3", Band.GHZ_5, current=21, configured=21), Band.GHZ_5, antenna_gain_dbi=5)
+    refuted = summary_of(radio, table=phy_table(23.0))
+    assert (refuted.effective_max_dbm, refuted.effective_max_source, refuted.effective_max_reason) == (
+        24,
+        MaxSource.MODEL,
+        MaxReason.REFUTED,
+    )
+    within = summary_of(with_radio(radio, Band.GHZ_5, antenna_gain_dbi=5), table=phy_table(25.9))
+    assert (within.effective_max_dbm, within.effective_max_source) == (21, MaxSource.REPORTED)
+
+
+def test_a_radio_one_db_above_the_floored_limit_keeps_the_observed_power_as_the_maximum() -> None:
+    # Limit 22.5 dBm minus 5 dBi floors to 17; the radio runs at 18: rounding, not a contradiction, and the
+    # maximum never falls below the running power.
+    radio = with_radio(custom("AP-3", Band.GHZ_5, current=18, configured=18, max_tx=24), Band.GHZ_5, antenna_gain_dbi=5)
+    summary = summary_of(radio, table=phy_table(22.5))
+    assert (summary.effective_max_dbm, summary.effective_max_source) == (18, MaxSource.REPORTED)
+
+
+def test_a_table_without_a_usable_limit_gives_the_model_maximum_with_the_reason() -> None:
+    radio = custom("AP-3", Band.GHZ_5, current=12, configured=12, max_tx=24)
+    no_gain = summary_of(with_radio(radio, Band.GHZ_5, antenna_gain_dbi=None), table=phy_table(23.0))
+    assert (no_gain.effective_max_source, no_gain.effective_max_reason) == (MaxSource.MODEL, MaxReason.NO_ANTENNA_GAIN)
+    zero = summary_of(with_radio(radio, Band.GHZ_5, antenna_gain_dbi=5), table=phy_table(0.0))
+    assert (zero.effective_max_source, zero.effective_max_reason) == (MaxSource.MODEL, MaxReason.NO_LIMIT)
+    for reason in MaxReason:
+        carried = summary_of(radio, table=reason)
+        assert (carried.effective_max_source, carried.effective_max_reason) == (MaxSource.MODEL, reason)
 
 
 def test_auto_mode_with_a_stale_configured_power_above_the_effective_one_is_never_a_coverage_gap() -> None:
@@ -222,6 +315,62 @@ def test_row_6_wins_over_other_peers_but_a_blocking_peer_is_still_named() -> Non
     result = run(custom("AP-3", Band.GHZ_5, 15, max_tx=23), cells)
     assert result.outcome is BandTxOutcome.NO_SIGHTING and codes(result) == ["peers_not_evaluated"]
     assert result.findings[0].peers == ("AP-4",)
+
+
+def reported_radio(current: int, configured: int | None = None) -> AccessPoint:
+    """Custom at `current`, model maximum 24, 5 dBi, so a 23 dBm limit leaves 18 dBm reachable."""
+    return with_radio(custom("AP-3", Band.GHZ_5, current, configured, max_tx=24), Band.GHZ_5, antenna_gain_dbi=5)
+
+
+def test_a_radio_at_its_reported_limit_names_the_limit_as_the_basis_of_the_gap() -> None:
+    both_way = run(reported_radio(18), [missing("AP-1", MissingReason.NOT_SIGHTED)], table=phy_table(23.0))
+    gap = next(f for f in both_way.findings if f.code == "coverage_gap")
+    assert (
+        both_way.outcome is BandTxOutcome.NO_SIGHTING and "at 18 dBm, the access point's reported limit" in gap.message
+    )
+    weak = run(reported_radio(18), [measured("AP-2", -80)], table=phy_table(23.0))
+    assert weak.outcome is BandTxOutcome.COVERAGE_GAP
+    assert "at 18 dBm, the access point's reported limit" in weak.findings[0].message
+
+
+def test_a_radio_one_db_above_the_floored_limit_names_the_rounding_in_both_gap_rows() -> None:
+    # Limit 22.5 dBm less 5 dBi floors to 17; the radio runs at 18 and is at its maximum.
+    radio = reported_radio(18)
+    both_way = run(radio, [missing("AP-1", MissingReason.NOT_SIGHTED)], table=phy_table(22.5))
+    weak = run(radio, [measured("AP-2", -80)], table=phy_table(22.5))
+    text = "18 dBm, within rounding of the access point's reported limit 17 dBm"
+    assert text in next(f for f in both_way.findings if f.code == "coverage_gap").message
+    assert text in weak.findings[0].message
+
+
+def test_a_model_maximum_below_the_running_power_never_claims_the_maximum_was_reached() -> None:
+    # Custom 15 of a model maximum 24 with no limits: the raise is an untested trial, not a coverage gap.
+    weak = run(reported_radio(15), [measured("AP-2", -80)])
+    assert weak.outcome is BandTxOutcome.RAISE_TO_MAXIMUM
+    (finding,) = weak.findings
+    assert finding.code == "headroom_unverified"
+    assert finding.message == (
+        "no power limit stands behind the model maximum 24 dBm (no per-channel limits reported); "
+        "the radio has not demonstrated power above 15 dBm on this channel"
+    )
+    assert weak.recommendation is not None and weak.recommendation.unverified_headroom is True
+
+
+def test_a_reported_limit_above_the_running_power_recommends_the_limit_as_an_untested_raise() -> None:
+    weak = run(reported_radio(12), [measured("AP-2", -80)], table=phy_table(23.0))
+    assert weak.outcome is BandTxOutcome.RAISE_TO_MAXIMUM
+    assert weak.recommendation is not None and (
+        weak.recommendation.recommended,
+        weak.recommendation.unverified_headroom,
+    ) == (
+        18,
+        True,
+    )
+    (finding,) = weak.findings
+    assert finding.message == (
+        "the access point's limits allow 18 dBm; the radio has not demonstrated power above 12 dBm on this channel; "
+        "apply the change and re-run to confirm"
+    )
 
 
 # --- row 7: nothing evaluable ---------------------------------------------------------------------------------
@@ -432,7 +581,7 @@ def test_row_13_hold_names_the_dropped_reduction_and_marks_only_a_neighbour_too_
     )
     # Weakest -59 against -67..-61: the shift to the centre (-5 dB) clamps at the minimum 8 dBm, a 2 dB reduction
     # under the 3 dB step; at 8 dBm the neighbour would read -61, inside the corridor — fixable, no marker.
-    held = analyse_band_tx(custom, Band.GHZ_5, [measured("AP-2", -59)], FIVE, scan_skipped=False)
+    held = run(custom, [measured("AP-2", -59)])
     assert held.outcome is BandTxOutcome.OUT_OF_CORRIDOR and held.recommendation is not None
     assert held.recommendation.kind is RecommendationKind.HELD and held.recommendation.recommended == 10
     assert held.recommendation.reason == (
@@ -440,7 +589,7 @@ def test_row_13_hold_names_the_dropped_reduction_and_marks_only_a_neighbour_too_
     )
     assert held.markers == {}
     # One dB stronger and the neighbour stays above the corridor even at the minimum: row 12 with the marker.
-    too_strong = analyse_band_tx(custom, Band.GHZ_5, [measured("AP-2", -58)], FIVE, scan_skipped=False)
+    too_strong = run(custom, [measured("AP-2", -58)])
     assert too_strong.outcome is BandTxOutcome.TOO_STRONG_AT_MINIMUM
     assert too_strong.markers == {"AP-2": NeighbourMarker.ABOVE_UNFIXABLE}
 
@@ -459,6 +608,12 @@ peer_cells = st.lists(
 # (observed below configured) occurs too.
 radios = st.tuples(st.integers(1, 30), st.integers(1, 10), st.integers(10, 30))
 configured_values = st.one_of(st.none(), st.integers(1, 30))
+# What the serving PHY offered: nothing (each reason) or one limit for every 5 GHz channel, zero included.
+tables = st.one_of(
+    st.sampled_from(list(MaxReason)),
+    st.builds(phy_table, st.sampled_from([0.0, 14.5, 20.0, 23.0, 30.0])),
+)
+gains = st.one_of(st.none(), st.integers(-1, 7))
 
 
 @settings(max_examples=200, deadline=None)
@@ -468,13 +623,47 @@ configured_values = st.one_of(st.none(), st.integers(1, 30))
     configured=configured_values,
     mode=st.sampled_from(list(TxPowerMode)),
     low=st.integers(-85, -55),
+    table=tables,
+    gain=gains,
 )
 # Custom at the configured maximum, running at it: the maximum is demonstrated, hence verified.
-@example(cells=[measured("AP-2", -70)], radio=(20, 5, 20), configured=20, mode=TxPowerMode.CUSTOM, low=-67)
+@example(
+    cells=[measured("AP-2", -70)],
+    radio=(20, 5, 20),
+    configured=20,
+    mode=TxPowerMode.CUSTOM,
+    low=-67,
+    table=NO_TABLE,
+    gain=5,
+)
 # Custom below the configured value: the demonstrated power is the verified cap.
-@example(cells=[measured("AP-2", -70)], radio=(18, 5, 24), configured=24, mode=TxPowerMode.CUSTOM, low=-67)
+@example(
+    cells=[measured("AP-2", -70)],
+    radio=(18, 5, 24),
+    configured=24,
+    mode=TxPowerMode.CUSTOM,
+    low=-67,
+    table=NO_TABLE,
+    gain=5,
+)
+# A running power one dB above the floored limit: the maximum must not fall below it.
+@example(
+    cells=[measured("AP-2", -80)],
+    radio=(6, 6, 24),
+    configured=6,
+    mode=TxPowerMode.CUSTOM,
+    low=-67,
+    table=phy_table(11.0),
+    gain=5,
+)
 def test_exactly_one_outcome_never_raises_and_the_recommendation_stays_in_range(
-    cells: list[PeerReading], radio: tuple[int, int, int], configured: int | None, mode: TxPowerMode, low: int
+    cells: list[PeerReading],
+    radio: tuple[int, int, int],
+    configured: int | None,
+    mode: TxPowerMode,
+    low: int,
+    table: PhyChannelPower | MaxReason,
+    gain: int | None,
 ) -> None:
     current, min_tx, max_tx = radio
     ap = with_stats(
@@ -485,12 +674,13 @@ def test_exactly_one_outcome_never_raises_and_the_recommendation_stays_in_range(
             configured_tx_dbm=configured,
             min_tx_dbm=min_tx,
             max_tx_dbm=max_tx,
+            antenna_gain_dbi=gain,
         ),
         Band.GHZ_5,
         observed_tx_dbm=current,
         state="RUN",
     )
-    result = analyse_band_tx(ap, Band.GHZ_5, cells, Corridor(low=low), scan_skipped=False)
+    result = run(ap, cells, Corridor(low=low), table=table)
     assert result.outcome in BandTxOutcome
     rec = result.recommendation
     if not min_tx <= current <= max_tx:
@@ -498,11 +688,20 @@ def test_exactly_one_outcome_never_raises_and_the_recommendation_stays_in_range(
     if rec is not None:
         effective_max = result.summary.effective_max_dbm
         assert effective_max is not None and min_tx <= rec.recommended <= effective_max <= max_tx
-        if mode is TxPowerMode.CUSTOM and configured is not None:
-            cap = effective_max_tx(max_tx, configured, current)
-            assert (effective_max, result.summary.effective_max_verified) == (cap.dbm, cap.verified)
-        else:
-            assert effective_max == max_tx and result.summary.effective_max_verified is False
+        source, reason = result.summary.effective_max_source, result.summary.effective_max_reason
+        assert effective_max >= current
+        if mode is TxPowerMode.CUSTOM and configured is not None and current < configured:
+            assert (effective_max, source) == (current, MaxSource.DEMONSTRATED)
+        if current == max_tx:
+            assert (effective_max, source) == (max_tx, MaxSource.DEMONSTRATED)
+        assert (source is MaxSource.MODEL) == (reason is not None)
+        if source is MaxSource.MODEL:
+            assert effective_max == max_tx
+        if source is MaxSource.REPORTED:
+            assert isinstance(table, PhyChannelPower)
+        if not isinstance(table, PhyChannelPower):
+            assert source is not MaxSource.REPORTED
+        assert rec.unverified_headroom or source is MaxSource.DEMONSTRATED or rec.recommended <= current
         assert rec.is_change == (rec.recommended != rec.current)
         blocking = [c for c in cells if c.blocking]
         if rec.recommended < current or rec.kind is RecommendationKind.CONFIRMED:

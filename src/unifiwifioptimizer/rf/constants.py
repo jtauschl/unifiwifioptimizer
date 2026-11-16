@@ -20,6 +20,9 @@ CORRIDOR_WIDTH_DB = 6
 # Minimum reduction once clamping at the radio minimum shrinks a shift; an integer reading outside a
 # 6 dB corridor already demands a shift of at least 4 dB, and increases are never suppressed.
 HYSTERESIS_DOWN_DB = 3
+# A reported TX power is an integer dBm reading of a quantity the driver rounds, so a power one step off the
+# projection of a limit table is rounding, not a contradiction.
+ROUNDING_TOLERANCE_DB = 1
 
 # Path-loss exponent n per environment preset (ITU-R P.1238-10 Table 2 lists N = 10·n). "Open" is
 # the commercial value of the 1.25/1.9/4 GHz rows (no 2.4 GHz commercial value exists), "Obstructed"

@@ -27,6 +27,7 @@ from unifiwifioptimizer.analysis.neighbors import (
     reduce_band_passes,
     symmetric_neighbours,
 )
+from unifiwifioptimizer.analysis.phy_power import serving_table
 from unifiwifioptimizer.analysis.roaming_targets import (
     WlanRoamingTarget,
     downlink_trigger_for,
@@ -36,7 +37,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
 )
 from unifiwifioptimizer.analysis.txpower import BandTxResult, analyse_band_tx, apply_mesh_guard
 from unifiwifioptimizer.compliance.engine import evaluate_site
-from unifiwifioptimizer.domain.analysis import BandTxOutcome, NeighbourMarker, PartialReason
+from unifiwifioptimizer.domain.analysis import BandTxOutcome, MaxReason, NeighbourMarker, PartialReason
 from unifiwifioptimizer.domain.models import AccessPoint, Band, DeviceState, Mac, SiteSnapshot, WlanConfig
 from unifiwifioptimizer.domain.report import (
     AirtimeReport,
@@ -160,6 +161,8 @@ def _tx_summary(result: BandTxResult, antenna_gain_dbi: int | None) -> TxSummary
         max_dbm=s.max_dbm,
         effective_max_dbm=s.effective_max_dbm,
         effective_max_verified=s.effective_max_verified,
+        effective_max_source=s.effective_max_source,
+        effective_max_reason=s.effective_max_reason,
     )
 
 
@@ -327,7 +330,13 @@ def _band_report(
     offsets_reported: set[tuple[frozenset[str], Band]],
 ) -> BandReport:
     cells = matrix.of(ap.name, band)
-    tx = analyse_band_tx(ap, band, cells, corridor, inp.scan_skipped)
+    stats = ap.stats(band)
+    table = (
+        MaxReason.NOT_SCANNED
+        if inp.scan is None
+        else serving_table(inp.scan.scan_of(ap.mac), band, stats.channel if stats is not None else None)
+    )
+    tx = analyse_band_tx(ap, band, cells, corridor, inp.scan_skipped, table)
     if ap.name in roles.children or ap.name in roles.parents:
         tx = apply_mesh_guard(ap, band, tx)
     findings: list[Finding] = list(tx.findings)

@@ -66,15 +66,30 @@ receiver) the report says so, because every AP is then judged by the other chips
 ### Effective power and the effective maximum
 
 The radio's **effective** power (`radio_table_stats.tx_power`) is the basis; the configured value is only
-read in Custom mode. A radio under Custom whose effective power lies below the configured one has hit a
-cap — the regulatory EIRP limit of the channel group minus the antenna gain (Germany, wireless-regdb and
-EN 301 893: 23 dBm EIRP on 5150–5250 MHz; on 5250–5350 MHz 23 dBm with TPC and 20 dBm without; on 5470–5725 MHz
-30 dBm with TPC and 27 dBm without; a U7 Lite with its 5 dBi antenna at 23 dBm EIRP is 18 dBm conducted,
-live-verified on channels 40 and 60) — and the effective power is then the **verified** maximum — as it is when the
-radio runs at the configured maximum itself. A maximum verified on one channel group does not carry over to
-another. In every other case the configured radio maximum is the maximum, **unverified**: nobody has shown
-the radio reaching it on this channel, and an increase above the demonstrated power is marked as unverified
-headroom.
+read in Custom mode. The **effective maximum** is the power the radio can reach on its current channel, and it
+carries the evidence behind it, strongest first:
+
+1. **Demonstrated.** A radio under Custom whose effective power lies below the configured one has hit a
+   cap — the regulatory EIRP limit of the channel group minus the antenna gain (Germany, wireless-regdb and
+   EN 300 328: 20 dBm EIRP on 2.4 GHz; EN 301 893: 23 dBm EIRP on 5150–5250 MHz; on 5250–5350 MHz 23 dBm with TPC and
+   20 dBm without; on 5470–5725 MHz 30 dBm with TPC and 27 dBm without; a U7 Lite with its 5 dBi antenna at
+   23 dBm EIRP is 18 dBm conducted, and 16 dBm on 2.4 GHz with 4 dBi, live-verified) — and the effective power is then the maximum. A radio running at the model maximum
+   has reached it, in any mode. A maximum demonstrated on one channel group does not carry over to another.
+2. **Reported.** The serving PHY's own per-channel limits (`iw phy … info`, read on both bands on every scan): the
+   weakest limit of the occupied 20 MHz channels minus the antenna gain, floored and capped by the model maximum.
+   The limit does not depend on the power setting, so it applies in every mode, and it is what the access point
+   reports, not a measurement. A radio that runs more than 1 dB above it contradicts the table, which is then
+   dropped; the effective maximum never falls below the running power. On 2.4 GHz at 40 MHz the secondary channel
+   counts when the controller names its side, else every side that is a channel of the band does; an occupied
+   channel the table does not list leaves no ceiling.
+3. **Model.** The model maximum (`max_txpower`), with the reason no limit stands behind it: no scan ran or none
+   succeeded, the access point reports no per-channel limits (a driver that prints every limit as 0 dBm, such as the
+   U6 Lite's, is among them), the passes disagree, the limits belong to another channel, an occupied channel has no
+   positive limit, the controller sent no antenna gain, or the radio contradicts the table.
+
+An increase above the demonstrated power is marked as unverified headroom, whether the ceiling is reported or only
+the model maximum: the raise is a trial, and the report says which basis the ceiling has. The structural `coverage_gap` finding is only
+claimed at a demonstrated or reported maximum; a radio below its model maximum is never at its maximum.
 
 ### Corridor test and decision table
 
@@ -356,8 +371,8 @@ budget is shown with the plan. A site with several groups that all spend their b
 At most 128 radios take part per band, a documented scope limit that also bounds the number of such groups and so the
 total; sites with more than 128 participating radios per band are marked unavailable.
 
-The same SSH scan call reads a bounded `iw phy` power table from the 5 GHz PHY attached to an UP AP-mode
-interface. It does so on every scan, with or without `--extended`; the access points only answer read-only queries
+The same SSH scan call reads a bounded `iw phy` power table from the PHY attached to an UP AP-mode
+interface, per band (§4 uses both). It does so on every scan, with or without `--extended`; the access points only answer read-only queries
 that the script already makes (`SECURITY.md` lists them). A table from another PHY on the same AP is not interchangeable. For a candidate bonded block,
 the weakest reported 20 MHz limit is projected to a conducted TX ceiling after the controller's antenna
 gain and the setting's limit: the configured value in Custom mode, the hardware maximum under High and Auto; the

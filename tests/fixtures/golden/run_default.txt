@@ -113,7 +113,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   2.4 GHz  (channel 6 (auto), width 20 MHz, TX 17 dBm (auto, configured 6 dBm is stale); max 23 dBm
-           (unverified))
+           (model maximum; no per-channel limits reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -70 dBm n=3 offset -12 dB
@@ -129,12 +129,13 @@
   · foreign networks heard: 1 (strongest -60 dBm), 0 on an overlapping channel
 
   5 GHz  (channel 44 (auto), width 80 MHz, TX 20 dBm (auto, configured 19 dBm is stale); max 23 dBm
-         (unverified))
+         (model maximum; no per-channel limits reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -72 dBm n=3 offset -3 dB *
 
-  · the radio has not demonstrated power above 20 dBm on this channel
+  · no power limit stands behind the model maximum 23 dBm (no per-channel limits reported); the
+    radio has not demonstrated power above 20 dBm on this channel
 
   Recommendations:
     ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
@@ -151,7 +152,8 @@
   MAC        02:00:00:00:00:08
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  2.4 GHz  (channel 1, width 20 MHz, TX 6 dBm; max 23 dBm (unverified))
+  2.4 GHz  (channel 1, width 20 MHz, TX 6 dBm; max 23 dBm (model maximum; no per-channel limits
+           reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-1                      -69 dBm n=3 offset +12 dB
@@ -194,7 +196,8 @@
   MAC        02:00:00:00:00:0e
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  2.4 GHz  (channel 6, width 20 MHz, TX 11 dBm; max 23 dBm (unverified))
+  2.4 GHz  (channel 6, width 20 MHz, TX 11 dBm; max 23 dBm (model maximum; no per-channel limits
+           reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-2                      -75 dBm n=3 offset -6 dB °
@@ -231,7 +234,8 @@
   MAC        02:00:00:00:00:11
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  2.4 GHz  (channel 11, width 20 MHz, TX 10 dBm; max 23 dBm (unverified))
+  2.4 GHz  (channel 11, width 20 MHz, TX 10 dBm; max 23 dBm (model maximum; no per-channel limits
+           reported))
 
   Neighbour AP:             RSSI @ neighbour:
   AP-3                      -77 dBm n=3 °

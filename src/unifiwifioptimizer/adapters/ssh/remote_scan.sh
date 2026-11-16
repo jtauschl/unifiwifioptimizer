@@ -9,7 +9,7 @@
 #   ===2GHZ===  STATUS=<ok|no_radio|interface_down|empty|failed> [IFACE=<name>] <filtered iw lines>
 #   ===5GHZ===  same
 #   ===META===  MODEL_NAME=… DFS_CAC_5G=<active|ready|unknown> WATCHDOG=<timeout|watcher>
-#   ===POWER5G=== STATUS=<ok|unknown> [PHY_INDEX=N CURRENT_FREQ_MHZ=N <bounded iw frequency lines>]
+#   ===POWER5G=== and ===POWER2G=== STATUS=<ok|unknown> [PHY_INDEX=N CURRENT_FREQ_MHZ=N <bounded iw frequency lines>]
 # No file is written anywhere on the access point; everything lives in shell variables.
 
 SCAN_ATTEMPTS="${SCAN_ATTEMPTS:-1}"
@@ -282,9 +282,12 @@ model_name() {
   printf '%s\n' "$_model" | tr '\t\r\n' '   ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//'
 }
 
-# Read only the PHY that actually serves an UP 5 GHz AP interface. Some devices expose another PHY with
-# a different regulatory table; a conflicting AP interface or an unreported current frequency is unknown.
-serving_power_5g() {
+# Read only the PHY that actually serves an UP AP interface inside the frequency window $1..$2 (exclusive).
+# Some devices expose another PHY with a different regulatory table; a conflicting AP interface or an
+# unreported current frequency is unknown.
+serving_power() {
+  _lo=$1
+  _hi=$2
   _serving_phy=""
   _serving_freq=""
   for _iface in $(list_ifaces); do
@@ -295,7 +298,7 @@ serving_power_5g() {
       echo "STATUS=unknown"
       return 0
     fi
-    if [ "$_freq" -le 5000 ] || [ "$_freq" -ge 5900 ]; then
+    if [ "$_freq" -le "$_lo" ] || [ "$_freq" -ge "$_hi" ]; then
       continue
     fi
     _wiphy=$(iface_wiphy "$_iface")
@@ -315,7 +318,7 @@ serving_power_5g() {
     echo "STATUS=unknown"
     return 0
   fi
-  if ! _limits=$(phy_info "$_serving_phy" | awk '$1 == "*" && $2 + 0 > 5000 && $2 + 0 < 5900 && /dBm/ { print; n++; if (n > 64) exit 1 }'); then
+  if ! _limits=$(phy_info "$_serving_phy" | awk -v lo="$_lo" -v hi="$_hi" '$1 == "*" && $2 + 0 > lo && $2 + 0 < hi && /dBm/ { print; n++; if (n > 64) exit 1 }'); then
     echo "STATUS=unknown"
     return 0
   fi
@@ -339,4 +342,6 @@ printf 'MODEL_NAME=%s\n' "$(model_name)"
 printf 'DFS_CAC_5G=%s\n' "$(dfs_cac_state_5g)"
 printf 'WATCHDOG=%s\n' "$WATCHDOG"
 echo "===POWER5G==="
-serving_power_5g
+serving_power 5000 5900
+echo "===POWER2G==="
+serving_power 2400 2500

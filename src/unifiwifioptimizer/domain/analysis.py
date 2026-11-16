@@ -107,3 +107,37 @@ class RoamingCap(StrEnum):
     MARGIN = "capped_by_margin"
     # The weakest neighbour minus the margin fell below the floor and was clamped to it.
     FLOOR = "capped_by_floor"
+
+
+class MaxSource(StrEnum):
+    """Where an effective maximum comes from, strongest evidence first."""
+
+    DEMONSTRATED = "demonstrated"
+    REPORTED = "reported"
+    MODEL = "model"
+
+
+class MaxReason(StrEnum):
+    """Why no reported ceiling stands behind a model maximum."""
+
+    NOT_SCANNED = "not_scanned"
+    SCAN_FAILED = "scan_failed"
+    NO_TABLE = "no_table"
+    UNSTABLE = "unstable"
+    CHANNEL_MISMATCH = "channel_mismatch"
+    NO_LIMIT = "no_limit"
+    NO_ANTENNA_GAIN = "no_antenna_gain"
+    REFUTED = "refuted"
+
+    @property
+    def words(self) -> str:
+        return {
+            MaxReason.NOT_SCANNED: "no scan ran",
+            MaxReason.SCAN_FAILED: "no scan of this access point succeeded",
+            MaxReason.NO_TABLE: "no per-channel limits reported",
+            MaxReason.UNSTABLE: "scan passes disagree",
+            MaxReason.CHANNEL_MISMATCH: "limits belong to another channel",
+            MaxReason.NO_LIMIT: "no listed positive limit on the occupied channels",
+            MaxReason.NO_ANTENNA_GAIN: "no antenna gain from the controller",
+            MaxReason.REFUTED: "radio runs above the reported limits",
+        }[self]

@@ -98,9 +98,10 @@ One scan script runs through `sh -s` with its arguments on standard input. It wr
 keeps no state outside its shell variables; a helper process it may start to bound one scan ends with that scan. It calls
 `iw scan`. Before and after it, on every scan, it only reads: it lists the wireless interfaces and their state (`iw dev`,
 `ifconfig`), the PHYs behind them (`iw phy … info`), on an access point with a U6-type 5 GHz interface, the kernel log for the DFS channel-availability state (`logread`, or `dmesg`
-where `logread` fails), the model name (`/etc/board.info` or `/proc/ubnthal/system.info`), and, for the 5 GHz PHY that serves
-an AP-mode interface, a
-bounded table of per-channel power limits (at most 64 lines) that `--extended` uses; the table is collected on every scan, whether or not `--extended` is used.
+where `logread` fails), the model name (`/etc/board.info` or `/proc/ubnthal/system.info`), and, for the 2.4 GHz and the 5 GHz PHY
+that serves an AP-mode interface, a bounded table of per-channel power limits (at most 64 lines each). The tables are collected
+on every scan, whether or not `--extended` is used: the power report uses them as the access point's own limit on the
+current channel, and `--extended` uses the 5 GHz table for its channel plan.
 With `scan_interface_toggle: true` it additionally brings a scan interface that is down up before the scan and puts it
 down again afterwards, also when the script is ended by a hang-up, interrupt, termination or broken-pipe signal; a
 kill or a power loss leaves the interface up. Without the toggle, an interface that is down is reported as

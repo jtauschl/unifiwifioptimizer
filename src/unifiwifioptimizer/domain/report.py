@@ -9,6 +9,8 @@ from types import MappingProxyType
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
     ChannelPlanMethod,
+    MaxReason,
+    MaxSource,
     MissDirection,
     MissingReason,
     NeighbourMarker,
@@ -201,6 +203,8 @@ class TxSummaryReport:
     max_dbm: int | None
     effective_max_dbm: int | None
     effective_max_verified: bool
+    effective_max_source: MaxSource | None
+    effective_max_reason: MaxReason | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

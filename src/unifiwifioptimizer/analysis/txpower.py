@@ -3,17 +3,20 @@
 The weakest evaluable neighbour reading is an upper bound of the true weakest, so an increase is safe
 while a neighbour is unevaluated, but a reduction, a confirmation or a "too strong" claim is not; a peer
 missed in both directions with working scans is a verdict of its own (docs/ALGORITHM.md §4, Zero
-sightings). The effective maximum is derived from the configured power only in Custom mode —
-outside it the configured value is stale.
+sightings). The effective maximum is demonstrated by the radio, reported by the serving PHY's limits, or the
+model maximum (docs/ALGORITHM.md §4); the configured power counts only in Custom mode — outside it the
+configured value is stale.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from unifiwifioptimizer.analysis.neighbors import PeerReading
-from unifiwifioptimizer.domain.analysis import BandTxOutcome, NeighbourMarker
+from unifiwifioptimizer.domain.analysis import BandTxOutcome, MaxReason, MaxSource, NeighbourMarker
 from unifiwifioptimizer.domain.models import DFS_WAIT_STATE, AccessPoint, Band, TxPowerMode
 from unifiwifioptimizer.domain.report import TX_POWER, Finding, Recommendation, RecommendationKind, Severity
+from unifiwifioptimizer.domain.scan import PhyChannelPower
+from unifiwifioptimizer.rf.channel_power import reported_ceiling
 from unifiwifioptimizer.rf.channels import cac_seconds
 from unifiwifioptimizer.rf.constants import HYSTERESIS_DOWN_DB
 from unifiwifioptimizer.rf.corridor import Corridor
@@ -28,7 +31,12 @@ class TxSummary:
     min_dbm: int | None
     max_dbm: int | None
     effective_max_dbm: int | None
-    effective_max_verified: bool
+    effective_max_source: MaxSource | None
+    effective_max_reason: MaxReason | None
+
+    @property
+    def effective_max_verified(self) -> bool:
+        return self.effective_max_source is MaxSource.DEMONSTRATED
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -45,43 +53,57 @@ class BandTxResult:
     coverage_gap: bool
 
 
-def effective_maximum(ap_band: TxSummary) -> EffectiveMax | None:
-    if ap_band.max_dbm is None or ap_band.effective_dbm is None:
-        return None
-    return _cap(ap_band.mode, ap_band.configured_dbm, ap_band.effective_dbm, ap_band.max_dbm)
-
-
-def _cap(mode: TxPowerMode | None, configured: int | None, effective: int, max_dbm: int) -> EffectiveMax:
-    """The cap only follows the configured value in Custom mode; everywhere else it is the radio maximum,
-    unverified."""
-    if mode is TxPowerMode.CUSTOM and configured is not None:
-        return effective_max_tx(max_dbm, configured, effective)
-    return EffectiveMax(dbm=max_dbm, verified=False)
-
-
-def summarise(ap: AccessPoint, band: Band) -> TxSummary:
+def effective_maximum(ap: AccessPoint, band: Band, table: PhyChannelPower | MaxReason) -> EffectiveMax | None:
+    """None until the controller sent the observed power and the model range."""
     radio, stats = ap.radio(band), ap.stats(band)
-    summary = TxSummary(
+    if radio is None or stats is None or radio.max_tx_dbm is None or stats.observed_tx_dbm is None:
+        return None
+    ceiling = (
+        table
+        if isinstance(table, MaxReason)
+        else reported_ceiling(
+            band,
+            stats.channel,
+            stats.width_mhz,
+            stats.extension_channel,
+            table.limits,
+            radio.max_tx_dbm,
+            radio.antenna_gain_dbi,
+        )
+    )
+    return effective_max_tx(
+        radio.tx_power_mode, radio.configured_tx_dbm, stats.observed_tx_dbm, radio.max_tx_dbm, ceiling
+    )
+
+
+def summarise(ap: AccessPoint, band: Band, cap: EffectiveMax | None) -> TxSummary:
+    radio, stats = ap.radio(band), ap.stats(band)
+    return TxSummary(
         effective_dbm=stats.observed_tx_dbm if stats is not None else None,
         configured_dbm=radio.configured_tx_dbm if radio is not None else None,
         mode=radio.tx_power_mode if radio is not None else None,
         min_dbm=radio.min_tx_dbm if radio is not None else None,
         max_dbm=radio.max_tx_dbm if radio is not None else None,
-        effective_max_dbm=None,
-        effective_max_verified=False,
+        effective_max_dbm=cap.dbm if cap is not None else None,
+        effective_max_source=cap.source if cap is not None else None,
+        effective_max_reason=cap.reason if cap is not None else None,
     )
-    cap = effective_maximum(summary)
-    if cap is None:
-        return summary
-    return TxSummary(
-        effective_dbm=summary.effective_dbm,
-        configured_dbm=summary.configured_dbm,
-        mode=summary.mode,
-        min_dbm=summary.min_dbm,
-        max_dbm=summary.max_dbm,
-        effective_max_dbm=cap.dbm,
-        effective_max_verified=cap.verified,
-    )
+
+
+def _at_maximum(cap: EffectiveMax) -> str:
+    if cap.source is MaxSource.REPORTED:
+        if cap.limit_dbm is not None and cap.dbm > cap.limit_dbm:
+            return f"{cap.dbm} dBm, within rounding of the access point's reported limit {cap.limit_dbm} dBm"
+        return f"{cap.dbm} dBm, the access point's reported limit"
+    return f"the effective maximum {cap.dbm} dBm"
+
+
+def _headroom_unverified(cap: EffectiveMax, current: int) -> str:
+    not_shown = f"the radio has not demonstrated power above {current} dBm on this channel"
+    if cap.source is MaxSource.REPORTED:
+        return f"the access point's limits allow {cap.dbm} dBm; {not_shown}; apply the change and re-run to confirm"
+    why = f" ({cap.reason.words})" if cap.reason is not None else ""
+    return f"no power limit stands behind the model maximum {cap.dbm} dBm{why}; {not_shown}"
 
 
 def _finding(
@@ -137,10 +159,12 @@ def analyse_band_tx(
     cells: Sequence[PeerReading],
     corridor: Corridor,
     scan_skipped: bool,
+    table: PhyChannelPower | MaxReason,
 ) -> BandTxResult:
     """Rows 1-13 of the decision table, first match wins; `cells` are the subject's configured peers on the
-    band."""
-    summary = summarise(ap, band)
+    band, `table` the serving PHY's limits or the reason there are none."""
+    cap = effective_maximum(ap, band, table)
+    summary = summarise(ap, band, cap)
     markers: dict[str, NeighbourMarker] = {}
     weakest = min((c.rssi_dbm for c in cells if c.rssi_dbm is not None), default=None)
 
@@ -186,7 +210,7 @@ def analyse_band_tx(
         )
     # Row 4: the numbers the table needs, consistent with each other.
     current, min_tx, max_tx = summary.effective_dbm, summary.min_dbm, summary.max_dbm
-    if current is None or min_tx is None or max_tx is None:
+    if current is None or min_tx is None or max_tx is None or cap is None:
         missing = [
             name
             for name, value in (("tx_power", current), ("min_txpower", min_tx), ("max_txpower", max_tx))
@@ -218,7 +242,6 @@ def analyse_band_tx(
                 )
             ],
         )
-    cap = _cap(summary.mode, summary.configured_dbm, current, max_tx)
     eff_max = cap.dbm
     at_max = current >= eff_max
     # Row 5.
@@ -236,7 +259,7 @@ def analyse_band_tx(
                 "coverage_gap",
                 ap,
                 band,
-                f"at the effective maximum {eff_max} dBm and still unsighted by {', '.join(names)}: structural, "
+                f"at {_at_maximum(cap)} and still unsighted by {', '.join(names)}: structural, "
                 "reposition or add an access point",
                 names,
             )
@@ -290,7 +313,7 @@ def analyse_band_tx(
                 ap,
                 band,
                 f"hand-off between {ap.name} and {', '.join(below)} happens below {_band_floor_wording(band)} "
-                f"({short} dB short at the effective maximum {eff_max} dBm): add an access point or accept",
+                f"({short} dB short at {_at_maximum(cap)}): add an access point or accept",
                 below,
             )
             held = _recommendation(
@@ -305,7 +328,7 @@ def analyse_band_tx(
                     "headroom_unverified",
                     ap,
                     band,
-                    f"the radio has not demonstrated power above {current} dBm on this channel",
+                    _headroom_unverified(cap, current),
                 )
             )
         change = _recommendation(

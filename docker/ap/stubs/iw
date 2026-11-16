@@ -4,7 +4,8 @@
 # knobs in /run/stub: `hang` / `hang-<iface>` (scan never returns), `flood` (scan prints megabytes), `longline` (one
 # over-long line), `empty` (scan returns nothing), `fail` (scan exits with an error),
 # `partialfail` / `partialhang` (one BSS block, then an error or a hang; `partial-at` holding N limits
-# them to the N-th scan call of the session).
+# them to the N-th scan call of the session). `power-u7` prints per-channel dBm limits on both PHYs, `power-u6`
+# prints the all-zero table of a proprietary driver.
 
 state_up() { [ -e "/run/ifstate/$1.up" ]; }
 
@@ -46,9 +47,22 @@ EOF
 "dev apclii0 info ") printf 'Interface apclii0\n\ttype managed\n\twiphy 1\n\tchannel 100 (5500 MHz), width: 80 MHz\n' ;;
 "dev mon0 info ") printf 'Interface mon0\n\ttype monitor\n\twiphy 1\n' ;;
 "dev "*" info ") exit 1 ;;
-"phy phy0 info ") printf 'Wiphy phy0\n\tFrequencies:\n\t\t* 2412 MHz [1]\n\t\t* 2437 MHz [6]\n\t\t* 2462 MHz [11]\n' ;;
+"phy phy0 info ")
+  if [ -e /run/stub/power-u7 ] || [ -e /run/stub/power-u6 ]; then
+    _dbm="20.0"
+    [ -e /run/stub/power-u6 ] && _dbm="0.0"
+    printf 'Wiphy phy0\n\tFrequencies:\n'
+    for _ch in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+      printf '\t\t* %s MHz [%s] (%s dBm)\n' "$((2407 + 5 * _ch))" "$_ch" "$_dbm"
+    done
+  else
+    printf 'Wiphy phy0\n\tFrequencies:\n\t\t* 2412 MHz [1]\n\t\t* 2437 MHz [6]\n\t\t* 2462 MHz [11]\n'
+  fi
+  ;;
 "phy phy1 info ")
-  if [ -e /run/stub/power-u7 ]; then
+  if [ -e /run/stub/power-u6 ]; then
+    printf 'Wiphy phy1\n\tFrequencies:\n\t\t* 5180 MHz [36] (0.0 dBm)\n\t\t* 5500 MHz [100] (0.0 dBm)\n'
+  elif [ -e /run/stub/power-u7 ]; then
     cat <<'EOF'
 Wiphy phy1
 	Frequencies:

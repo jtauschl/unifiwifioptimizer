@@ -7,7 +7,9 @@ as long as the radio is below its effective maximum.
 
 from dataclasses import dataclass
 
-from unifiwifioptimizer.rf.constants import HYSTERESIS_DOWN_DB
+from unifiwifioptimizer.domain.analysis import MaxReason, MaxSource
+from unifiwifioptimizer.domain.models import TxPowerMode
+from unifiwifioptimizer.rf.constants import HYSTERESIS_DOWN_DB, ROUNDING_TOLERANCE_DB
 from unifiwifioptimizer.rf.corridor import Corridor
 
 
@@ -20,22 +22,39 @@ def clamp_tx(tx: int, min_tx: int, max_tx: int) -> int:
 @dataclass(frozen=True, slots=True)
 class EffectiveMax:
     dbm: int
-    # True when the value was reached or demonstrated on the current channel; False when it is only the
-    # configured maximum, and anything above the configured power is headroom nobody has verified.
-    verified: bool
+    source: MaxSource
+    # Set exactly for MODEL: the reason no reported ceiling was usable.
+    reason: MaxReason | None = None
+    # Set exactly for REPORTED: the ceiling the table gives; `dbm` exceeds it by the rounding step when the
+    # radio runs at one dB above it.
+    limit_dbm: int | None = None
+
+    @property
+    def verified(self) -> bool:
+        return self.source is MaxSource.DEMONSTRATED
 
 
-def effective_max_tx(configured_max: int, configured: int, observed: int) -> EffectiveMax:
-    """The power the radio can actually reach on its current channel.
+def effective_max_tx(
+    mode: TxPowerMode | None, configured: int | None, observed: int, model_max: int, ceiling: int | MaxReason
+) -> EffectiveMax:
+    """The power the radio can reach on its current channel, with the evidence behind it.
 
-    Regulatory EIRP limits minus antenna gain cap a radio below its configured maximum; that shows as
-    an observed power below the configured one, and the observed value is then the cap. Meaningful only
-    while the radio runs in Custom mode: under the automatic modes the configured value is stale and may
-    sit below or above what the radio runs at, so the caller must not derive a cap from it there.
+    Demonstrated: a Custom radio below its configured power runs at its cap (regulatory EIRP limits minus
+    antenna gain), so the observed value is the cap; a radio at the model maximum has reached it. Reported:
+    the serving PHY's own limit, which no setting changes; a radio running more than the rounding step above
+    it contradicts the table, which is then dropped. The configured value is only meaningful in Custom mode,
+    under the automatic modes it is stale.
     """
-    if observed < configured:
-        return EffectiveMax(dbm=observed, verified=True)
-    return EffectiveMax(dbm=configured_max, verified=configured == configured_max)
+    setting = configured if mode is TxPowerMode.CUSTOM else None
+    if setting is not None and observed < setting:
+        return EffectiveMax(observed, MaxSource.DEMONSTRATED)
+    if observed == model_max or setting == model_max:
+        return EffectiveMax(model_max, MaxSource.DEMONSTRATED)
+    if isinstance(ceiling, MaxReason):
+        return EffectiveMax(model_max, MaxSource.MODEL, ceiling)
+    if observed > ceiling + ROUNDING_TOLERANCE_DB:
+        return EffectiveMax(model_max, MaxSource.MODEL, MaxReason.REFUTED)
+    return EffectiveMax(max(ceiling, observed), MaxSource.REPORTED, limit_dbm=ceiling)
 
 
 def predict_reverse_rssi(heard_rssi: int, tx_eff_self: int, tx_eff_peer: int) -> int:

@@ -124,7 +124,18 @@ def test_serving_phy_power_table_is_read_only_and_distinct_from_the_scan_interfa
     power = result.power_5g
     assert power is not None and power.phy_index == 1 and power.current_frequency_mhz == 5500
     assert dict(power.limits)[36] == 23.0 and dict(power.limits)[100] == 30.0
+    power_2g = result.power_2g
+    assert power_2g is not None and power_2g.phy_index == 0 and power_2g.current_frequency_mhz == 2437
+    assert power_2g.limits == tuple((channel, 20.0) for channel in range(1, 14))
     assert fresh_ap.toggles() == []
+
+
+def test_a_zero_power_table_is_unknown_on_both_bands(fresh_ap: Harness, tmp_path: Path) -> None:
+    fresh_ap.set_knob("power-u6", True)
+    port = fresh_ap.dropbear_port
+    result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port))
+    assert result.power_2g is None and result.power_5g is None
+    assert result.band(Band.GHZ_2) is not None and result.band(Band.GHZ_5) is not None
 
 
 def test_unknown_active_ap_frequency_does_not_misattribute_a_different_phy(fresh_ap: Harness, tmp_path: Path) -> None:
@@ -132,7 +143,7 @@ def test_unknown_active_ap_frequency_does_not_misattribute_a_different_phy(fresh
     fresh_ap.set_knob("missing-ap-freq", True)
     port = fresh_ap.dropbear_port
     result = scanner(trusted_store(tmp_path, fresh_ap, port)).scan(target(fresh_ap, port))
-    assert result.power_5g is None
+    assert result.power_5g is None and result.power_2g is None
 
 
 def test_a_wrong_password_is_an_authentication_failure(fresh_ap: Harness, tmp_path: Path) -> None:
