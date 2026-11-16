@@ -58,6 +58,7 @@ def effective_maximum(ap: AccessPoint, band: Band, table: PhyChannelPower | MaxR
     radio, stats = ap.radio(band), ap.stats(band)
     if radio is None or stats is None or radio.max_tx_dbm is None or stats.observed_tx_dbm is None:
         return None
+    observed = None if stats.state == DFS_WAIT_STATE or stats.observed_tx_dbm <= 0 else stats.observed_tx_dbm
     ceiling = (
         table
         if isinstance(table, MaxReason)
@@ -71,9 +72,7 @@ def effective_maximum(ap: AccessPoint, band: Band, table: PhyChannelPower | MaxR
             radio.antenna_gain_dbi,
         )
     )
-    return effective_max_tx(
-        radio.tx_power_mode, radio.configured_tx_dbm, stats.observed_tx_dbm, radio.max_tx_dbm, ceiling
-    )
+    return effective_max_tx(radio.tx_power_mode, radio.configured_tx_dbm, observed, radio.max_tx_dbm, ceiling)
 
 
 def summarise(ap: AccessPoint, band: Band, cap: EffectiveMax | None) -> TxSummary:

@@ -167,6 +167,49 @@ def test_the_reported_limit_stands_behind_the_maximum_below_the_cap_in_every_mod
     assert summary_of(auto_12, table=phy_table(23.0)).effective_max_dbm == 18
 
 
+def test_a_high_radio_below_its_model_maximum_is_at_its_cap_and_never_offered_a_raise() -> None:
+    radio = with_stats(
+        with_radio(
+            ap_named(SNAP, "AP-3"), Band.GHZ_5, tx_power_mode=TxPowerMode.HIGH, configured_tx_dbm=6, max_tx_dbm=24
+        ),
+        Band.GHZ_5,
+        observed_tx_dbm=18,
+        state="RUN",
+    )
+    summary = summary_of(radio)
+    assert (summary.effective_max_dbm, summary.effective_max_source) == (18, MaxSource.DEMONSTRATED)
+    weak = run(radio, [measured("AP-2", -80)])
+    assert weak.outcome is BandTxOutcome.COVERAGE_GAP
+    assert weak.recommendation is not None and weak.recommendation.kind is RecommendationKind.HELD
+    assert "headroom_unverified" not in codes(weak)
+
+
+@pytest.mark.parametrize("mode", [TxPowerMode.HIGH, TxPowerMode.CUSTOM])
+@pytest.mark.parametrize(("observed", "state"), [(0, "RUN"), (-3, "RUN"), (18, "DFS_WAIT"), (0, "DFS_WAIT")])
+def test_nothing_is_demonstrated_or_refuted_from_a_missing_reading_or_a_radio_waiting_for_dfs(
+    mode: TxPowerMode, observed: int, state: str
+) -> None:
+    radio = with_stats(
+        with_radio(
+            ap_named(SNAP, "AP-3"),
+            Band.GHZ_5,
+            tx_power_mode=mode,
+            configured_tx_dbm=24,
+            max_tx_dbm=24,
+            antenna_gain_dbi=5,
+        ),
+        Band.GHZ_5,
+        observed_tx_dbm=observed,
+        state=state,
+    )
+    without_table = summary_of(radio)
+    assert (without_table.effective_max_dbm, without_table.effective_max_source) == (24, MaxSource.MODEL)
+    assert without_table.effective_max_reason is MaxReason.NO_TABLE
+    # The table stands: 23 dBm less 5 dBi is 18, and a reading of 18 or 0 neither refutes nor demonstrates it.
+    reported = summary_of(radio, table=phy_table(23.0))
+    assert (reported.effective_max_dbm, reported.effective_max_source) == (18, MaxSource.REPORTED)
+
+
 def test_a_radio_running_above_the_reported_limit_refutes_the_table() -> None:
     # Limit 23 dBm minus 5 dBi is 18; an automatic-mode radio runs at 21: the table is wrong for this radio.
     radio = with_radio(auto("AP-3", Band.GHZ_5, current=21, configured=21), Band.GHZ_5, antenna_gain_dbi=5)
@@ -691,6 +734,8 @@ def test_exactly_one_outcome_never_raises_and_the_recommendation_stays_in_range(
         source, reason = result.summary.effective_max_source, result.summary.effective_max_reason
         assert effective_max >= current
         if mode is TxPowerMode.CUSTOM and configured is not None and current < configured:
+            assert (effective_max, source) == (current, MaxSource.DEMONSTRATED)
+        if mode is TxPowerMode.HIGH and current < max_tx:
             assert (effective_max, source) == (current, MaxSource.DEMONSTRATED)
         if current == max_tx:
             assert (effective_max, source) == (max_tx, MaxSource.DEMONSTRATED)

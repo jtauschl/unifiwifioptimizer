@@ -28,6 +28,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
 - The effective maximum of a radio names its basis: demonstrated, reported by the access point's channel limits, or the model maximum with a reason.
 - The JSON carries the basis of each effective maximum as `effective_max_source` and `effective_max_reason`.
+- A radio in High mode below its model maximum runs at the channel cap; its observed power is its demonstrated maximum.
 - The optional 5 GHz channel plan uses those limits, calibrates them against observed TX and labels higher-power channels as downlink trials, not guaranteed range gains.
 - `run --extended` adds a read-only site-wide 2.4/5 GHz channel proposal from the scan evidence and says when a band lacks the evidence.
 - The channel proposal searches each group of coupled radios exactly within the effort budget `rf.plan_search_budget` and says when optimality is not proven.

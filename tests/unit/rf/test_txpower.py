@@ -97,10 +97,30 @@ def test_effective_max_is_the_observed_cap_when_the_radio_falls_short(
     assert effective_max_tx(TxPowerMode.CUSTOM, configured, observed, configured_max, NO_TABLE) == expected
 
 
-@pytest.mark.parametrize("mode", [TxPowerMode.AUTO, TxPowerMode.HIGH, TxPowerMode.LOW, TxPowerMode.MEDIUM, None])
+@pytest.mark.parametrize("mode", [TxPowerMode.AUTO, TxPowerMode.LOW, TxPowerMode.MEDIUM, None])
 def test_the_configured_value_is_stale_outside_custom(mode: TxPowerMode | None) -> None:
     assert effective_max_tx(mode, 24, 18, 24, NO_TABLE) == EffectiveMax(24, MaxSource.MODEL, NO_TABLE)
     assert effective_max_tx(mode, 12, 24, 24, NO_TABLE) == EffectiveMax(24, DEMONSTRATED)
+
+
+@pytest.mark.parametrize("ceiling", [NO_TABLE, 16, 30])
+def test_a_high_radio_below_the_model_maximum_runs_at_its_cap_whatever_the_table_says(ceiling: int | MaxReason) -> None:
+    for configured in (None, 6, 24):
+        assert effective_max_tx(TxPowerMode.HIGH, configured, 17, 23, ceiling) == EffectiveMax(17, DEMONSTRATED)
+
+
+def test_a_high_radio_reporting_more_than_the_model_maximum_proves_no_cap() -> None:
+    assert effective_max_tx(TxPowerMode.HIGH, 6, 30, 23, NO_TABLE) == EffectiveMax(23, MaxSource.MODEL, NO_TABLE)
+
+
+@pytest.mark.parametrize("mode", [TxPowerMode.HIGH, TxPowerMode.CUSTOM, TxPowerMode.AUTO])
+def test_without_a_usable_reading_the_reported_or_model_level_stands(mode: TxPowerMode) -> None:
+    assert effective_max_tx(mode, 24, None, 24, NO_TABLE) == EffectiveMax(24, MaxSource.MODEL, NO_TABLE)
+    assert effective_max_tx(mode, 24, None, 24, 16) == EffectiveMax(16, MaxSource.REPORTED, limit_dbm=16)
+
+
+def test_a_high_radio_at_the_model_maximum_has_reached_it() -> None:
+    assert effective_max_tx(TxPowerMode.HIGH, 6, 23, 23, NO_TABLE) == EffectiveMax(23, DEMONSTRATED)
 
 
 @pytest.mark.parametrize(

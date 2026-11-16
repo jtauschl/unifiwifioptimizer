@@ -73,8 +73,10 @@ carries the evidence behind it, strongest first:
    cap — the regulatory EIRP limit of the channel group minus the antenna gain (Germany, wireless-regdb and
    EN 300 328: 20 dBm EIRP on 2.4 GHz; EN 301 893: 23 dBm EIRP on 5150–5250 MHz; on 5250–5350 MHz 23 dBm with TPC and
    20 dBm without; on 5470–5725 MHz 30 dBm with TPC and 27 dBm without; a U7 Lite with its 5 dBi antenna at
-   23 dBm EIRP is 18 dBm conducted, and 16 dBm on 2.4 GHz with 4 dBi, live-verified) — and the effective power is then the maximum. A radio running at the model maximum
-   has reached it, in any mode. A maximum demonstrated on one channel group does not carry over to another.
+   23 dBm EIRP is 18 dBm conducted, and 16 dBm on 2.4 GHz with 4 dBi, live-verified) — and the effective power is then the maximum. A radio in High mode below the model
+   maximum runs at the same cap (High asks for the highest power the channel allows; measured on both models
+   and both bands, one channel per cell), so its effective power is the maximum too. A radio running at the model maximum has reached
+   it, in any mode. A maximum demonstrated on one channel group does not carry over to another.
 2. **Reported.** The serving PHY's own per-channel limits (`iw phy … info`, read on both bands on every scan): the
    weakest limit of the occupied 20 MHz channels minus the antenna gain, floored and capped by the model maximum.
    The limit does not depend on the power setting, so it applies in every mode, and it is what the access point
@@ -85,11 +87,13 @@ carries the evidence behind it, strongest first:
 3. **Model.** The model maximum (`max_txpower`), with the reason no limit stands behind it: no scan ran or none
    succeeded, the access point reports no per-channel limits (a driver that prints every limit as 0 dBm, such as the
    U6 Lite's, is among them), the passes disagree, the limits belong to another channel, an occupied channel has no
-   positive limit, the controller sent no antenna gain, or the radio contradicts the table.
+   positive limit, the controller sent no antenna gain, or the radio contradicts the table. A radio in a DFS
+   channel-availability check, or one that reports a zero or negative power, demonstrates and refutes nothing:
+   its reported or model level stands.
 
 An increase above the demonstrated power is marked as unverified headroom, whether the ceiling is reported or only
 the model maximum: the raise is a trial, and the report says which basis the ceiling has. The structural `coverage_gap` finding is only
-claimed at a demonstrated or reported maximum; a radio below its model maximum is never at its maximum.
+claimed at a demonstrated or reported maximum; a radio whose maximum rests on the model maximum alone is not at its maximum below it.
 
 ### Corridor test and decision table
 

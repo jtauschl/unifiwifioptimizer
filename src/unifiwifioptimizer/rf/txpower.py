@@ -35,26 +35,29 @@ class EffectiveMax:
 
 
 def effective_max_tx(
-    mode: TxPowerMode | None, configured: int | None, observed: int, model_max: int, ceiling: int | MaxReason
+    mode: TxPowerMode | None, configured: int | None, observed: int | None, model_max: int, ceiling: int | MaxReason
 ) -> EffectiveMax:
     """The power the radio can reach on its current channel, with the evidence behind it.
 
     Demonstrated: a Custom radio below its configured power runs at its cap (regulatory EIRP limits minus
-    antenna gain), so the observed value is the cap; a radio at the model maximum has reached it. Reported:
+    antenna gain), so the observed value is the cap; so does a High radio below the model maximum, because High
+    asks for the highest power the channel allows; a radio at the model maximum has reached it. Reported:
     the serving PHY's own limit, which no setting changes; a radio running more than the rounding step above
     it contradicts the table, which is then dropped. The configured value is only meaningful in Custom mode,
-    under the automatic modes it is stale.
+    under the automatic modes it is stale. `observed` is None when the radio gives no usable reading: nothing
+    is demonstrated or refuted then, and the reported or model level stands.
     """
-    setting = configured if mode is TxPowerMode.CUSTOM else None
-    if setting is not None and observed < setting:
-        return EffectiveMax(observed, MaxSource.DEMONSTRATED)
-    if observed == model_max or setting == model_max:
-        return EffectiveMax(model_max, MaxSource.DEMONSTRATED)
+    if observed is not None:
+        setting = configured if mode is TxPowerMode.CUSTOM else None
+        if (setting is not None and observed < setting) or (mode is TxPowerMode.HIGH and observed < model_max):
+            return EffectiveMax(observed, MaxSource.DEMONSTRATED)
+        if observed == model_max or setting == model_max:
+            return EffectiveMax(model_max, MaxSource.DEMONSTRATED)
     if isinstance(ceiling, MaxReason):
         return EffectiveMax(model_max, MaxSource.MODEL, ceiling)
-    if observed > ceiling + ROUNDING_TOLERANCE_DB:
+    if observed is not None and observed > ceiling + ROUNDING_TOLERANCE_DB:
         return EffectiveMax(model_max, MaxSource.MODEL, MaxReason.REFUTED)
-    return EffectiveMax(max(ceiling, observed), MaxSource.REPORTED, limit_dbm=ceiling)
+    return EffectiveMax(max(ceiling, observed or 0), MaxSource.REPORTED, limit_dbm=ceiling)
 
 
 def predict_reverse_rssi(heard_rssi: int, tx_eff_self: int, tx_eff_peer: int) -> int:

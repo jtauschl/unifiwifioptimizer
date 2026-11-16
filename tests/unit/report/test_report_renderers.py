@@ -814,3 +814,20 @@ def test_the_json_report_carries_the_source_and_reason_of_the_effective_maximum(
     tx = document["sites"][0]["aps"][0]["bands"][0]["tx"]
     assert tx["effective_max_source"] == "model" and tx["effective_max_reason"] == "no_table"
     assert tx["effective_max_verified"] is False
+
+
+def test_a_high_radio_is_not_called_regulatory_cap() -> None:
+    text = render_report(
+        _with_tx(
+            mode=TxPowerMode.HIGH,
+            configured_dbm=6,
+            effective_dbm=17,
+            effective_max_dbm=17,
+            effective_max_verified=True,
+            effective_max_source=MaxSource.DEMONSTRATED,
+            effective_max_reason=None,
+        ),
+        width=None,
+    )
+    line = _tx_line(text)
+    assert "TX 17 dBm (high, configured 6 dBm is stale); max 17 dBm)" in line and "regulatory cap" not in line
