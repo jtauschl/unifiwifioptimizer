@@ -26,10 +26,11 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - `derived.pending_tx_changes` counts only the power changes that can be applied now; `derived.waiting_items` counts the items that wait.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
-- The effective maximum of a radio says where it comes from: demonstrated by the radio, reported by the access point's own channel limits minus the antenna gain, or the model maximum with the reason no limit was usable. A radio that runs above its reported limit refutes the table. The JSON carries `effective_max_source` and `effective_max_reason`.
+- The effective maximum of a radio names its basis: demonstrated, reported by the access point's channel limits, or the model maximum with a reason.
+- The JSON carries the basis of each effective maximum as `effective_max_source` and `effective_max_reason`.
 - The optional 5 GHz channel plan uses those limits, calibrates them against observed TX and labels higher-power channels as downlink trials, not guaranteed range gains.
 - `run --extended` adds a read-only site-wide 2.4/5 GHz channel proposal from the scan evidence and says when a band lacks the evidence.
-- The channel proposal searches each group of coupled radios exactly wherever the effort budget `rf.plan_search_budget` allows (default 8,000,000 candidates per group, a count of work and not a time) and says when it stopped without proving the optimum; the budget is shown with the plan.
+- The channel proposal searches each group of coupled radios exactly within the effort budget `rf.plan_search_budget` and says when optimality is not proven.
 - The Minimum RSSI header line names Ubiquiti's guidance (−80 dBm as a home or office starting point).
 - The `info` finding `roaming_threshold_above_guidance` appears when the Handoff Suggestions threshold to set is not below −70 dBm.
 - `rf.client_tx_dbm` defaults to 14 dBm (Cisco: a typical client transmits about 13–14 dBm).
@@ -37,8 +38,8 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - A derived value outside the accepted range moves to the nearer end; the report and the JSON (`derived_dbm`) name the derived value.
 - New subcommand `init` creates the configuration file interactively and never overwrites one.
 - New subcommand `controller-fingerprint [--url URL]` prints the controller's certificate fingerprint for pinning.
-- New subcommand `trust-host-keys --site ID [--ap NAME]... [--yes] [--accept-unverified]` stores the access points' SSH host keys after verifying them and replaces a changed one on a verified basis or after you typed the first eight characters of the new key's SHA-256.
-- In a terminal, `run` asks before its first scan whether to store a missing host key or replace a changed one; a "no", a refusal or a missing terminal leaves the store alone, and the scan still never adds a key.
+- New subcommand `trust-host-keys` stores the access points' SSH host keys after verifying them and replaces a changed key on a verified basis or on typed confirmation.
+- In a terminal, `run` asks before its first scan whether to store a missing host key or replace a changed one.
 - `config --profiles` prints the effective WLAN profiles with their evidence annotations.
 - Global options: `--config-file PATH`, `--profiles-file PATH` and `--dump-api DIR` (models with secrets masked, plus counts of unused fields).
 - `run` and `trust-host-keys` take `--known-hosts PATH` for the host-key store.
