@@ -164,7 +164,7 @@ def test_keyscan_parses_every_offered_key_and_fingerprints_it_locally() -> None:
         return output
 
     candidates = keyscan(ip_address("192.168.1.20"), 2222, run)
-    assert seen == [["ssh-keyscan", "-T", "5", "-p", "2222", "--", "192.168.1.20"]]
+    assert seen == [["ssh-keyscan", "-T", "5", "-t", "ed25519,ecdsa,rsa", "-p", "2222", "--", "192.168.1.20"]]
     assert [(c.key_type, c.key_base64) for c in candidates] == [("ssh-ed25519", b64_a), ("ssh-rsa", b64_b)]
     assert candidates[0].sha256 == sha_a and candidates[1].md5 == md5_b
     assert candidates[0].entry(ALIAS) == KnownHostEntry(ALIAS, "ssh-ed25519", b64_a)

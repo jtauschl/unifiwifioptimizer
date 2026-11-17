@@ -34,6 +34,11 @@ MAX_KEYSCAN_KEYS = 16
 KEYSCAN_TIMEOUT_S = 5
 # ssh-keyscan applies `-T` per key type and connection; the whole run gets a bound of its own.
 KEYSCAN_TOTAL_TIMEOUT_S = 30
+# The key types a full scan asks for. Without `-t` ssh-keyscan opens one connection per default key type at the
+# same time: five on OpenSSH 8.4, six on 10.5, the extra ones for types dropbear does not offer. Dropbear admits
+# five unauthenticated connections per source address, so an offered key was lost at random (4 of 40 scans of a
+# dropbear 2025.88 server with OpenSSH 10.5).
+KEYSCAN_TYPES = "ed25519,ecdsa,rsa"
 # When nothing can be verified, the stored key is the one OpenSSH negotiates first; one stored key suffices
 # because the client prefers the types already known for the alias.
 TOFU_KEY_TYPE_PREFERENCE = (
@@ -321,10 +326,21 @@ def keyscan(
     run: KeyscanRunner = _run_keyscan,
     key_type: str | None = None,
 ) -> tuple[HostKeyCandidate, ...]:
-    """Every key `ssh-keyscan` can obtain from the access point (only `key_type` when given), with
-    fingerprints computed locally."""
-    type_option = ["-t", key_type] if key_type is not None else []
-    output = run(["ssh-keyscan", "-T", str(KEYSCAN_TIMEOUT_S), *type_option, "-p", str(port), "--", str(address)])
+    """Every key of the `KEYSCAN_TYPES` `ssh-keyscan` can obtain from the access point (only `key_type` when
+    given), with fingerprints computed locally."""
+    output = run(
+        [
+            "ssh-keyscan",
+            "-T",
+            str(KEYSCAN_TIMEOUT_S),
+            "-t",
+            key_type or KEYSCAN_TYPES,
+            "-p",
+            str(port),
+            "--",
+            str(address),
+        ]
+    )
     candidates: list[HostKeyCandidate] = []
     for raw in output.splitlines():
         fields = raw.strip().split()

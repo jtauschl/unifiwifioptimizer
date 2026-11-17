@@ -38,7 +38,7 @@ from unifiwifioptimizer.domain.scan import ScanTarget
 from unifiwifioptimizer.ports.controller import ControllerApi
 
 Address = IPv4Address | IPv6Address
-# (address, port, key type or None for every type)
+# (address, port, key type or None for the types of the full scan)
 Keyscan = Callable[[Address, int, str | None], Sequence[HostKeyCandidate]]
 
 

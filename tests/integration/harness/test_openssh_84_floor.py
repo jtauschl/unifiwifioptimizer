@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from tests.integration.harness.conftest import SCAN_PASSWORD, SCAN_USER, Harness, compose
+from unifiwifioptimizer.adapters.ssh.hostkeys import KEYSCAN_TYPES
 from unifiwifioptimizer.adapters.ssh.iw_parser import parse_scan_output
 from unifiwifioptimizer.adapters.ssh.openssh import build_invocation, load_script
 from unifiwifioptimizer.domain.hostkeys import host_key_alias
@@ -44,7 +45,7 @@ def ap_address(harness: Harness) -> IPv4Address:
 @pytest.fixture(scope="module")
 def known_hosts(harness: Harness, ap_address: IPv4Address) -> Path:
     """The store inside the ssh84 container: the dropbear key under the alias, path with a space and `%`."""
-    scanned = ssh84("ssh-keyscan", "-T", "5", "-p", "22", "--", str(ap_address)).stdout.decode()
+    scanned = ssh84("ssh-keyscan", "-T", "5", "-t", KEYSCAN_TYPES, "-p", "22", "--", str(ap_address)).stdout.decode()
     lines = [line for line in scanned.splitlines() if line and not line.startswith("#")]
     assert lines, "ssh-keyscan from the 8.4 container returned nothing"
     _host, key_type, key = lines[0].split()
@@ -137,11 +138,12 @@ def test_an_unknown_alias_is_refused_by_strict_host_key_checking(
 def test_ssh_keyscan_on_the_floor_accepts_the_full_key_type_names_of_the_fast_path(
     harness: Harness, ap_address: IPv4Address
 ) -> None:
-    """The trust step checks a stored key with `ssh-keyscan -t <stored type>`; the 8.4 client must take the
-    names the store holds and answer with the same key as the unrestricted scan."""
-    full = ssh84("ssh-keyscan", "-T", "5", "-p", "22", "--", str(ap_address)).stdout.decode()
+    """The full scan of the trust step asks for `KEYSCAN_TYPES` and the 8.4 client must obtain every key dropbear
+    holds; the fast path then checks a stored key with `ssh-keyscan -t <stored type>`, which must take the names
+    the store holds and answer with the same key."""
+    full = ssh84("ssh-keyscan", "-T", "5", "-t", KEYSCAN_TYPES, "-p", "22", "--", str(ap_address)).stdout.decode()
     keys = [line.split() for line in full.splitlines() if line and not line.startswith("#")]
-    assert keys, "ssh-keyscan from the 8.4 container returned nothing"
+    assert {key_type for _host, key_type, _key in keys} == {"ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"}
     for _host, key_type, key in keys:
         only = ssh84("ssh-keyscan", "-T", "5", "-t", key_type, "-p", "22", "--", str(ap_address))
         answered = [line.split() for line in only.stdout.decode().splitlines() if line and not line.startswith("#")]
