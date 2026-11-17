@@ -181,6 +181,28 @@ def _rows(cells: tuple[PeerReading, ...], markers: Mapping[str, NeighbourMarker]
     )
 
 
+# Measured on U6 Lite (UAL6) firmware 6.7.57: the controller's quick scan, seen nightly at 03:00 local, leaves the
+# 5 GHz client-interface scan empty, and a restart restored it (docs/ALGORITHM.md §2).
+QUICK_SCAN_MODEL = "UAL6"
+QUICK_SCAN_FIRMWARE = ["6", "7", "57"]
+
+
+def _empty_band_message(ap: AccessPoint, band: Band) -> str:
+    generic = "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion"
+    if (
+        band is Band.GHZ_5
+        and ap.model == QUICK_SCAN_MODEL
+        and ap.firmware is not None
+        and ap.firmware.split(".")[:3] == QUICK_SCAN_FIRMWARE
+    ):
+        return (
+            "the scan saw nothing on this band; on this model with this firmware the controller's quick scan "
+            "(seen nightly at 03:00 local) can leave the 5 GHz scan empty, and restarting the access point restored "
+            "it in the measured cases: restart it and scan before the next quick scan before trusting any conclusion"
+        )
+    return generic
+
+
 def _band_scan_findings(
     ap: AccessPoint, band: Band, scan: SiteScan | None, configured: bool, partial: list[PartialReason]
 ) -> tuple[Finding, ...]:
@@ -193,16 +215,7 @@ def _band_scan_findings(
     usage = reduce_band_passes(ap_scan, band)
     if usage.status is BandScanStatus.EMPTY:
         partial.append(PartialReason.BAND_EMPTY)
-        return (
-            _finding(
-                Severity.WARNING,
-                "radio_restart_suggested",
-                ap.name,
-                "the scan saw nothing on this band; restart the radio or the access point before trusting any "
-                "conclusion",
-                band,
-            ),
-        )
+        return (_finding(Severity.WARNING, "radio_restart_suggested", ap.name, _empty_band_message(ap, band), band),)
     if usage.status is BandScanStatus.FAILED:
         partial.append(PartialReason.BAND_FAILED)
         return (_finding(Severity.WARNING, "scan_unusable", ap.name, "every scan attempt on this band failed", band),)

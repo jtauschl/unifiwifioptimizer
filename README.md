@@ -42,7 +42,7 @@ Models in the same UniFi firmware family share the same kernel and driver archit
 - **U6 family** (firmware 6.x, MediaTek): U6 Lite, U6-LR, U6+, UAP-nanoHD, IW-HD, FlexHD, BeaconHD
 - **U7 family** (firmware 8.x, Qualcomm): U7 Lite, U7 Outdoor, U7 In-Wall, U7 Pro, U7 Pro Wall, U7 Pro Max, U7 Pro Outdoor, U7 Pro XG, U7 Pro XG-Wall, U7 Pro XGS, E7, E7-Campus, E7-Audience
 
-An off-channel scan interrupts service on the scanning access point for the duration of the scan. Radios on 6 GHz are recognised as their own band and reported as not evaluated; U7 Pro, E7, and other models with a 6 GHz radio are analyzed on 2.4 GHz and 5 GHz.
+On a U6 Lite with firmware 6.7.57 the controller's quick scan (seen nightly at 03:00 local) can leave the 5 GHz neighbour scan empty, and restarting the access point restored it in the measured cases; the report names it when that scan is empty. An off-channel scan interrupts service on the scanning access point for the duration of the scan. Radios on 6 GHz are recognised as their own band and reported as not evaluated; U7 Pro, E7, and other models with a 6 GHz radio are analyzed on 2.4 GHz and 5 GHz.
 
 ## Install
 

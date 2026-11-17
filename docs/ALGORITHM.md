@@ -37,6 +37,8 @@ merges the attempts by the strongest reading per BSSID; the passes are then aggr
 of the readings taken on the peer's **current primary frequency**: a reading on another
 channel predates a channel move and is not comparable, and a maximum over 2–4 noisy samples is biased
 1–3 dB high while the median is unbiased. 6 GHz radios are detected and reported, not evaluated.
+On a U6 Lite (UAL6) with firmware 6.7.57 the controller's quick scan, seen nightly at 03:00 local, can leave the 5 GHz
+scan empty, and restarting the access point restored it in the measured cases; the empty-band finding names that cause for this model and firmware only.
 
 ## 3. Neighbour Evaluation
 

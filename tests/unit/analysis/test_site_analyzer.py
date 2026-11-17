@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from unifiwifioptimizer.analysis.site_analyzer import analyze_site, ap_order, mesh_roles
+from unifiwifioptimizer.analysis.site_analyzer import _band_scan_findings, analyze_site, ap_order, mesh_roles
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
     MissingReason,
@@ -540,3 +540,52 @@ def test_a_missing_5_ghz_channel_list_is_a_site_finding_and_not_an_access_point_
     unknown = [f for f in report.site_findings if f.code == "channel_candidates_unknown"]
     assert [(f.subject, f.band) for f in unknown] == [(snapshot.site.id, Band.GHZ_5)]
     assert all(f.code != "channel_candidates_unknown" for ap in report.aps for b in ap.bands for f in b.findings)
+
+
+# --- the empty-band message names the measured quick-scan cause only where it was measured ---------------------
+
+
+def _empty_band_text(model: str | None, firmware: str | None, band: Band) -> str:
+    snap = fixture_snapshot()
+    ap = replace(ap_named(snap, "AP-1"), model=model, firmware=firmware)
+    scan = site_scan(
+        snap,
+        {
+            "AP-1": [
+                scan_pass(
+                    band_scan(Band.GHZ_2, (), BandScanStatus.EMPTY), band_scan(Band.GHZ_5, (), BandScanStatus.EMPTY)
+                )
+            ]
+        },
+    )
+    (finding,) = _band_scan_findings(ap, band, scan, True, [])
+    assert finding.code == "radio_restart_suggested"
+    return finding.message
+
+
+GENERIC_EMPTY = (
+    "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion"
+)
+
+
+@pytest.mark.parametrize("firmware", ["6.7.57.15670", "6.7.57"])
+def test_a_u6_lite_on_the_measured_firmware_names_the_quick_scan_on_5_ghz(firmware: str) -> None:
+    text = _empty_band_text("UAL6", firmware, Band.GHZ_5)
+    assert text.startswith("the scan saw nothing on this band; ") and "quick scan" in text and "03:00 local" in text
+    assert "restarting the access point restored it in the measured cases" in text
+
+
+@pytest.mark.parametrize(
+    ("model", "firmware", "band"),
+    [
+        ("UAL6", "6.7.57.15670", Band.GHZ_2),
+        ("UAL6", "6.7.58.1", Band.GHZ_5),
+        ("UAL6", "6.7.570.1", Band.GHZ_5),
+        ("UAL6", None, Band.GHZ_5),
+        (None, "6.7.57.15670", Band.GHZ_5),
+        ("UAPA693", "8.8.14.20179", Band.GHZ_5),
+        ("UAPA693", "6.7.57.1", Band.GHZ_5),
+    ],
+)
+def test_every_other_empty_band_keeps_the_generic_text(model: str | None, firmware: str | None, band: Band) -> None:
+    assert _empty_band_text(model, firmware, band) == GENERIC_EMPTY
