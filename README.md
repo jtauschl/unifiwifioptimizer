@@ -198,7 +198,7 @@ Part of the public contract; scripts may branch on them.
 | 4 | TLS | the controller connection was refused by the TLS policy |
 | 5 | host keys | `run`: a scanning site had no verifiable access point and a host key (unknown or mismatched) was the reason; run `trust-host-keys`. `trust-host-keys`: an access point could not be handled |
 | 6 | partial | the report exists, but a finding says what is missing: an access point unparsable, not on the controller or sharing its name with another, a scan that failed, a band that was empty, failed or down |
-| 7 | environment | `ssh` missing or older than 8.4 (checked right after the configuration is read, before the scan password check, only when a site scans) |
+| 7 | environment | `ssh` missing or older than 8.4 (checked right after the configuration is read, before the scan password check, only when a site scans); `init` when its input ends before the questions are answered, for example without a terminal |
 | 130 | interrupted | Ctrl-C |
 
 Code 5 is narrower than "no access point verified": a site whose every scan timed out is a partial result (6), not a host-key problem.

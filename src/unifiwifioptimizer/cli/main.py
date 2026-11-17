@@ -212,7 +212,12 @@ def _print_lines(text: str) -> None:
 
 def _init(args: argparse.Namespace) -> ExitCode:
     # Never the legacy file: `init` creates a configuration and must not point at, or invite deleting, an old one.
-    path = run_init(args.config_file.expanduser() if args.config_file is not None else default_config_path())
+    try:
+        path = run_init(args.config_file.expanduser() if args.config_file is not None else default_config_path())
+    except EOFError:
+        raise ToolEnvironmentError(
+            "init asks for the controller URL and the API key and its input ended first; run it in a terminal"
+        ) from None
     print(f"{PROG}: wrote {path} (mode 0600)", file=sys.stderr)
     return ExitCode.OK
 

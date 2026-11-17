@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,27 @@ def test_init_targets_the_default_location_even_when_only_a_legacy_file_exists(
     monkeypatch.setattr(cli, "run_init", record)
     assert cli.main(["init"]) == ExitCode.OK
     assert seen == [tmp_path / "config" / "unifiwifioptimizer" / "config.yaml"]
+
+
+def test_init_whose_input_ends_at_the_first_question_says_so_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "cfg" / "config.yaml"
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert cli.main(["--config-file", str(target), "init"]) == ExitCode.ENVIRONMENT
+    err = capsys.readouterr().err
+    assert (
+        err.startswith("unifiwifioptimizer: error: init asks for the controller URL") and "run it in a terminal" in err
+    )
+    assert "Traceback" not in err and not target.exists() and not target.parent.exists()
+
+
+def test_init_whose_input_ends_at_a_later_question_gets_the_same_answer(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def ended(_path: Path) -> Path:
+        raise EOFError
+
+    monkeypatch.setattr(cli, "run_init", ended)
+    assert cli.main(["--config-file", "/tmp/never.yaml", "init"]) == ExitCode.ENVIRONMENT
+    assert "run it in a terminal" in capsys.readouterr().err
