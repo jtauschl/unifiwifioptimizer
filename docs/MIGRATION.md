@@ -162,7 +162,9 @@ baseline (`docs/ALGORITHM.md` has the derivation).
   the check reports the older API instead of a verdict.
 - An enabled Minimum RSSI is no longer flagged by itself: it is a change only when it differs from the value to set
   (the derived value moved into the controller's range; a setting at that end counts as confirmed). On a 5 GHz radio
-  an advisory appears when the disconnect would fire before a neighbour can take over (`docs/ALGORITHM.md` §6).
+  the advisory `min_rssi_before_roaming` appears when the disconnect would fire before the roaming trigger; the advisory
+  `min_rssi_without_alternative`, on both bands, appears when an enabled Minimum RSSI sits on a radio with no configured
+  neighbour or whose weakest neighbour stays out of reach at the effective maximum (`docs/ALGORITHM.md` §6). A coverage gap formerly reported as `min_rssi_before_roaming` now has the second code.
 
 No configuration change is needed.
 

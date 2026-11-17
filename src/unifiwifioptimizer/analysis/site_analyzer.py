@@ -16,7 +16,11 @@ from unifiwifioptimizer.analysis.clients import clients_of, unassignable, unassi
 from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.groups import group_reports
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
-from unifiwifioptimizer.analysis.minrssi import min_rssi_before_roaming, recommend_band_min_rssi
+from unifiwifioptimizer.analysis.minrssi import (
+    min_rssi_before_roaming,
+    min_rssi_without_alternative,
+    recommend_band_min_rssi,
+)
 from unifiwifioptimizer.analysis.neighbors import (
     EVALUATED_BANDS,
     NeighbourMatrix,
@@ -35,7 +39,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
     threshold_above_guidance,
     thresholds_for_compliance,
 )
-from unifiwifioptimizer.analysis.txpower import BandTxResult, analyse_band_tx, apply_mesh_guard
+from unifiwifioptimizer.analysis.txpower import BandTxResult, analyse_band_tx, apply_mesh_guard, band_floor_wording
 from unifiwifioptimizer.compliance.engine import evaluate_site
 from unifiwifioptimizer.domain.analysis import BandTxOutcome, MaxReason, NeighbourMarker, PartialReason
 from unifiwifioptimizer.domain.models import AccessPoint, Band, DeviceState, Mac, SiteSnapshot, WlanConfig
@@ -378,9 +382,7 @@ def _band_report(
     if cells and tx_eff is not None and judged:
         min_rssi = recommend_band_min_rssi(ap, band, corridor, tx_eff, inp.rf)
         recommendations.append(min_rssi)
-        advisory = min_rssi_before_roaming(
-            ap, band, min_rssi, _roaming_trigger(targets, ap.name), tx_eff, inp.rf, tx.coverage_gap
-        )
+        advisory = min_rssi_before_roaming(ap, band, min_rssi, _roaming_trigger(targets, ap.name), tx_eff, inp.rf)
         if advisory is not None:
             findings.append(advisory)
         if inp.snapshot.clients is not None:
@@ -392,6 +394,16 @@ def _band_report(
                     weakest_dbm=summary.weakest_dbm,
                     min_rssi_dbm=min_rssi.recommended,
                 )
+    alternative = min_rssi_without_alternative(
+        ap,
+        band,
+        configured=configured,
+        has_neighbours=bool(cells),
+        coverage_gap=tx.coverage_gap,
+        floor_wording=band_floor_wording(band),
+    )
+    if alternative is not None:
+        findings.append(alternative)
     airtime = airtime_of(ap, band)
     foreign = foreign_networks(ap, band, inp.scan, inp.snapshot)
     geometry = geometry_of(ap, band)

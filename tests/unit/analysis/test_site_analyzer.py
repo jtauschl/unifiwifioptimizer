@@ -375,10 +375,15 @@ def test_clients_are_reported_per_radio_only_when_requested() -> None:
     assert finding.message == "client sightings not placed on a radio: 1 access point not in the snapshot"
 
 
-def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_wlan_trigger() -> None:
+def test_the_min_rssi_advisories_fire_on_a_structural_gap_and_on_a_late_wlan_trigger_each_for_its_own_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "unifiwifioptimizer.analysis.site_analyzer.band_floor_wording", lambda band: f"FLOOR-{band.value}"
+    )
     # Three gaps on 5 GHz: AP-1 is raised to its maximum with AP-2 still below the corridor (row 11, marker
     # `*`), AP-2 sits at its effective maximum (row 10), AP-3 is unsighted by AP-4 at the maximum (row 6). An
-    # enabled Minimum RSSI on each of them gets the advisory.
+    # enabled Minimum RSSI on each of them gets the alternative advisory and not the ordering one.
     inp = replace(golden_input(), rf=RfSettings(client_tx_dbm=15))
     snap = inp.snapshot
     for name in ("AP-1", "AP-2", "AP-3"):
@@ -392,8 +397,10 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     )
     assert next(r for r in one_5g.neighbours if r.peer == "AP-2").marker is NeighbourMarker.BELOW_UNFIXABLE
     for band in (one_5g, two_5g, three_5g):
-        advisory = next(f for f in band.findings if f.code == "min_rssi_before_roaming")
-        assert advisory.severity is Severity.ADVISORY and "coverage gap" in advisory.message
+        advisory = next(f for f in band.findings if f.code == "min_rssi_without_alternative")
+        assert advisory.severity is Severity.ADVISORY
+        assert "the weakest neighbour stays below FLOOR-5g even at the effective maximum" in advisory.message
+        assert "min_rssi_before_roaming" not in codes(band.findings)
     # The late trigger: AP-1 (20 dBm, heard at -66) and AP-2 (23 dBm, heard at -80) alone broadcast the WLAN.
     # AP-2's floor-clamped uplink value -83 is below what the controller accepts, so the WLAN threshold is -80;
     # at AP-1 it fires at -75 on the downlink, below AP-1's Minimum RSSI target of -72.
@@ -415,6 +422,7 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
     assert target.derived_dbm == -83
     advisory = next(f for f in band_of(late, "AP-1", Band.GHZ_5).findings if f.code == "min_rssi_before_roaming")
     assert "(-75 dBm at the client)" in advisory.message and "(-72 dBm)" in advisory.message
+    assert "min_rssi_without_alternative" not in codes(band_of(late, "AP-1", Band.GHZ_5).findings)
     # No hint while the threshold is below -70; a 30 dBm client raises it to -68.
     assert "roaming_threshold_above_guidance" not in codes(late.site_findings)
     high_rf = replace(inp, snapshot=pair, scan=scan, neighbours=neighbours, rf=RfSettings(client_tx_dbm=30))
@@ -446,6 +454,24 @@ def test_the_min_rssi_ordering_advisory_fires_on_a_structural_gap_and_on_a_late_
         assert band.outcome is BandTxOutcome.IN_CORRIDOR
         assert band.recommendations[1].setting == "min_rssi" and band.recommendations[1].current == -80
         assert "min_rssi_before_roaming" not in codes(band.findings)
+        assert "min_rssi_without_alternative" not in codes(band.findings)
+
+
+def test_min_rssi_without_a_configured_neighbour_gets_the_advisory_and_an_unconfigured_ap_none() -> None:
+    inp = replace(golden_input(), rf=RfSettings(client_tx_dbm=15))
+    snap = inp.snapshot
+    for name in ("AP-1", "AP-3"):
+        for band in (Band.GHZ_2, Band.GHZ_5):
+            snap = with_ap(snap, with_radio(ap_named(snap, name), band, min_rssi_enabled=True, min_rssi_dbm=-80))
+    # AP-1 is configured with no neighbour at all; AP-3 is absent from the configuration.
+    neighbours = {"AP-1": frozenset(), "AP-2": frozenset({"AP-4"}), "AP-4": frozenset({"AP-2"})}
+    report = analyze_site(replace(inp, snapshot=snap, neighbours=neighbours))
+    for band in (Band.GHZ_2, Band.GHZ_5):
+        alone = band_of(report, "AP-1", band)
+        finding = next(f for f in alone.findings if f.code == "min_rssi_without_alternative")
+        assert "no neighbour is configured on this band" in finding.message
+        assert "min_rssi_without_alternative" not in codes(band_of(report, "AP-3", band).findings)
+    assert not next(ap for ap in report.aps if ap.name == "AP-3").configured
 
 
 def test_prepare_site_tx_checks_counts_zero_sightings() -> None:

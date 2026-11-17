@@ -148,7 +148,7 @@ def _peers_not_evaluated(ap: AccessPoint, band: Band, blocking: Sequence[PeerRea
     )
 
 
-def _band_floor_wording(band: Band) -> str:
+def band_floor_wording(band: Band) -> str:
     return "the cell edge" if band is Band.GHZ_5 else "the 2.4 GHz corridor floor (edge minus the overlap allowance)"
 
 
@@ -311,7 +311,7 @@ def analyse_band_tx(
                 "coverage_gap",
                 ap,
                 band,
-                f"hand-off between {ap.name} and {', '.join(below)} happens below {_band_floor_wording(band)} "
+                f"hand-off between {ap.name} and {', '.join(below)} happens below {band_floor_wording(band)} "
                 f"({short} dB short at {_at_maximum(cap)}): add an access point or accept",
                 below,
             )

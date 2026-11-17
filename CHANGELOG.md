@@ -63,6 +63,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - Without a 5 GHz channel list, the free-channel hints and the 5 GHz reuse check are skipped and the `info` finding `channel_candidates_unknown` says so.
 - Per-radio Minimum RSSI on the uplink (corridor floor minus margin, converted with `rf.client_tx_dbm`); a disabled setting is reported as the value to use.
 - An advisory flags an enabled Minimum RSSI that would disconnect before the roaming trigger.
+- A new advisory flags an enabled Minimum RSSI on a radio with no neighbour to take a client over, on both bands.
 - Airtime figures per radio.
 - A Roaming Assistant check carries the "fix TX power first" note while a 5 GHz power change is pending.
 - Offline access points are one line; radios in DFS wait get the channel-aware re-run hint; an `empty` scan band gets a restart suggestion.

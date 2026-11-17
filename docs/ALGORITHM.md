@@ -208,16 +208,25 @@ settings overview calls the hard kick "generally not recommended unless running 
 
 Enabling it is a deployment choice: a disabled Minimum RSSI is reported as the value to use if it is
 switched on, never as a pending change; enabled at the derived value it is confirmed, elsewhere it is a
-change. An enabled Minimum RSSI on a 5 GHz radio with a coverage gap, or whose roaming trigger lies below
-the Minimum RSSI target, gets an advisory: the disconnect would fire before any neighbour can take over.
+change. An enabled Minimum RSSI on a 5 GHz radio whose roaming trigger lies below the Minimum RSSI target gets
+an ordering advisory: the disconnect would fire before the hand-off suggestion.
 The comparison is between the recommended values at the radio's current effective power — the WLAN
 threshold of §7 and the Minimum RSSI value to set (moved into the controller's range where needed), converted back
 to the downlink — not the values configured today; a pending
-transmit-power change moves the trigger on the downlink. "Coverage gap" here means rows 6 (at the maximum)
-and 10 of §4 and any neighbour marked `*` below the corridor. The trigger compared is the WLAN's threshold
+transmit-power change moves the trigger on the downlink. The trigger compared is the WLAN's threshold
 as this radio sees it on the downlink — the controller applies one uplink value per WLAN (§7), so at an access
 point whose own derived value lies above it, it fires at a weaker signal than that derived value would, and at one
 whose derived value lies below the controller's range, at a stronger signal.
+
+**No alternative access point.** Ubiquiti's own article on Minimum RSSI states that the access point sends a
+de-authentication packet and that it is up to the client to find a better access point; the client may connect back to
+the same one, especially if it is the only one within range. An enabled Minimum RSSI on a radio of a configured access
+point therefore gets an advisory, on both bands, in two cases: no neighbour is configured on the band, or there is a
+coverage gap. "Coverage gap" here means rows 6 (at the maximum) and 10 of §4 and any neighbour marked `*` below the
+corridor floor (the cell edge on 5 GHz, the corridor floor on 2.4 GHz), at the effective maximum. Only configured
+neighbours count: one that does not broadcast the client's WLAN or is offline still counts here (the WLAN-level view is
+§7), nothing is said when configured neighbours exist but none can be evaluated (row 7), and a disabled Minimum RSSI gets no advisory. With no configured neighbour the advisory also appears without a scan or in a DFS wait: it rests on the configuration. An access point
+missing from the neighbour configuration gets its own finding and nothing here.
 
 ## 7. Roaming Assistant
 
