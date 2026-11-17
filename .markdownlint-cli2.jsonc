@@ -1,0 +1,26 @@
+{
+  // Copy to the repository root as .markdownlint-cli2.jsonc. Without a config file an editor falls back to the
+  // extension's defaults, so the same file warns in one workspace and not in another. Every disabled rule below
+  // carries its reason; delete a line when the project does not need the exception.
+  //
+  // MD013 (line-length): prose is written as one long line per paragraph, not wrapped at 80 columns, so the rule
+  // would flag every paragraph without a readability problem.
+  // MD024 (no-duplicate-heading): CHANGELOG.md repeats "Added" and "Fixed" as a sub-heading per release, the Keep a
+  // Changelog convention, not a defect.
+  // MD060 (table-column-style): enforces one pipe-spacing style across every table of a file; padded pipes for
+  // readability are a legitimate style.
+  "config": {
+    "MD013": false,
+    "MD024": false,
+    "MD060": false,
+    // MD033 (no-inline-html) stays on, with the collapsible block (<details> with <summary>) that Markdown has no
+    // syntax for.
+    "MD033": { "allowed_elements": ["details", "summary"] }
+  },
+  "ignores": [
+    // GitHub requires this file's first line to be a template placeholder, not an H1; MD041 does not know that.
+    ".github/pull_request_template.md",
+    // Third-party documentation that a package manager installs is not this repository's.
+    "**/node_modules/**"
+  ]
+}
