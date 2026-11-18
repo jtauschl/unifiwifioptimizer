@@ -313,26 +313,55 @@ def _check_hostkey(value: Json, path: str) -> list[str]:
 hostkey_fingerprint = _string_rule(Anonymizer.hostkey_fingerprint, _check_hostkey)
 
 
-def _check_number_text(value: Json, path: str) -> list[str]:
-    if (isinstance(value, str) and re.fullmatch(DIGITS, value)) or (
-        isinstance(value, int) and not isinstance(value, bool)
-    ):
-        return []
-    return [f"{path}: expected a number or a digit string"]
+def _number_check(what: str) -> Check:
+    def check(value: Json, path: str) -> list[str]:
+        if (isinstance(value, str) and re.fullmatch(DIGITS, value)) or (
+            isinstance(value, int) and not isinstance(value, bool)
+        ):
+            return []
+        return [f"{path}: expected {what}"]
+
+    return check
 
 
-def _number_text(_ctx: Anonymizer, value: Json) -> Json:
-    if _check_number_text(value, ""):
-        raise ValueError("expected a number or a digit string")
-    return value
+def number_rule(what: str) -> Rule:
+    """A non-identifying numeric wire value, kept as sent: an integer or a short digit string. The controller
+    sends several of these fields in either form (`ht`, the fixed channel), and the form is kept verbatim so a
+    change of it shows in the regenerated fixture."""
+    check = _number_check(what)
+
+    def apply(_ctx: Anonymizer, value: Json) -> Json:
+        if check(value, ""):
+            raise ValueError(f"expected {what}")
+        return value
+
+    return Rule(apply, check, keeps_verbatim=True)
 
 
-# The controller sends `radio_table[].ht` as a string on some radios and as an integer on others.
-number_text = Rule(_number_text, _check_number_text, keeps_verbatim=True)
+def number_list_rule(what: str) -> Rule:
+    item_check = _number_check(what)
+
+    def apply(_ctx: Anonymizer, value: Json) -> Json:
+        items = _items(value)
+        for i, item in enumerate(items):
+            if item_check(item, ""):
+                raise SpecError(f"[{i}]", f"expected {what}")
+        return list(items)
+
+    def check(value: Json, path: str) -> list[str]:
+        if not isinstance(value, list):
+            return [f"{path}: expected a list"]
+        return [problem for i, item in enumerate(value) for problem in item_check(item, f"{path}[{i}]")]
+
+    return Rule(apply, check, keeps_verbatim=True)
+
+
+_check_number_text = _number_check("a number or a digit string")
+number_text = number_rule("a number or a digit string")
 
 
 def _check_channel(value: Json, path: str) -> list[str]:
-    if value == "auto" or (isinstance(value, int) and not isinstance(value, bool)):
+    if value == "auto" or not _check_number_text(value, path):
         return []
     return [f"{path}: expected a channel number or auto"]
 
@@ -343,7 +372,7 @@ def _channel(_ctx: Anonymizer, value: Json) -> Json:
     return value
 
 
-# An auto-channel radio reports the string `auto` where every other radio reports its channel number.
+# An auto-channel radio reports the string `auto`; a fixed channel is a number or a digit string, as with `ht`.
 channel_or_auto = Rule(_channel, _check_channel, keeps_verbatim=True)
 
 
@@ -455,19 +484,21 @@ RADIO_SPEC: Spec = {
 }  # fmt: skip
 RADIO_STATS_SPEC: Spec = {
     **kept(
-        "channel", "bw", "extchannel", "tx_power", "last_tx_power", "last_channel", "cu_total", "cu_self_rx",
+        "channel", "extchannel", "tx_power", "last_tx_power", "last_channel", "cu_total", "cu_self_rx",
         "cu_self_tx", "tx_retries_pct", "tx_retries", "tx_packets", "satisfaction", "num_sta", "user-num_sta",
         "guest-num_sta", "gain",
     ),
+    "bw": number_rule("a channel width"),
     "radio": RADIO,
     "name": pattern(INTERFACE, "a radio interface name"),
     "state": RADIO_STATE,
 }  # fmt: skip
 VAP_SPEC: Spec = {
     **kept(
-        "channel", "bw", "extchannel", "up", "is_guest", "is_wep", "num_sta", "satisfaction", "avg_client_signal",
+        "channel", "extchannel", "up", "is_guest", "is_wep", "num_sta", "satisfaction", "avg_client_signal",
         "ccq", "tx_power",
     ),
+    "bw": number_rule("a channel width"),
     "radio": RADIO,
     "radio_name": pattern(INTERFACE, "a radio interface name"),
     "name": pattern(INTERFACE, "a radio interface name"),
@@ -586,8 +617,8 @@ SETTING_KEY = vocab(
 )  # fmt: skip
 SETTING_STUB_SPEC: Spec = {"key": SETTING_KEY, "_id": object_id, "site_id": object_id}
 BLACKLIST_ENTRY_SPEC: Spec = {
-    "channel": pattern(DIGITS, "a channel number"),
-    "channel_width": pattern(DIGITS, "a channel width"),
+    "channel": number_rule("a channel number"),
+    "channel_width": number_rule("a channel width"),
     "radio": RADIO,
 }
 RADIO_AI_SPEC: Spec = {
@@ -595,12 +626,12 @@ RADIO_AI_SPEC: Spec = {
     **kept("enabled", "auto_enabled", "default", "auto_adjust_channels_to_country"),
     "optimize": vocab_list("channel", "power"),
     "cron_expr": pattern(CRON, "a cron expression"),
-    "channels_ng": pattern_list(DIGITS, "a channel number"),
-    "channels_na": pattern_list(DIGITS, "a channel number"),
-    "channels_6e": pattern_list(DIGITS, "a channel number"),
-    "ht_modes_ng": pattern_list(DIGITS, "a channel width"),
-    "ht_modes_na": pattern_list(DIGITS, "a channel width"),
-    "ht_modes_6e": pattern_list(DIGITS, "a channel width"),
+    "channels_ng": number_list_rule("a channel number"),
+    "channels_na": number_list_rule("a channel number"),
+    "channels_6e": number_list_rule("a channel number"),
+    "ht_modes_ng": number_list_rule("a channel width"),
+    "ht_modes_na": number_list_rule("a channel width"),
+    "ht_modes_6e": number_list_rule("a channel width"),
     "radios": vocab_list("ng", "na", "6e"),
     "setting_preference": vocab("auto", "manual"),
     "auto_channel_presets_type": vocab("maximum_speed", "maximum_range", "balanced", "custom"),
@@ -608,7 +639,7 @@ RADIO_AI_SPEC: Spec = {
     "radios_configuration": list_of({"dfs": keep, "channel_width": keep, "radio": RADIO}),
     "exclude_devices": mac_list,
 }  # fmt: skip
-COUNTRY_SPEC: Spec = {**SETTING_STUB_SPEC, "code": pattern(DIGITS, "a numeric country code")}
+COUNTRY_SPEC: Spec = {**SETTING_STUB_SPEC, "code": number_rule("a numeric country code")}
 CONNECTIVITY_SPEC: Spec = {
     **SETTING_STUB_SPEC,
     "mlo_mesh_enabled": keep,

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -202,17 +203,92 @@ def test_text_outside_the_closed_rules_fails_the_run_naming_the_path() -> None:
         anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table_stats": [{"state": "SN12345"}]}]}})
 
 
-def test_radio_channel_and_width_accept_the_auto_and_integer_forms() -> None:
-    radios = [{"radio": "ng", "channel": "auto", "ht": 20}, {"radio": "na", "channel": 44, "ht": "80"}]
+def test_radio_channel_and_width_accept_the_auto_integer_and_digit_string_forms() -> None:
+    radios = [
+        {"radio": "ng", "channel": "auto", "ht": 20},
+        {"radio": "na", "channel": 44, "ht": "80"},
+        {"radio": "ng", "channel": "6", "ht": "20"},
+    ]
     fixtures, _ = anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table": radios}]}})
     devices = fixtures["stat_device.json"]
     assert isinstance(devices, dict) and devices["data"][0]["radio_table"] == radios
-    for bad in ({"channel": "6"}, {"channel": True}, {"ht": True}, {"ht": "20\n"}, {"ht": "auto"}):
+    # The tool's own self-check accepts what it just produced, the digit-string channel included.
+    assert check_fixture("stat_device.json", devices) == []
+    for bad in (
+        {"channel": "six"},
+        {"channel": True},
+        {"channel": "6\n"},
+        {"ht": True},
+        {"ht": "20\n"},
+        {"ht": "auto"},
+    ):
         with pytest.raises(tool.SpecError, match=r"\$\.data\[0\]\.radio_table\[0\]\.(channel|ht): expected"):
             anonymize({"stat_device.json": {"data": [{"type": "uap", "radio_table": [{"radio": "ng", **bad}]}]}})
-    assert check_fixture("stat_device.json", {"data": [{"type": "uap", "radio_table": [{"channel": "6"}]}]}) == [
+    assert check_fixture("stat_device.json", {"data": [{"type": "uap", "radio_table": [{"channel": "six"}]}]}) == [
         "$.data[0].radio_table[0].channel: expected a channel number or auto"
     ]
+
+
+def _radio_ai(**fields: object) -> dict[str, object]:
+    return {"key": "radio_ai", **fields}
+
+
+NumberCell = tuple[str, Callable[[object], dict[str, object]], str, str]
+
+# Every field that takes the number rule: (fixture, record with the value, where the value sits, the field's message).
+NUMBER_CELLS: list[NumberCell] = [
+    ("stat_device.json", lambda v: {"type": "uap", "radio_table": [{"radio": "ng", "ht": v}]},
+     "radio_table[0].ht", "$.data[0].radio_table[0].ht: expected a number or a digit string"),
+    ("stat_device.json", lambda v: {"type": "uap", "radio_table": [{"radio": "ng", "channel": v}]},
+     "radio_table[0].channel", "$.data[0].radio_table[0].channel: expected a channel number or auto"),
+    ("stat_device.json", lambda v: {"type": "uap", "radio_table_stats": [{"radio": "ng", "bw": v}]},
+     "radio_table_stats[0].bw", "$.data[0].radio_table_stats[0].bw: expected a channel width"),
+    ("stat_device.json", lambda v: {"type": "uap", "vap_table": [{"radio": "na", "bw": v}]},
+     "vap_table[0].bw", "$.data[0].vap_table[0].bw: expected a channel width"),
+    ("rest_setting.json", lambda v: _radio_ai(channels_blacklist=[{"radio": "ng", "channel": v}]),
+     "channels_blacklist[0].channel", "$.data[0].channels_blacklist[0].channel: expected a channel number"),
+    ("rest_setting.json", lambda v: _radio_ai(channels_blacklist=[{"radio": "ng", "channel_width": v}]),
+     "channels_blacklist[0].channel_width", "$.data[0].channels_blacklist[0].channel_width: expected a channel width"),
+    *(
+        ("rest_setting.json", lambda v, k=key: _radio_ai(**{k: [v]}), f"{key}[0]",
+         f"$.data[0].{key}[0]: expected a {'channel number' if key.startswith('channels') else 'channel width'}")
+        for key in ("channels_ng", "channels_na", "channels_6e", "ht_modes_ng", "ht_modes_na", "ht_modes_6e")
+    ),
+    ("rest_setting.json", lambda v: {"key": "country", "code": v},
+     "code", "$.data[0].code: expected a numeric country code"),
+]  # fmt: skip
+
+
+def _value_at(record: object, where: str) -> object:
+    for part in where.split("."):
+        name, _, index = part.partition("[")
+        record = record[name] if isinstance(record, dict) else record
+        if index:
+            record = record[int(index.rstrip("]"))]  # type: ignore[index]
+    return record
+
+
+@pytest.mark.parametrize("cell", NUMBER_CELLS, ids=[c[2] for c in NUMBER_CELLS])
+@pytest.mark.parametrize("value", [20, "20"])
+def test_a_numeric_wire_value_keeps_the_form_the_controller_sent(cell: NumberCell, value: object) -> None:
+    fixture, build, where, _message = cell
+    fixtures, _ = anonymize({fixture: {"data": [build(value)]}})
+    kept = fixtures[fixture]
+    assert isinstance(kept, dict)
+    assert _value_at(kept["data"][0], where) == value and type(_value_at(kept["data"][0], where)) is type(value)
+    assert check_fixture(fixture, kept) == []
+
+
+@pytest.mark.parametrize("cell", NUMBER_CELLS, ids=[c[2] for c in NUMBER_CELLS])
+@pytest.mark.parametrize("bad", ["six", True, 20.0, "20\n", "12345"])
+def test_a_numeric_wire_value_that_is_neither_an_integer_nor_a_digit_string_fails_the_run(
+    cell: NumberCell, bad: object
+) -> None:
+    fixture, build, _where, message = cell
+    with pytest.raises(tool.SpecError) as caught:
+        anonymize({fixture: {"data": [build(bad)]}})
+    assert message in str(caught.value)
+    assert check_fixture(fixture, {"data": [build(bad)]}) == [message]
 
 
 def test_a_gateway_with_a_built_in_radio_keeps_its_radio_table() -> None:

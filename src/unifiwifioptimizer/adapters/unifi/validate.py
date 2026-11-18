@@ -156,17 +156,39 @@ def require_str(value: Json, path: str, max_bytes: int) -> str:
     return value
 
 
-def require_int(value: Json, path: str, allowed: range | None = None) -> int:
+def require_int(value: Json, path: str, allowed: range | None = None, expected: str = "an integer") -> int:
     # bool is an int subclass in Python; a flag is never a valid number here.
     if isinstance(value, bool) or not isinstance(value, int):
         # NaN and ±inf are not integral, so `is_integer()` already rejects them.
         if isinstance(value, float) and value.is_integer():
             value = int(value)
         else:
-            raise SchemaError(path, "expected an integer")
+            raise SchemaError(path, f"expected {expected}")
     if allowed is not None and value not in allowed:
         raise SchemaError(path, f"outside {allowed.start}..{allowed.stop - 1}")
     return value
+
+
+# Channel numbers, widths and country codes have at most three digits; the cap also keeps `int()` away
+# from strings long enough to exceed the interpreter's digit limit.
+MAX_NUMERIC_TEXT_LENGTH = 3
+_NUMBER_OR_DIGITS = "an integer or a digit string"
+
+
+def small_int(text: str) -> int | None:
+    """A short ASCII digit string as an integer; anything else is None."""
+    if text.isascii() and text.isdigit() and len(text) <= MAX_NUMERIC_TEXT_LENGTH:
+        return int(text)
+    return None
+
+
+def require_number(value: Json, path: str, allowed: range) -> int:
+    """`require_int` for a field the controller sends as an integer on some builds or radios and as a short
+    digit string on others; one rule and one set of messages for both forms."""
+    number = small_int(value) if isinstance(value, str) else value
+    if number is None:
+        raise SchemaError(path, f"expected {_NUMBER_OR_DIGITS}")
+    return require_int(number, path, allowed, _NUMBER_OR_DIGITS)
 
 
 def require_bool(value: Json, path: str) -> bool:
@@ -243,6 +265,9 @@ class Fields:
 
     def integer(self, key: str, allowed: range | None = None) -> int:
         return require_int(self.raw(key), self.path(key), allowed)
+
+    def number(self, key: str, allowed: range) -> int:
+        return require_number(self.raw(key), self.path(key), allowed)
 
     def mac(self, key: str) -> str:
         return require_mac(self.raw(key), self.path(key))

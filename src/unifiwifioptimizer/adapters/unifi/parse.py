@@ -61,6 +61,7 @@ from unifiwifioptimizer.adapters.unifi.validate import (
     require_list,
     require_mac,
     require_str,
+    small_int,
     walk_depth,
 )
 from unifiwifioptimizer.domain.errors import SchemaError
@@ -104,9 +105,6 @@ WLAN_BAND_SHORTHANDS: Mapping[str, frozenset[Band]] = {
 }
 # `radio_table_stats.satisfaction` and `stat/sta.satisfaction` carry -1 when nothing contributes.
 NO_VALUE_SENTINEL = -1
-# Channel numbers, widths and country codes have at most three digits; the cap also keeps `int()` away
-# from strings long enough to exceed the interpreter's digit limit.
-MAX_NUMERIC_TEXT_LENGTH = 3
 AUTO_CHANNEL = "auto"
 SETTING_KEYS = frozenset({"radio_ai", "country", "connectivity", "mgmt"})
 # Endpoint names as the problems carry them; the client's request paths map onto these.
@@ -136,13 +134,6 @@ def _attribute_unstamped(problems: list[FieldProblem], endpoint: str) -> None:
     for index, problem in enumerate(problems):
         if problem.endpoint is None:
             problems[index] = FieldProblem(problem.path, problem.message, endpoint=endpoint)
-
-
-def small_int(text: str) -> int | None:
-    """A short ASCII digit string as an integer; anything else is None."""
-    if text.isascii() and text.isdigit() and len(text) <= MAX_NUMERIC_TEXT_LENGTH:
-        return int(text)
-    return None
 
 
 def band_of(fields: Fields, key: str) -> Band:
@@ -196,12 +187,9 @@ def numeric_set(fields: Fields, key: str, max_items: int, allowed: Callable[[int
 def configured_channel(fields: Fields) -> int | None:
     # Auto-channel radios report the string `auto`; their current channel is in `radio_table_stats`. A channel the
     # operator fixed on 2.4 GHz arrives as a digit string.
-    raw = fields.raw("channel")
-    if raw == AUTO_CHANNEL:
+    if fields.raw("channel") == AUTO_CHANNEL:
         return None
-    if isinstance(raw, str):
-        return allowed_number(CHANNEL_RANGE.__contains__)(raw, fields.path("channel"))
-    return fields.integer("channel", CHANNEL_RANGE)
+    return fields.number("channel", CHANNEL_RANGE)
 
 
 def is_access_point(fields: Fields) -> bool:
