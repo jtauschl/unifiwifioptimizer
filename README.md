@@ -17,7 +17,7 @@ The tool **never writes** to the controller or to an access point. You apply eve
 
 The shipped profiles are recommendations with an evidence tier per setting (standard, vendor, practice) for everyday WLANs, WLANs for older or stationary clients, 2.4 GHz-only IoT WLANs and public hotspots; see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
 
-AP recommendations are derived from AP-to-AP neighbor scan RSSI against a cell edge of `noise floor + required SNR` (default −92 dBm + 25 dB = −67 dBm), adjusted for the configured RF environment such as open space, office, or obstructed layouts. The Roaming Assistant threshold is computed per WLAN from that corridor and aggregated, conservatively, across the access points that broadcast the WLAN. (UniFi's controller UI calls this setting "Handoff Suggestions (802.11v)" since Network Application 10.4.57.)
+AP recommendations are derived from AP-to-AP neighbor scan RSSI against a cell edge of `noise floor + required SNR` (default −92 dBm + 25 dB = −67 dBm), adjusted for the configured RF environment such as open space, office, or obstructed layouts. The Roaming Assistant threshold is computed per WLAN from that corridor and aggregated across the access points that broadcast the WLAN: the access point with the weakest coverage sets the target, held inside the range the controller accepts. (UniFi's controller UI calls this setting "Handoff Suggestions (802.11v)" since Network Application 10.4.57.)
 
 AP-level recommendations (TX power, Minimum RSSI) are radio-scoped in UniFi and are not derived from the WLAN profile assigned to an SSID; Roaming Assistant is WLAN-scoped and appears as a profile compliance check instead.
 
@@ -267,7 +267,7 @@ Keys (every key not listed is an error):
 | `rf.required_snr_db` | SNR required at the cell edge, default 25 |
 | `rf.client_tx_dbm` | Typical client transmit power for the uplink conversion, default 14 |
 | `rf.client_tx_dbm_5g_upper` | Optional assumed client power for 5 GHz blocks wholly within channels 100–140, 0..30 dBm; otherwise `rf.client_tx_dbm` applies |
-| `rf.min_rssi_offset_db` | Distance of Minimum RSSI below the roaming trigger, default 5 |
+| `rf.min_rssi_offset_db` | Distance of the Minimum RSSI below the corridor floor on the downlink, applied before the conversion to the uplink and the controller's range, default 5 |
 | `rf.roam_offset_db` | Shift of the Roaming Assistant threshold, default 0 |
 | `rf.roam_margin_db` | Margin of the Roaming Assistant threshold below a weak neighbour, default 5 |
 | `rf.roam_floor_dbm` | Lowest roaming trigger, default -75; must be below the ceiling |

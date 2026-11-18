@@ -316,7 +316,8 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
     if summary.derived_dbm is not None:
         lines.append(
             f"        derived {summary.derived_dbm} dBm is outside the range the controller accepts "
-            f"({ROAMING_ASSISTANT_MIN_DBM}..{ROAMING_ASSISTANT_MAX_DBM} dBm); set to {summary.threshold_dbm} dBm"
+            f"({ROAMING_ASSISTANT_MIN_DBM}..{ROAMING_ASSISTANT_MAX_DBM} dBm); the target stops at "
+            f"{summary.threshold_dbm} dBm"
         )
     if summary.status is WlanRoamingStatus.INCOMPLETE:
         lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons]

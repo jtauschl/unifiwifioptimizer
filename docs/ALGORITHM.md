@@ -198,16 +198,17 @@ Minimum RSSI or Roaming Assistant values derived for the old block.
 On 2.4 GHz, where access points often run 6 dBm against clients at about 14 dBm, the uplink is about 8 dB
 stronger than the downlink; without the conversion a Minimum RSSI never fires usefully there.
 
-The controller accepts −90 to −67 dBm for Minimum RSSI (verified on U6 Lite and U7 Lite, both bands). A derived
-value outside that range moves to the nearer end, and the report names the derived value next to it. An
-enabled Minimum RSSI set to that end counts as confirmed.
+The controller accepts −90 to −67 dBm for Minimum RSSI (limits observed in the controller UI on U6 Lite and U7 Lite,
+both bands; Ubiquiti does not document them). A derived value outside that range moves to the nearer end, and the
+report names the derived value next to it. An enabled Minimum RSSI set to the recommended value, that end included,
+counts as confirmed.
 
 Ubiquiti's own guidance is more cautious than the derived values: "It's safe to say -80dBm would be a starting
 point for standard home or office configurations" (Understanding and Implementing Minimum RSSI), and its SSID
 settings overview calls the hard kick "generally not recommended unless running a high density deployment".
 
 Enabling it is a deployment choice: a disabled Minimum RSSI is reported as the value to use if it is
-switched on, never as a pending change; enabled at the derived value it is confirmed, elsewhere it is a
+switched on, never as a pending change; enabled at the recommended uplink value it is confirmed, elsewhere it is a
 change. An enabled Minimum RSSI on a 5 GHz radio whose roaming trigger lies below the Minimum RSSI target gets
 an ordering advisory: the disconnect would fire before the hand-off suggestion.
 The comparison is between the recommended values at the radio's current effective power — the WLAN
@@ -261,7 +262,9 @@ the value is not a measurement of any associated phone's uplink.
 `ROAMING_ASSISTANT_MIN` and `ROAMING_ASSISTANT_MAX` are −80 and −60 dBm, the stops of the controller's Handoff
 Suggestions slider (observed on Network 10.6.106). A value outside that range cannot be configured: an access
 point at 23 dBm on 5 GHz derives −84 dBm from the −75 dBm floor (−75 − (23 − 14)). The report then names the
-derived value and the range, the target is the nearer end, and a WLAN set to it passes the check.
+derived value and the range, the target is the nearer end, and a WLAN that has Roaming Assistant enabled at it
+passes the check when its profile expects it enabled. The access point whose own value lies below the range then
+fires at a stronger downlink signal than that value, by the distance from that value to the lower limit.
 
 Defaults: offset 0 (the trigger sits at the lower corridor edge; Apple's published client scan triggers are
 −70 dBm on iPhone/iPad and −75 dBm on Mac, support document 102002 — they start the client's own search for a better

@@ -3,7 +3,9 @@
 The threshold is a WLAN-level setting on the controller, so it is aggregated over the access points that
 broadcast the WLAN: every broadcasting AP gets its own threshold from the weakest reading its SSID peers
 (configured neighbours that also broadcast the WLAN) took of it, and the WLAN's target is the minimum, held
-inside the range the controller accepts — no AP is judged more optimistically than its own coverage allows.
+inside the range the controller accepts: the AP with the least coverage governs, and the others fire at a
+weaker downlink signal than their own value. An AP whose own value lies below the range fires at a stronger
+downlink signal than its own value, by the distance from that value to the lower limit.
 Incomplete data never produces a silently optimistic value: a missing peer reading marks the WLAN incomplete
 and passes no threshold on.
 """

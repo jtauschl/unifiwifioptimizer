@@ -522,7 +522,10 @@ def test_clients_are_counted_against_the_min_rssi_that_can_be_set() -> None:
             rec = next(r for r in band.recommendations if r.setting == "min_rssi")
             assert band.clients.min_rssi_dbm == rec.recommended
             assert MIN_RSSI_MIN_DBM <= rec.recommended <= MIN_RSSI_MAX_DBM
-            moved += rec.derived_dbm is not None
+            if rec.derived_dbm is not None:
+                moved += 1
+                # The derived values are above the range here, so the upper stop is where they land.
+                assert rec.derived_dbm > MIN_RSSI_MAX_DBM and rec.recommended == MIN_RSSI_MAX_DBM == -67
     assert moved
 
 
@@ -555,6 +558,13 @@ def test_a_client_between_the_set_value_and_the_derived_value_is_not_counted_bel
     assert before is not None and after is not None
     # Below the derived value, but not below the -67 that is actually set.
     assert (after.total, after.below_min_rssi) == (before.total + 1, before.below_min_rssi)
+    # One dB under the upper stop is below the value that is set: the cutoff sits at -67, not at the lower stop.
+    assert rec.recommended == MIN_RSSI_MAX_DBM
+    below_set = replace(stray, signal_dbm=MIN_RSSI_MAX_DBM - 1)
+    both = replace(inp.snapshot, clients=(*inp.snapshot.clients, stray, below_set))
+    final = band_of(analyze_site(replace(inp, snapshot=both)), name, band_of_target).clients
+    assert final is not None
+    assert (final.total, final.below_min_rssi) == (before.total + 2, before.below_min_rssi + 1)
 
 
 def test_a_missing_5_ghz_channel_list_is_a_site_finding_and_not_an_access_point_one() -> None:

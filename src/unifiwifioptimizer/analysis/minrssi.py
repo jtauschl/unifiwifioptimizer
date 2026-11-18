@@ -31,7 +31,7 @@ def recommend_band_min_rssi(
     elif current == recommended:
         kind, reason = RecommendationKind.CONFIRMED, "enabled at the recommended uplink value"
     else:
-        kind, reason = RecommendationKind.CHANGE, "enabled at another value than the corridor-derived one"
+        kind, reason = RecommendationKind.CHANGE, "enabled at another value than the recommended uplink value"
     return Recommendation(
         code=MIN_RSSI,
         subject=ap.name,

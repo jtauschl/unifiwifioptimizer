@@ -617,7 +617,10 @@ def test_a_threshold_raised_to_the_controller_limit_says_what_was_derived() -> N
         limiting=("AP-9",), broadcasting=("AP-9",), per_ap=(), tx_change_pending=False,
     )  # fmt: skip
     text = render_report(replace(REPORT, roaming=(summary,)), width=None)
-    assert "        derived -83 dBm is outside the range the controller accepts (-80..-60 dBm); set to -80 dBm" in text
+    assert (
+        "        derived -83 dBm is outside the range the controller accepts (-80..-60 dBm); "
+        "the target stops at -80 dBm"
+    ) in text
     plain = replace(summary, derived_dbm=None)
     assert "derived" not in render_report(replace(REPORT, roaming=(plain,)), width=None)
 

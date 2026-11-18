@@ -365,9 +365,10 @@ def test_a_derived_value_below_what_the_controller_accepts_is_raised_to_the_limi
     # The controller applies -80, so that is where the trigger fires at each AP.
     assert downlink_trigger_for(result, "AP-1") == -72 and downlink_trigger_for(result, "AP-2") == -80
     assert thresholds_for_compliance({"Corp": result}) == {"Corp": -80}
-    configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=-80)
-    check = roaming_assistant_check(profile("Standard"), configured, -80)
-    assert check.status is CheckStatus.PASSED
+    applied = thresholds_for_compliance({"Corp": result})["Corp"]
+    configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=applied)
+    check = roaming_assistant_check(profile("Standard"), configured, applied)
+    assert applied == -80 and check.status is CheckStatus.PASSED
 
 
 def test_a_derived_value_exactly_at_the_limit_is_not_reported_as_raised() -> None:
