@@ -52,10 +52,12 @@ def test_run_init_validates_before_writing(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.security("T13")
-def test_run_init_refuses_an_existing_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: True)
+def test_run_init_refuses_an_existing_file(tmp_path: Path) -> None:
+    existing = tmp_path / "config.yaml"
+    existing.write_text("a: 1\n")
     with pytest.raises(ConfigError, match="already exists"):
-        run_init(Path("/cfg/config.yaml"), prompt=lambda _p: "x", secret_prompt=lambda _p: "y")
+        run_init(existing, prompt=lambda _p: "x", secret_prompt=lambda _p: "y")
+    assert existing.read_text() == "a: 1\n"
 
 
 def test_init_subcommand_reports_the_written_path(

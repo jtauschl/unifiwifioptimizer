@@ -13,7 +13,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TypeVar
 
-from unifiwifioptimizer.config.loader import parse_yaml, read_text_file
+from unifiwifioptimizer.config.loader import parse_yaml, path_present, read_text_file
 from unifiwifioptimizer.config.locations import ConfigLocation
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import Band
@@ -288,7 +288,7 @@ def load_profiles(override: Path | None, location: ConfigLocation) -> LoadedProf
     rather than silently skipped)."""
     shipped = shipped_profiles()
     path = override if override is not None else profiles_path_beside(location)
-    if path is None or (override is None and not (path.exists() or path.is_symlink())):
+    if path is None or (override is None and not path_present(path, follow=False)):
         return LoadedProfiles(profiles=shipped, override_path=None, override_text=None)
     text = read_text_file(path, MAX_PROFILES_FILE_BYTES)
     extra = parse_profiles_document(parse_yaml(text, str(path)), str(path), False)

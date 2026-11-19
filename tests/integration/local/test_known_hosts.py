@@ -90,6 +90,22 @@ def test_symlinked_file_and_directory_are_refused(tmp_path: Path) -> None:
 
 
 @pytest.mark.security("T14")
+def test_an_unsearchable_store_directory_is_a_config_error_not_a_permission_error(tmp_path: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory; tests/unit/test_unsearchable_probes.py simulates the denial")
+    locked = tmp_path / "locked"
+    locked.mkdir(mode=0o700)
+    store = KnownHostsWriter(locked / "state" / "known_hosts")
+    locked.chmod(0o000)
+    try:
+        with pytest.raises(ConfigError) as exc:
+            store.entries()
+        assert str(exc.value) == f"known_hosts: cannot open directory {locked / 'state'} (Permission denied)"
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.security("T14")
 def test_a_file_this_tool_did_not_write_is_refused_not_interpreted(tmp_path: Path) -> None:
     store = KnownHostsWriter(tmp_path / "known_hosts")
     store.path.write_text(f"192.168.1.20 ssh-ed25519 {ED25519_BLOB}\n")

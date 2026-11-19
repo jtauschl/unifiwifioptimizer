@@ -127,12 +127,21 @@ def _ssh_version_banner(argv: Sequence[str], env: Mapping[str, str]) -> str:
     return completed.stderr + completed.stdout
 
 
+def _is_file(path: Path) -> bool:
+    """`Path.is_file()` that answers `False` for a path it cannot examine: for an unsearchable parent it raises
+    `PermissionError` on Python 3.11 and answers `False` on 3.14 (a symlink loop answers `False` on both)."""
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def locate_askpass() -> Path:
     """The askpass console script of this very installation: the sibling of the running interpreter first,
     so a helper from another installation on PATH is never picked up, then PATH as the fallback."""
     sibling = Path(sys.executable).with_name(ASKPASS_PROGRAM)
-    candidate = sibling if sibling.is_file() else Path(shutil.which(ASKPASS_PROGRAM) or sibling)
-    if not candidate.is_file():
+    candidate = sibling if _is_file(sibling) else Path(shutil.which(ASKPASS_PROGRAM) or sibling)
+    if not _is_file(candidate):
         raise ToolEnvironmentError(f"{ASKPASS_PROGRAM} not found; reinstall the package (it ships the helper)")
     return candidate.resolve()
 

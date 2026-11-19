@@ -14,6 +14,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from unifiwifioptimizer.config.loader import expand_user
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import SITE_ID_RE, SSH_USER_RE
 from unifiwifioptimizer.domain.secrets import Secret
@@ -149,7 +150,7 @@ def _path(mapping: Mapping[str, Value], path: str, key: str) -> Path | None:
     # OpenSSH expands `%` in path options and a quote would end the quoting the argv builder applies.
     if '"' in text or "%" in text or "\x00" in text:
         raise ConfigError(f"{path}.{key}", 'a path must not contain `"`, `%` or NUL')
-    resolved = Path(text).expanduser()
+    resolved = expand_user(Path(text), f"{path}.{key}")
     if not resolved.is_absolute():
         # ssh runs from `/`; a relative path would silently point there, not next to the configuration file.
         raise ConfigError(f"{path}.{key}", "a path must be absolute (or start with ~)")

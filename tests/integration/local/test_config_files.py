@@ -2,16 +2,23 @@
 
 import os
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
 from tests.integration.local.race import swap_outcomes
+from unifiwifioptimizer.cli import main as cli
+from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import initial_config_text, run_init
-from unifiwifioptimizer.config.loader import MAX_FILE_BYTES, read_private_file, write_new_private_file
+from unifiwifioptimizer.config.loader import (
+    MAX_FILE_BYTES,
+    path_present,
+    read_private_file,
+    write_new_private_file,
+)
 from unifiwifioptimizer.config.locations import resolve_config_location
-from unifiwifioptimizer.domain.errors import ConfigError
+from unifiwifioptimizer.domain.errors import ConfigError, ConfigNotFoundError
 
 pytestmark = pytest.mark.integration
 
@@ -79,6 +86,87 @@ def test_fifo_and_directory_are_not_regular_files(private_dir: Path) -> None:
 
 
 @pytest.mark.security("T13")
+def test_a_missing_file_or_directory_is_not_found_and_an_unreadable_directory_is_not(
+    private_dir: Path, tmp_path: Path
+) -> None:
+    for path in (private_dir / "missing.yaml", tmp_path / "no-such-dir" / "config.yaml"):
+        with pytest.raises(ConfigNotFoundError) as exc:
+            read_private_file(path)
+        assert exc.value.path == str(path) and exc.value.detail == "not found"
+
+
+@pytest.mark.parametrize("name", ["", ".", ".."])
+def test_a_name_that_is_a_directory_is_refused_before_anything_is_opened(name: str) -> None:
+    with pytest.raises(ConfigError) as exc:
+        read_private_file(Path(name) if name else Path())
+    assert not isinstance(exc.value, ConfigNotFoundError)
+    assert exc.value.detail == "names a directory, not a file"
+
+
+@pytest.mark.security("T13")
+def test_an_unreadable_directory_keeps_its_own_message(tmp_path: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory; tests/unit/test_unsearchable_probes.py simulates the denial")
+    locked = tmp_path / "locked"
+    locked.mkdir(mode=0o000)
+    try:
+        with pytest.raises(ConfigError) as other:
+            read_private_file(locked / "config.yaml")
+        assert not isinstance(other.value, ConfigNotFoundError)
+        assert str(other.value) == f"{locked}: cannot open directory (Permission denied)"
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.fixture
+def unsearchable_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """`$XDG_CONFIG_HOME/unifiwifioptimizer` that cannot be searched, with an empty home (no legacy file)."""
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory; tests/unit/test_unsearchable_probes.py simulates the denial")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "unifiwifioptimizer"
+    directory.mkdir(parents=True, mode=0o700)
+    directory.chmod(0o000)
+    try:
+        yield directory
+    finally:
+        directory.chmod(0o700)
+
+
+def test_an_unsearchable_directory_counts_as_present_and_a_missing_one_does_not(
+    unsearchable_default: Path, tmp_path: Path
+) -> None:
+    assert path_present(unsearchable_default / "config.yaml") is True
+    assert path_present(tmp_path / "missing" / "config.yaml") is False
+    assert path_present(tmp_path) is True
+
+
+def test_the_location_choice_keeps_an_unsearchable_default_instead_of_raising(
+    unsearchable_default: Path, tmp_path: Path
+) -> None:
+    legacy = tmp_path / "home" / ".local" / "share" / "unifiwifioptimizer"
+    legacy.mkdir(parents=True)
+    write(legacy / "config.yaml", "a: 1\n")
+    location = resolve_config_location(None)
+    assert location.path == unsearchable_default / "config.yaml" and location.legacy is False
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["run"], "{dir}: cannot open directory (Permission denied)"),
+        (["init"], "{dir}/config.yaml: cannot check whether it exists (Permission denied)"),
+        (["config", "--profiles"], "{dir}/profiles.yaml: cannot open (Permission denied)"),
+    ],
+)
+def test_commands_report_an_unsearchable_default_directory_with_exit_3_not_a_traceback(
+    unsearchable_default: Path, capsys: pytest.CaptureFixture[str], argv: list[str], message: str
+) -> None:
+    assert cli.main(argv) == ExitCode.CONFIG
+    assert capsys.readouterr().err == f"unifiwifioptimizer: error: {message.format(dir=unsearchable_default)}\n"
+
+
 def test_missing_file_size_cap_and_encoding(private_dir: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         read_private_file(private_dir / "missing.yaml")

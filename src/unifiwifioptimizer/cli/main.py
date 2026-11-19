@@ -27,10 +27,12 @@ from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.cli.progress import StderrProgress
 from unifiwifioptimizer.cli.prompt import can_ask, terminal_confirm
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
+from unifiwifioptimizer.config.loader import expand_user
 from unifiwifioptimizer.config.locations import ConfigLocation, default_config_path, resolve_config_location
 from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
 from unifiwifioptimizer.config.schema import parse_controller_url
 from unifiwifioptimizer.domain.errors import (
+    MAX_ERROR_CHARS,
     ConfigError,
     HostKeyTrustError,
     TlsError,
@@ -56,7 +58,6 @@ SUBCOMMAND_HELP: dict[str, str] = {
     "trust-host-keys": "record the access points' SSH host keys after verifying them",
 }
 SITE_SUBCOMMANDS = frozenset({"site", "config"})
-MAX_ERROR_CHARS = 2048
 
 Handler = Callable[[argparse.Namespace], ExitCode]
 
@@ -213,7 +214,7 @@ def _print_lines(text: str) -> None:
 def _init(args: argparse.Namespace) -> ExitCode:
     # Never the legacy file: `init` creates a configuration and must not point at, or invite deleting, an old one.
     try:
-        path = run_init(args.config_file.expanduser() if args.config_file is not None else default_config_path())
+        path = run_init(expand_user(args.config_file) if args.config_file is not None else default_config_path())
     except EOFError:
         raise ToolEnvironmentError(
             "init asks for the controller URL and the API key and its input ended first; run it in a terminal"

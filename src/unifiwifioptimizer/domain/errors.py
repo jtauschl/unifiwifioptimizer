@@ -20,6 +20,10 @@ class SchemaError(UwoError):
         self.detail = message
 
 
+# The most of an error text that the command line prints (`main` caps it there).
+MAX_ERROR_CHARS = 2048
+
+
 class ConfigError(UwoError):
     """The user's configuration cannot be used; `path` names the offending key or file."""
 
@@ -27,6 +31,10 @@ class ConfigError(UwoError):
         super().__init__(f"{path}: {message}")
         self.path = path
         self.detail = message
+
+
+class ConfigNotFoundError(ConfigError):
+    """The configuration file, or the directory that should hold it, does not exist."""
 
 
 class ConfigTimeoutError(ConfigError):

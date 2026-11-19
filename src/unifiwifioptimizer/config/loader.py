@@ -25,7 +25,7 @@ import yaml
 from yaml.events import AliasEvent
 from yaml.nodes import Node
 
-from unifiwifioptimizer.domain.errors import ConfigError, ConfigTimeoutError
+from unifiwifioptimizer.domain.errors import ConfigError, ConfigNotFoundError, ConfigTimeoutError
 
 MAX_FILE_BYTES = 1_048_576
 MAX_DEPTH = 16
@@ -197,6 +197,40 @@ def _check_owner(st: os.stat_result, path: str, what: str, forbidden_bits: int) 
         raise ConfigError(path, f"{what} is accessible to other users (fix with chmod)")
 
 
+def path_present(path: Path, *, follow: bool = True) -> bool:
+    """Whether `path` is there, for a choice between files; `follow=False` asks about the entry itself, so a dangling
+    symlink is present. Only an absent path (no entry, or a parent that is not a directory) counts as missing; a path
+    whose state cannot be determined (no permission to search, a name that is too long, a symlink loop) counts as
+    present, so that the reader that opens it reports the cause. `Path.exists()` cannot serve: for such a path it
+    raises on Python 3.11 (`PermissionError`, `OSError` for a long name) and answers `False` on 3.14."""
+    try:
+        path.stat() if follow else path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def home_directory() -> Path:
+    """`Path.home()` with its failure (no `HOME` and no passwd entry, as in a container under a numeric UID) as a
+    configuration error that names the variables that avoid the lookup."""
+    try:
+        return Path.home()
+    except RuntimeError:
+        raise ConfigError(
+            "home directory", "cannot be determined (no HOME and no passwd entry); set HOME or XDG_CONFIG_HOME"
+        ) from None
+
+
+def expand_user(path: Path, label: str | None = None) -> Path:
+    """`Path.expanduser()` with its failure (an unknown `~user` raises `RuntimeError`) as a configuration error."""
+    try:
+        return path.expanduser()
+    except RuntimeError:
+        raise ConfigError(label or str(path), "cannot expand ~ (no such user or no home directory)") from None
+
+
 def read_private_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
     """The file's text, after proving that nothing but the owner can read or replace it.
 
@@ -204,9 +238,13 @@ def read_private_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
     relative to that descriptor (no symlink, regular, owned by us, mode 0600 or stricter), so a swap
     between check and read cannot redirect the read.
     """
+    if path.name in {"", ".", ".."}:
+        raise ConfigError(str(path), "names a directory, not a file")
     directory = path.parent
     try:
         dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        raise ConfigNotFoundError(str(path), "not found") from None
     except OSError as exc:
         raise ConfigError(str(directory), f"cannot open directory ({exc.strerror})") from None
     try:
@@ -215,7 +253,7 @@ def read_private_file(path: Path, max_bytes: int = MAX_FILE_BYTES) -> str:
             # O_NONBLOCK: opening a FIFO would otherwise wait for a writer; a regular file ignores the flag.
             fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=dir_fd)
         except FileNotFoundError:
-            raise ConfigError(str(path), "not found") from None
+            raise ConfigNotFoundError(str(path), "not found") from None
         except OSError as exc:
             raise ConfigError(str(path), f"cannot open ({exc.strerror})") from None
     finally:

@@ -24,6 +24,7 @@ from unifiwifioptimizer.domain import errors
 from unifiwifioptimizer.domain.analysis import PartialReason
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
+    ConfigNotFoundError,
     ConfigTimeoutError,
     ControllerError,
     HostKeyMismatchError,
@@ -123,6 +124,29 @@ def test_config_prints_a_skeleton_that_the_loader_accepts(
     assert out.startswith('  "default":\n    ssh:\n') and '"SSID-1": Standard' in out and '"AP-1": []' in out
 
 
+def test_a_first_run_without_a_configuration_exits_3_and_names_the_next_step(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "fresh"))
+    assert cli.main(["run"]) == ExitCode.CONFIG
+    assert capsys.readouterr().err == (
+        f"unifiwifioptimizer: error: {tmp_path / 'fresh' / 'unifiwifioptimizer' / 'config.yaml'}: "
+        "not found; `unifiwifioptimizer init` creates it\n"
+    )
+
+
+def test_a_first_run_with_a_named_file_names_the_call_that_creates_that_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    named = tmp_path / "my dir" / "unifi.yaml"
+    assert cli.main(["--config-file", str(named), "run"]) == ExitCode.CONFIG
+    assert capsys.readouterr().err == (
+        f"unifiwifioptimizer: error: {named}: not found; `unifiwifioptimizer --config-file='{named}' init` creates it\n"
+    )
+
+
 def test_unknown_site_is_a_configuration_error(faked: list[Path | None], capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["site", "nowhere"]) == ExitCode.CONFIG
     assert "no site 'nowhere'" in capsys.readouterr().err
@@ -145,6 +169,7 @@ def test_legacy_location_is_announced_on_stderr(
 EXIT_CODE_BY_ERROR: dict[type[UwoError], tuple[UwoError, ExitCode]] = {
     errors.UwoError: (UwoError("other"), ExitCode.UNEXPECTED_ERROR),
     errors.ConfigError: (ConfigError("controller.url", "bad"), ExitCode.CONFIG),
+    errors.ConfigNotFoundError: (ConfigNotFoundError("config.yaml", "not found"), ExitCode.CONFIG),
     errors.ConfigTimeoutError: (ConfigTimeoutError("$", "too slow"), ExitCode.CONFIG),
     errors.TlsError: (TlsError("handshake"), ExitCode.TLS),
     errors.TlsPinMismatchError: (TlsPinMismatchError(bytes(32), bytes(32)), ExitCode.TLS),

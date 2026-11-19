@@ -55,7 +55,15 @@ _BASE64_RE = re.compile(r"[A-Za-z0-9+/]{16,4096}={0,2}")
 
 def default_store_path(environ: Mapping[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
-    base = env.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    base = env.get("XDG_STATE_HOME")
+    if not base:
+        try:
+            base = str(Path.home() / ".local" / "state")
+        except RuntimeError:
+            raise ConfigError(
+                "known_hosts",
+                "the home directory cannot be determined (no HOME and no passwd entry); set HOME or XDG_STATE_HOME",
+            ) from None
     return Path(base) / APP_DIR / KNOWN_HOSTS_NAME
 
 
@@ -129,8 +137,12 @@ class KnownHostsStore:
         return self._path
 
     def entries(self) -> tuple[KnownHostEntry, ...]:
-        if not self._path.parent.exists():
+        try:
+            self._path.parent.stat()
+        except (FileNotFoundError, NotADirectoryError):
             return ()
+        except OSError:
+            pass  # a directory whose state cannot be read is named by `_open_directory`
         dir_fd = self._open_directory()
         try:
             return self._read(dir_fd)

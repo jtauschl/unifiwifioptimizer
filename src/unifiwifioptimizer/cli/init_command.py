@@ -29,7 +29,13 @@ def initial_config_text(url: str, api_key: str, fingerprint: str | None) -> str:
 
 def run_init(path: Path, prompt: Prompt = input, secret_prompt: Prompt = getpass.getpass) -> Path:
     """Ask for the controller URL, the API key and an optional certificate fingerprint; validate; write 0600."""
-    if path.exists():
+    try:
+        path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        pass
+    except OSError as exc:
+        raise ConfigError(str(path), f"cannot check whether it exists ({exc.strerror})") from None
+    else:
         raise ConfigError(str(path), "already exists; remove it first or edit it in place")
     url = prompt("Controller URL (https://host[:port]): ").strip()
     api_key = secret_prompt("API key (input hidden): ").strip()

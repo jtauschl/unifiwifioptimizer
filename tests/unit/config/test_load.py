@@ -12,7 +12,7 @@ from unifiwifioptimizer.config.load import (
     take_env_secret,
 )
 from unifiwifioptimizer.config.locations import ConfigLocation
-from unifiwifioptimizer.domain.errors import ConfigError
+from unifiwifioptimizer.domain.errors import MAX_ERROR_CHARS, ConfigError, ConfigNotFoundError
 from unifiwifioptimizer.domain.secrets import Secret
 
 
@@ -37,6 +37,55 @@ def test_load_config_reads_the_resolved_file_and_consumes_environment_secrets(mo
     assert loaded.config.controller.api_key == Secret("env-key") and loaded.location.legacy is True
     assert loaded.env_ssh_password == Secret("env-pw") and "env-pw" not in repr(loaded)
     assert API_KEY_ENV not in os.environ and SSH_PASSWORD_ENV not in os.environ
+
+
+def test_a_missing_configuration_names_the_file_and_the_next_step(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    default = tmp_path / "xdg" / "unifiwifioptimizer" / "config.yaml"
+    for create_directory in (False, True):  # the directory is missing, then only the file is
+        if create_directory:
+            default.parent.mkdir(parents=True, mode=0o700)
+        with pytest.raises(ConfigNotFoundError) as exc:
+            load_config()
+        assert exc.value.path == str(default)
+        assert exc.value.detail == "not found; `unifiwifioptimizer init` creates it"
+    named = tmp_path / "a dir" / "named.yaml"
+    with pytest.raises(ConfigNotFoundError) as named_exc:
+        load_config(named)
+    assert named_exc.value.path == str(named)
+    assert named_exc.value.detail == f"not found; `unifiwifioptimizer --config-file='{named}' init` creates it"
+
+
+def test_a_long_path_keeps_its_command_while_the_whole_line_fits(tmp_path: Path) -> None:
+    named = tmp_path / ("x" * 200) / ("y" * 200) / "n.yaml"
+    with pytest.raises(ConfigNotFoundError) as exc:
+        load_config(named)
+    assert exc.value.detail == f"not found; `unifiwifioptimizer --config-file={named} init` creates it"
+    assert len(str(exc.value)) < MAX_ERROR_CHARS
+
+
+NO_COMMAND = "the init subcommand creates it, with the global --config-file option naming the same file"
+
+
+@pytest.mark.parametrize(
+    ("name", "hint"),
+    [
+        ("-dash.yaml", "`unifiwifioptimizer --config-file=-dash.yaml init` creates it"),
+        ("it's.yaml", """`unifiwifioptimizer --config-file='it'"'"'s.yaml' init` creates it"""),
+        ("new\nline.yaml", NO_COMMAND),
+        # 380 characters, under the old 400-character cap, but shell quoting makes the printed line longer than allowed
+        ("/uwo-absent/" + "'" * 180 + "/" + "'" * 180 + "/c.yaml", NO_COMMAND),
+    ],
+)
+def test_the_creation_hint_names_a_call_that_creates_the_named_file_or_none_when_it_cannot_be_copied(
+    tmp_path: Path, name: str, hint: str
+) -> None:
+    with pytest.raises(ConfigNotFoundError) as exc:
+        load_config(Path(name) if name.startswith("/") or "/" not in name else tmp_path / "none" / name)
+    assert exc.value.detail == f"not found; {hint}"
 
 
 PASSWORD_SITE = (

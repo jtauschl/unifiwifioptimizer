@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from unifiwifioptimizer.config.loader import expand_user, home_directory, path_present
+from unifiwifioptimizer.domain.errors import ConfigError
+
 APP_DIR = "unifiwifioptimizer"
 FILE_NAME = "config.yaml"
 
@@ -16,13 +19,13 @@ class ConfigLocation:
 
 
 def default_config_path(environ: dict[str, str] | os._Environ[str] = os.environ) -> Path:
-    base = environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    base = environ.get("XDG_CONFIG_HOME") or str(home_directory() / ".config")
     return Path(base) / APP_DIR / FILE_NAME
 
 
 def legacy_config_path(home: Path | None = None) -> Path:
     """Where the 0.4.x installer put the file: fixed under the home directory, whatever XDG_DATA_HOME says."""
-    return (home or Path.home()) / ".local" / "share" / APP_DIR / FILE_NAME
+    return (home or home_directory()) / ".local" / "share" / APP_DIR / FILE_NAME
 
 
 def resolve_config_location(
@@ -33,9 +36,13 @@ def resolve_config_location(
     The working directory is never searched: a repository checkout must not become a configuration source.
     """
     if explicit is not None:
-        return ConfigLocation(explicit.expanduser(), legacy=False)
+        return ConfigLocation(expand_user(explicit), legacy=False)
     default = default_config_path(environ)
-    legacy = legacy_config_path(home)
-    if not default.exists() and legacy.exists():
-        return ConfigLocation(legacy, legacy=True)
+    if not path_present(default):
+        try:
+            legacy = legacy_config_path(home)
+        except ConfigError:
+            return ConfigLocation(default, legacy=False)  # no home directory: there is no legacy file to find
+        if path_present(legacy):
+            return ConfigLocation(legacy, legacy=True)
     return ConfigLocation(default, legacy=False)
