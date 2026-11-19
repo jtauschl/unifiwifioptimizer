@@ -452,9 +452,10 @@ def test_there_is_no_gate_call_without_a_scan() -> None:
 
 
 def test_a_gate_subject_carries_the_target_the_pin_and_the_controller_fingerprint() -> None:
-    cfg = loaded({"default": scanning_site(ssh={"host_keys": {"1c:0b:8b:be:b9:7c": "SHA256:" + "A" * 43}})})
+    cfg = loaded({"default": scanning_site(ssh={"host_keys": {"02:00:00:00:00:04": "SHA256:" + "A" * 43}})})
     seen: list[TrustSubject] = []
     run(cfg, host_key_gate=lambda subjects: seen.extend(subjects))
     assert [s.name for s in seen] == ["AP-1", "AP-2", "AP-3", "AP-4"]
     first = seen[0]
     assert first.alias.startswith("uwo-") and first.port == 22 and first.allow_public_address is False
+    assert first.config_pin == bytes(32) and [s.config_pin for s in seen[1:]] == [None, None, None]
