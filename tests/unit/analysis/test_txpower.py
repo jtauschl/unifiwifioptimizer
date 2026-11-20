@@ -419,19 +419,19 @@ def test_a_reported_limit_above_the_running_power_recommends_the_limit_as_an_unt
 # --- row 7: nothing evaluable ---------------------------------------------------------------------------------
 
 
-def test_row_7_a_one_way_miss_without_reciprocity_is_not_evaluable_never_the_maximum() -> None:
+def test_row_7_a_one_way_miss_without_reciprocity_has_no_evaluable_neighbour_never_the_maximum() -> None:
     # B scanned and did not hear A; A's own scan failed, so no reverse reading exists (round-2 B1 hole).
     cells = [missing("AP-2", MissingReason.PEER_SCAN_FAILED)]
     result = run(custom("AP-3", Band.GHZ_5, 15, max_tx=23), cells)
-    assert result.outcome is BandTxOutcome.NOT_EVALUABLE and result.recommendation is None
+    assert result.outcome is BandTxOutcome.NO_EVALUABLE_NEIGHBOUR and result.recommendation is None
     (warning,) = result.findings
     assert (
         warning.code == "peers_not_evaluated" and warning.peers == ("AP-2",) and "peer scan failed" in warning.message
     )
     mixed = [missing("AP-2", MissingReason.PEER_SCAN_EMPTY), missing("AP-4", MissingReason.PEER_UNKNOWN)]
-    assert run(custom("AP-3", Band.GHZ_5, 15), mixed).outcome is BandTxOutcome.NOT_EVALUABLE
+    assert run(custom("AP-3", Band.GHZ_5, 15), mixed).outcome is BandTxOutcome.NO_EVALUABLE_NEIGHBOUR
     only_offline = [missing("AP-2", MissingReason.PEER_OFFLINE)]
-    assert run(custom("AP-3", Band.GHZ_5, 15), only_offline).outcome is BandTxOutcome.NOT_EVALUABLE
+    assert run(custom("AP-3", Band.GHZ_5, 15), only_offline).outcome is BandTxOutcome.NO_EVALUABLE_NEIGHBOUR
 
 
 # --- rows 8/9: inside the corridor ----------------------------------------------------------------------------

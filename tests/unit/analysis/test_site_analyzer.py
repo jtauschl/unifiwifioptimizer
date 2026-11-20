@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.site_analyzer import _band_scan_findings, analyze_site, ap_order, mesh_roles
 from unifiwifioptimizer.domain.analysis import (
     BandTxOutcome,
@@ -16,8 +17,16 @@ from unifiwifioptimizer.domain.analysis import (
     WlanRoamingStatus,
 )
 from unifiwifioptimizer.domain.models import Band, ClientSighting, FieldProblem, UnparsableDevice
-from unifiwifioptimizer.domain.report import TX_POWER, RecommendationKind, Severity, SiteReport
-from unifiwifioptimizer.domain.scan import BandScanStatus, ScanFailure, ScanFailureKind
+from unifiwifioptimizer.domain.report import (
+    TX_POWER,
+    NeighbourRow,
+    Recommendation,
+    RecommendationKind,
+    ScanState,
+    Severity,
+    SiteReport,
+)
+from unifiwifioptimizer.domain.scan import BandScanStatus, ScanFailure, ScanFailureKind, ScanPass, SiteScan
 from unifiwifioptimizer.rf.constants import MIN_RSSI_MAX_DBM, MIN_RSSI_MIN_DBM
 from unifiwifioptimizer.rf.settings import RfSettings
 
@@ -28,6 +37,7 @@ from .builders import (
     fixture_snapshot,
     golden_input,
     hears,
+    reading,
     scan_pass,
     site_scan,
     with_ap,
@@ -73,7 +83,11 @@ def test_access_points_come_in_configuration_order_then_the_rest() -> None:
         "AP-2",
     ]
     assert [ap.name for ap in GOLDEN.aps] == ["AP-1", "AP-2", "AP-3", "AP-4"]
-    assert all(ap.configured for ap in GOLDEN.aps) and GOLDEN.site_id == "default" and GOLDEN.scanning
+    assert (
+        all(ap.configured for ap in GOLDEN.aps)
+        and GOLDEN.site_id == "default"
+        and GOLDEN.scan.state is ScanState.SCANNED
+    )
 
 
 def test_the_golden_site_outcomes_and_counts_are_pinned() -> None:
@@ -142,7 +156,7 @@ def test_an_offline_access_point_gets_one_line_no_bands_and_explains_its_neighbo
         ),
     )
     # An offline access point is not scanned (`build_targets` leaves it out), so its scan entry is absent too.
-    assert inp.scan is not None
+    assert isinstance(inp.scan, SiteScan)
     scan = replace(inp.scan, scans=tuple(s for s in inp.scan.scans if s.ap_name != "AP-2"))
     report = analyze_site(replace(inp, snapshot=replace(offline, problems=problems), scan=scan))
     two = next(ap for ap in report.aps if ap.name == "AP-2")
@@ -152,7 +166,7 @@ def test_an_offline_access_point_gets_one_line_no_bands_and_explains_its_neighbo
     assert [p.path for p in report.field_problems] == ["$.data[3].x", "$.data[5].radio_table_stats[0].channel"]
     one_2g = band_of(report, "AP-1", Band.GHZ_2)
     (row,) = one_2g.neighbours
-    assert row.reason is MissingReason.PEER_OFFLINE and one_2g.outcome is BandTxOutcome.NOT_EVALUABLE
+    assert row.reason is MissingReason.PEER_OFFLINE and one_2g.outcome is BandTxOutcome.NO_EVALUABLE_NEIGHBOUR
     assert "peers_not_evaluated" in codes(one_2g.findings)
 
 
@@ -213,7 +227,7 @@ def test_dfs_wait_skips_the_band_with_an_info_and_the_peers_miss_is_explained() 
 
 def test_scan_failures_make_the_run_partial_and_count_verifiable_access_points() -> None:
     inp = golden_input()
-    assert inp.scan is not None
+    assert isinstance(inp.scan, SiteScan)
     scans = list(inp.scan.scans)
     host_key = replace(scans[0], passes=(ScanFailure(kind=ScanFailureKind.HOST_KEY_UNKNOWN, detail="no key"),) * 3)
     timeout = replace(scans[1], passes=(ScanFailure(kind=ScanFailureKind.TIMEOUT, detail="slow"), *scans[1].passes[1:]))
@@ -231,7 +245,7 @@ def test_scan_failures_make_the_run_partial_and_count_verifiable_access_points()
 
 def test_one_pass_that_reached_authentication_verifies_the_access_point_despite_a_timeout() -> None:
     inp = golden_input()
-    assert inp.scan is not None
+    assert isinstance(inp.scan, SiteScan)
     scans = list(inp.scan.scans)
     mixed = replace(
         scans[0],
@@ -263,7 +277,7 @@ def test_a_failed_down_or_missing_scan_interface_is_a_partial_result_with_its_ow
     status: BandScanStatus, reason: PartialReason, message: str
 ) -> None:
     inp = golden_input()
-    assert inp.scan is not None
+    assert isinstance(inp.scan, SiteScan)
     broken = tuple(scan_pass(two=band_scan(Band.GHZ_2, (), status)) for _ in range(3))
     scans = tuple(replace(s, passes=broken) if s.ap_name == "AP-1" else s for s in inp.scan.scans)
     report = analyze_site(replace(inp, scan=replace(inp.scan, scans=scans)))
@@ -296,7 +310,7 @@ def test_access_points_sharing_a_name_are_named_with_their_macs_and_left_out() -
 
 def test_skipping_the_scan_leaves_the_controller_side_and_one_info() -> None:
     report = analyze_site(golden_input(skip_scan=True))
-    assert codes(report.site_findings)[0] == "scan_skipped" and report.scan.skipped and not report.scanning
+    assert codes(report.site_findings)[0] == "scan_skipped" and report.scan.state is ScanState.SKIPPED
     assert set(codes(report.site_findings)) == {"scan_skipped", "neighbours_asymmetric"}
     assert all(b.outcome is BandTxOutcome.SCAN_SKIPPED for ap in report.aps for b in ap.bands)
     assert report.recommendations == () and report.partial_reasons == ()
@@ -625,3 +639,64 @@ def test_a_u6_lite_on_the_measured_firmware_names_the_quick_scan_on_5_ghz(firmwa
 )
 def test_every_other_empty_band_keeps_the_generic_text(model: str | None, firmware: str | None, band: Band) -> None:
     assert _empty_band_text(model, firmware, band) == GENERIC_EMPTY
+
+
+def test_a_radios_power_verdict_rests_on_its_neighbours_readings_not_on_its_own_band_scan() -> None:
+    # AP-4's 2.4 GHz scan is `empty` in the golden site. AP-3 measured AP-4 there, so AP-4's verdict is the same with
+    # a working own scan; only AP-3's reading of AP-4 changes, from a reciprocity estimate to a measurement.
+    empty = golden_input()
+    assert isinstance(empty.scan, SiteScan)
+    working_pass = scan_pass(
+        band_scan(Band.GHZ_2, (reading(empty.snapshot, "AP-3", Band.GHZ_2, -77),)),
+        band_scan(Band.GHZ_5),
+    )
+    scans = tuple(
+        replace(s, passes=tuple(replace(p, bands=working_pass.bands) for p in s.passes if isinstance(p, ScanPass)))
+        if s.ap_name == "AP-4"
+        else s
+        for s in empty.scan.scans
+    )
+    working = replace(empty, scan=replace(empty.scan, scans=scans))
+
+    def verdict(inp: SiteAnalysisInput) -> Recommendation:
+        recs: list[Recommendation] = [
+            r for r in band_of(analyze_site(inp), "AP-4", Band.GHZ_2).recommendations if r.setting == TX_POWER
+        ]
+        (rec,) = recs
+        return rec
+
+    assert verdict(empty) == verdict(working) and verdict(empty).kind is RecommendationKind.CHANGE
+
+    def of_ap_4(inp: SiteAnalysisInput) -> NeighbourRow:
+        rows: list[NeighbourRow] = [
+            r for r in band_of(analyze_site(inp), "AP-3", Band.GHZ_2).neighbours if r.peer == "AP-4"
+        ]
+        (row,) = rows
+        return row
+
+    assert (of_ap_4(empty).source, of_ap_4(empty).reason) == (ReadingSource.RECIPROCITY, MissingReason.PEER_SCAN_EMPTY)
+    assert of_ap_4(working).source is ReadingSource.MEASURED
+
+
+def test_the_interface_down_finding_names_the_toggle_the_scan_ran_with() -> None:
+    inp = golden_input()
+    site = inp.scan
+    assert isinstance(site, SiteScan)
+    down = tuple(scan_pass(two=band_scan(Band.GHZ_2, (), BandScanStatus.INTERFACE_DOWN)) for _ in range(3))
+
+    def message(toggle: bool) -> str:
+        scans = tuple(
+            replace(s, passes=down, interface_toggle=toggle) if s.ap_name == "AP-1" else s for s in site.scans
+        )
+        report = analyze_site(replace(inp, scan=replace(site, scans=scans)))
+        messages: list[str] = [
+            f.message for f in band_of(report, "AP-1", Band.GHZ_2).findings if f.code == "scan_unusable"
+        ]
+        return messages[0]
+
+    assert message(False) == (
+        "the scan interface is down and `scan_interface_toggle` is off; enable it to let the scan bring it up"
+    )
+    assert message(True) == (
+        "the scan interface is down and could not be brought up (not a managed interface, or ifconfig up failed)"
+    )

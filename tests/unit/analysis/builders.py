@@ -25,6 +25,7 @@ from unifiwifioptimizer.domain.scan import (
     ScanMeta,
     ScanPass,
     ScanReading,
+    ScanSkipped,
     SiteScan,
 )
 from unifiwifioptimizer.rf.channels import center_frequency_mhz
@@ -133,7 +134,7 @@ def site_scan(
 ) -> SiteScan:
     """`passes` keyed by AP name; an AP not in the mapping has no scan entry at all."""
     scans = tuple(
-        ApScan(ap_mac=ap_named(snapshot, name).mac, ap_name=name, passes=tuple(ap_passes))
+        ApScan(ap_mac=ap_named(snapshot, name).mac, ap_name=name, passes=tuple(ap_passes), interface_toggle=False)
         for name, ap_passes in passes.items()
     )
     return SiteScan(site_id=SITE_ID, scans=scans, unknown_names=unknown)
@@ -202,8 +203,7 @@ def golden_input(*, clients: bool = False, skip_scan: bool = False) -> "SiteAnal
     neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-3"}), "AP-3": frozenset({"AP-4"})}
     return SiteAnalysisInput(
         snapshot=snap,
-        scan=None if skip_scan else site_scan(snap, passes),
-        scan_skipped=skip_scan,
+        scan=ScanSkipped() if skip_scan else site_scan(snap, passes),
         neighbours=neighbours,
         environment=PathLossModel.from_preset("Residential"),
         rf=RfSettings(),

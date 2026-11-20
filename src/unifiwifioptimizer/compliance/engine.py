@@ -6,6 +6,7 @@ from unifiwifioptimizer.compliance.advisories import evaluate_advisories
 from unifiwifioptimizer.compliance.roaming_check import roaming_assistant_checks
 from unifiwifioptimizer.compliance.rules import evaluate_rules
 from unifiwifioptimizer.compliance.speed_limit import speed_limit_check
+from unifiwifioptimizer.domain.analysis import RoamingThreshold
 from unifiwifioptimizer.domain.models import UserGroup, WlanConfig
 from unifiwifioptimizer.domain.profile import Profile, ProfileSet
 from unifiwifioptimizer.domain.report import (
@@ -21,7 +22,7 @@ from unifiwifioptimizer.domain.report import (
 def evaluate_wlan(
     wlan: WlanConfig,
     profile: Profile,
-    roaming_threshold_dbm: int | None = None,
+    roaming_threshold: RoamingThreshold | None = None,
     user_groups: Sequence[UserGroup] = (),
 ) -> WlanEvaluation:
     """A disabled WLAN is reported as exactly that and nothing else: its other settings are moot."""
@@ -37,7 +38,7 @@ def evaluate_wlan(
         return WlanEvaluation(wlan=wlan.name, profile=profile.name, checks=(disabled,), findings=())
     checks = (
         *evaluate_rules(profile, wlan),
-        *roaming_assistant_checks(profile, wlan, roaming_threshold_dbm),
+        *roaming_assistant_checks(profile, wlan, roaming_threshold),
         speed_limit_check(wlan, user_groups),
     )
     return WlanEvaluation(
@@ -60,7 +61,7 @@ def evaluate_site(
     wlans: Sequence[WlanConfig],
     mapping: Mapping[str, str],
     profiles: ProfileSet,
-    roaming_thresholds_dbm: Mapping[str, int] | None = None,
+    roaming_thresholds: Mapping[str, RoamingThreshold] | None = None,
     user_groups: Sequence[UserGroup] = (),
 ) -> SiteCompliance:
     """`mapping` is the site's `wlans: {name: profile}`; iteration follows it so the report order is the
@@ -68,7 +69,7 @@ def evaluate_site(
     by_name: dict[str, list[WlanConfig]] = {}
     for wlan in wlans:
         by_name.setdefault(wlan.name, []).append(wlan)
-    thresholds = roaming_thresholds_dbm or {}
+    thresholds = roaming_thresholds or {}
     evaluations: list[WlanEvaluation] = []
     findings: list[Finding] = []
     for name, profile_name in mapping.items():

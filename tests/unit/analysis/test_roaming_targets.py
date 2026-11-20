@@ -17,7 +17,7 @@ from unifiwifioptimizer.analysis.roaming_targets import (
     thresholds_for_compliance,
 )
 from unifiwifioptimizer.compliance.roaming_check import roaming_assistant_check
-from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, WlanRoamingStatus
+from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, RoamingThreshold, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import ApGroup, Band, SiteSnapshot, WlanConfig
 from unifiwifioptimizer.domain.report import CheckStatus
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanPass, SiteScan
@@ -228,7 +228,8 @@ def test_2g_only_site_no_fallback_trigger() -> None:
     targets = roaming_targets(
         replace(snap, wlans=(two,)), build_matrix(snap, None, {}, scan_skipped=True), CORRIDOR, RF
     )
-    assert targets["IoT"].status is WlanRoamingStatus.NOT_APPLICABLE_NO_5G and thresholds_for_compliance(targets) == {}
+    assert targets["IoT"].status is WlanRoamingStatus.NOT_APPLICABLE_NO_5G
+    assert thresholds_for_compliance(targets)["IoT"].dbm is None
 
 
 def test_overlapping_groups_deduplicated() -> None:
@@ -307,7 +308,7 @@ def test_an_incomplete_target_leaves_an_expected_off_wlan_judged_on_the_switch_a
 
 def test_only_an_ok_target_carries_a_value_into_the_compliance_check() -> None:
     # AP-3 broadcasts the WLAN without a configured neighbour: the target stays INCOMPLETE although AP-1 and
-    # AP-2 were evaluated, and an incomplete target hands the compliance check no value at all.
+    # AP-2 were evaluated, and an incomplete target hands the compliance check its reasons and no value.
     snap = with_groups(SNAP, ("g1", ("AP-1", "AP-2", "AP-3")))
     neighbours = {"AP-1": frozenset({"AP-2"}), "AP-2": frozenset({"AP-1"})}
     scan = sightings(snap, ("AP-1", "AP-2", -70), ("AP-2", "AP-1", -70))
@@ -316,7 +317,11 @@ def test_only_an_ok_target_carries_a_value_into_the_compliance_check() -> None:
     assert [d.ap for d in incomplete.per_ap] == ["AP-1", "AP-2"] and incomplete.threshold_dbm is None
     complete = target(with_groups(SNAP, ("g1", ("AP-1", "AP-2"))), groups_wlan("Corp", "g1"), neighbours, scan)
     assert complete is not None and complete.status is WlanRoamingStatus.OK and complete.threshold_dbm == -73
-    assert thresholds_for_compliance({"Partial": incomplete, "Complete": complete}) == {"Complete": -73}
+    handed = thresholds_for_compliance({"Partial": incomplete, "Complete": complete})
+    assert handed["Complete"] == RoamingThreshold(status=WlanRoamingStatus.OK, dbm=-73, reasons=())
+    assert handed["Partial"] == RoamingThreshold(
+        status=WlanRoamingStatus.INCOMPLETE, dbm=None, reasons=incomplete.reasons
+    )
 
 
 def test_the_downlink_trigger_is_the_wlan_threshold_seen_from_each_access_point() -> None:
@@ -364,11 +369,11 @@ def test_a_derived_value_below_what_the_controller_accepts_is_raised_to_the_limi
     assert [(d.ap, d.recommendation.uplink_dbm) for d in result.per_ap] == [("AP-1", -81), ("AP-2", -78)]
     # The controller applies -80, so that is where the trigger fires at each AP.
     assert downlink_trigger_for(result, "AP-1") == -72 and downlink_trigger_for(result, "AP-2") == -80
-    assert thresholds_for_compliance({"Corp": result}) == {"Corp": -80}
     applied = thresholds_for_compliance({"Corp": result})["Corp"]
-    configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=applied)
+    assert applied == RoamingThreshold(status=WlanRoamingStatus.OK, dbm=-80, reasons=())
+    configured = groups_wlan("Corp", "g1", roaming_assistant_na_rssi=-80)
     check = roaming_assistant_check(profile("Standard"), configured, applied)
-    assert applied == -80 and check.status is CheckStatus.PASSED
+    assert check.status is CheckStatus.PASSED
 
 
 def test_a_derived_value_exactly_at_the_limit_is_not_reported_as_raised() -> None:

@@ -35,6 +35,7 @@ from unifiwifioptimizer.domain.report import (
     Deferral,
     ExtendedChannelPlan,
     Finding,
+    MinRssiState,
     Recommendation,
     RecommendationKind,
     RoamingApDetail,
@@ -42,7 +43,7 @@ from unifiwifioptimizer.domain.report import (
     SiteReport,
     WlanRoamingSummary,
 )
-from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind
+from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind, SiteScan
 from unifiwifioptimizer.domain.secrets import Secret
 from unifiwifioptimizer.report.json import SCHEMA_VERSION, plain, render_json
 from unifiwifioptimizer.report.safe_text import INVISIBLE_LEADERS, REPORT_MARKS, safe_line_start
@@ -195,7 +196,10 @@ def test_overview_keeps_5ghz_advice_actionable_after_a_24ghz_tx_change() -> None
     )
     assert not any(check.deferred_by for check in marked.checks)
     text = render_overview(marked)
-    assert "provisional" not in text
+    # What waits is the 2.4 GHz Minimum RSSI below its own band's power change, one wait line each.
+    waiting = [rec for ap in marked.aps for b in ap.bands for rec in b.recommendations if rec.deferred_by]
+    assert waiting and all(rec.band is Band.GHZ_2 for rec in waiting)
+    assert text.count("provisional") == len(waiting)
     assert "✗ Minimum RSSI" in text and "✗ Handoff Suggestions (802.11v)" in text
 
 
@@ -397,10 +401,10 @@ def test_the_pending_tx_note_appears_on_a_roaming_check_when_a_5_ghz_change_is_p
 
 def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
     # The incomplete roaming verdict is printed, and the note follows it.
-    text = render_report(REPORT)
+    text = render_report(REPORT, width=None)
     assert (
         "Handoff Suggestions (802.11v)" in text
-        and "threshold not available" in text
+        and "threshold not derived: AP-3: no reading of neighbour AP-4 (not sighted)" in text
         and "pending 5 GHz transmit-power change" in text
     )
 
@@ -455,7 +459,7 @@ def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
 
 def test_site_level_findings_offline_unparsable_and_failed_scans_carry_their_names() -> None:
     inp = golden_input()
-    assert inp.scan is not None
+    assert isinstance(inp.scan, SiteScan)
     offline = with_ap(inp.snapshot, replace(ap_named(inp.snapshot, "AP-2"), state_code=0))
     ghost = UnparsableDevice(mac="02:00:00:00:00:77", name="Ghost", reason="$.data[9].ip: missing")
     scans = tuple(
@@ -622,7 +626,9 @@ def test_a_threshold_raised_to_the_controller_limit_says_what_was_derived() -> N
         "the target stops at -80 dBm"
     ) in text
     plain = replace(summary, derived_dbm=None)
-    assert "derived" not in render_report(replace(REPORT, roaming=(plain,)), width=None)
+    assert "outside the range the controller accepts" not in render_report(
+        replace(REPORT, roaming=(plain,)), width=None
+    )
 
 
 def test_a_min_rssi_moved_into_the_controller_range_names_the_derived_value() -> None:
@@ -630,11 +636,14 @@ def test_a_min_rssi_moved_into_the_controller_range_names_the_derived_value() ->
         code="min_rssi", subject="AP-9", band=Band.GHZ_5, setting="min_rssi", current=None, recommended=-67,
         kind=RecommendationKind.CONDITIONAL, reason="disabled; the value to use if enabled", derived_dbm=-63,
     )  # fmt: skip
-    assert _min_rssi_value(conditional) == (
+    off = MinRssiState(enabled=False, dbm=None)
+    assert _min_rssi_value(conditional, off) == (
         "disabled (if enabled: -67 dBm on the uplink); derived -63 dBm is outside the range the controller accepts "
         "(-90..-67 dBm)"
     )
-    assert _min_rssi_value(replace(conditional, derived_dbm=None)) == "disabled (if enabled: -67 dBm on the uplink)"
+    assert (
+        _min_rssi_value(replace(conditional, derived_dbm=None), off) == "disabled (if enabled: -67 dBm on the uplink)"
+    )
 
 
 def test_the_json_report_carries_the_same_deferrals_and_counts_as_the_text() -> None:

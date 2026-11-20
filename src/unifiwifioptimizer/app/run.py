@@ -24,7 +24,7 @@ from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import Site, SiteSnapshot
 from unifiwifioptimizer.domain.profile import ProfileSet
 from unifiwifioptimizer.domain.report import SiteReport
-from unifiwifioptimizer.domain.scan import ScanTarget, SiteScan
+from unifiwifioptimizer.domain.scan import NoScanConfigured, ScanInput, ScanSkipped, ScanTarget
 from unifiwifioptimizer.ports.clock import Clock
 from unifiwifioptimizer.ports.controller import ControllerApi
 from unifiwifioptimizer.ports.progress import Progress
@@ -160,7 +160,7 @@ def run_analysis(
     outcomes: list[SiteOutcome] = []
     for item in prepared:
         progress.site_started(item.site.id, item.scanning)
-        scan: SiteScan | None = None
+        scan: ScanInput = NoScanConfigured() if not item.config.scans else ScanSkipped()
         if item.scanning and orchestrator is not None:
             ssh = item.config.ssh
             concurrency = ssh.scan_concurrency if ssh is not None else 1
@@ -172,7 +172,6 @@ def run_analysis(
             SiteAnalysisInput(
                 snapshot=item.snapshot,
                 scan=scan,
-                scan_skipped=skip_scan and item.config.scans,
                 neighbours=item.config.neighbors,
                 environment=item.config.environment,
                 rf=loaded.config.rf,

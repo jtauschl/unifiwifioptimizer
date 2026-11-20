@@ -24,7 +24,7 @@ def with_tables(two: PhyChannelPower | None, five: PhyChannelPower | None = None
 
 
 def ap_scan(*passes: ScanPass | ScanFailure) -> ApScan:
-    return ApScan(ap_mac=AP_MAC, ap_name="AP-1", passes=passes)
+    return ApScan(ap_mac=AP_MAC, ap_name="AP-1", passes=passes, interface_toggle=False)
 
 
 FAILED = ScanFailure(kind=ScanFailureKind.TIMEOUT, detail="timed out")

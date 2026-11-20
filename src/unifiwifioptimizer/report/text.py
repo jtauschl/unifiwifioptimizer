@@ -33,9 +33,11 @@ from unifiwifioptimizer.domain.report import (
     CheckStatus,
     Deferral,
     Finding,
+    MinRssiState,
     NeighbourRow,
     Recommendation,
     RecommendationKind,
+    ScanState,
     Severity,
     SiteReport,
     TxSummaryReport,
@@ -130,6 +132,16 @@ MARKER_GLYPH: Mapping[NeighbourMarker, str] = {
     NeighbourMarker.BELOW_UNFIXABLE: "*",
     NeighbourMarker.ABOVE_UNFIXABLE: "*",
 }
+# What a band row without a transmit-power recommendation lacks, by the decision-table row that applied. `OFFLINE` has
+# no entry: an offline access point reports no bands.
+MISSING_PRECONDITION: Mapping[BandTxOutcome, str] = {
+    BandTxOutcome.SCAN_SKIPPED: "no scan ran",
+    BandTxOutcome.DFS_WAIT: "radio in its DFS channel availability check",
+    BandTxOutcome.NOT_EVALUABLE: "the controller's power values are missing or outside the radio's range",
+    BandTxOutcome.NO_EVALUABLE_NEIGHBOUR: "no configured neighbour could be evaluated",
+    BandTxOutcome.NO_PEERS: "no configured neighbour on this band",
+}
+NO_RECOMMENDATION = "no recommendation"
 RULE = "━" * 64
 # Wide enough for the longest check label plus its colon, so every value column starts at the same place.
 LABEL = 34
@@ -211,7 +223,7 @@ def _environment(report: SiteReport) -> list[str]:
         f"  {'':<{LABEL}} Ubiquiti: for high density; {MIN_RSSI_VENDOR_START_DBM} dBm as a home/office start",
         f"  {'Roaming trigger bounds:':<{LABEL}} {rf.roam_floor_dbm} dBm .. {rf.roam_ceiling_dbm} dBm "
         f"(margin {rf.roam_margin_db} dB)",
-        f"  {'Scan passes:':<{LABEL}} {report.scan_passes}" + (" (scans skipped)" if report.scan.skipped else ""),
+        f"  {'Scan passes:':<{LABEL}} {_scan_passes(report)}",
         "",
     ]
     return lines
@@ -229,7 +241,7 @@ _UNJUDGED_WORDS: Mapping[CheckStatus, str] = {
 }
 
 
-def _check_line(check: CheckResult, *, hints_only: bool = False) -> list[str]:
+def _check_line(check: CheckResult, *, hints_only: bool = False, more_reasons: int = 0) -> list[str]:
     mark = STATUS_MARK[check.status]
     value = check.actual if check.status is CheckStatus.PASSED else check.expected
     if check.status is CheckStatus.FAILED and check.actual is not None:
@@ -240,7 +252,8 @@ def _check_line(check: CheckResult, *, hints_only: bool = False) -> list[str]:
         value = check.detail or check.status.value
     elif check.status is CheckStatus.NOT_PRESCRIBED:
         value = f"{NOT_SENT_VALUE} ({_UNJUDGED_WORDS[check.status]}: {check.detail})"
-    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', LINE_MAX)}"]
+    more = f" (+{more_reasons} more: --details)" if more_reasons else ""
+    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', LINE_MAX)}{more}"]
     if check.status is CheckStatus.FAILED and check.detail:
         lines.append(f"        {safe_text(check.detail, 100)}")
     if check.deferred_by is not None:
@@ -278,14 +291,22 @@ def _wlans(report: SiteReport) -> list[str]:
         for check in in_ui_order(evaluation.checks, lambda item: item.code):
             lines += _check_line(check)
             if check.code == "roaming_assistant":
-                lines += _roaming_detail(roaming.get(evaluation.wlan), report)
+                summary = roaming.get(evaluation.wlan)
+                lines += _roaming_detail(summary, report, shown=_reasons_in_check(check, summary))
         for finding in evaluation.findings:
             lines.append(_finding_line(finding))
         lines.append("")
     return lines
 
 
-def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> list[str]:
+def _reasons_in_check(check: CheckResult, summary: WlanRoamingSummary | None) -> int:
+    """How many of the target's reasons the check line itself already states: the first, when the check is
+    incomplete for that target."""
+    incomplete = summary is not None and summary.status is WlanRoamingStatus.INCOMPLETE
+    return 1 if incomplete and check.status is CheckStatus.INCOMPLETE else 0
+
+
+def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport, shown: int) -> list[str]:
     if summary is None:
         return []
     lines: list[str] = []
@@ -320,7 +341,7 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport) -> l
             f"{summary.threshold_dbm} dBm"
         )
     if summary.status is WlanRoamingStatus.INCOMPLETE:
-        lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons]
+        lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons[shown:]]
     if summary.tx_change_pending:
         lines.append(
             f"        Note: {report.pending_5g_tx_changes_of(summary.broadcasting)} pending 5 GHz transmit-power "
@@ -347,13 +368,31 @@ def _tx_value(rec: Recommendation) -> str:
     return f"{rec.current} dBm, no change: {safe_text(rec.reason, 100)}"
 
 
-def _min_rssi_value(rec: Recommendation) -> str:
+def _min_rssi_state_text(state: MinRssiState) -> str:
+    if not state.enabled:
+        return "disabled"
+    return f"enabled at {state.dbm} dBm" if state.dbm is not None else "enabled, value not sent"
+
+
+def _min_rssi_missing(band: BandReport) -> str:
+    """Why a band has no Minimum RSSI recommendation, in the order the analysis checks its preconditions."""
+    if band.outcome in (BandTxOutcome.SCAN_SKIPPED, BandTxOutcome.DFS_WAIT):
+        return MISSING_PRECONDITION[band.outcome]
+    if not band.neighbours:
+        return MISSING_PRECONDITION[BandTxOutcome.NO_PEERS]
+    if band.tx.effective_dbm is None:
+        return "the controller reports no effective power"
+    return NO_RECOMMENDATION
+
+
+def _min_rssi_value(rec: Recommendation, state: MinRssiState) -> str:
     if rec.kind is RecommendationKind.CONDITIONAL:
         text = f"disabled (if enabled: {rec.recommended} dBm on the uplink)"
     elif rec.kind is RecommendationKind.CHANGE:
-        text = f"enabled, set {rec.recommended} dBm (currently {rec.current} dBm)"
+        now = f"currently {state.dbm} dBm" if state.dbm is not None else "the controller sent no value"
+        text = f"enabled, set {rec.recommended} dBm ({now})"
     else:
-        text = f"enabled, {rec.current} dBm"
+        text = f"enabled, {state.dbm} dBm"
     if rec.derived_dbm is not None:
         text += (
             f"; derived {rec.derived_dbm} dBm is outside the range the controller accepts "
@@ -423,7 +462,7 @@ def _band(band: BandReport) -> list[str]:
         lines.append("  Recommendations:")
         for rec in band.recommendations:
             label = SETTING_LABEL.get(rec.setting, rec.setting)
-            value = _tx_value(rec) if rec.setting == TX_POWER else _min_rssi_value(rec)
+            value = _tx_value(rec) if rec.setting == TX_POWER else _min_rssi_value(rec, band.min_rssi)
             if rec.setting == MIN_RSSI and band.assumed_client_tx_dbm is not None:
                 value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
             lines.append(f"    {KIND_MARK[rec.kind]} {label:<{NAME}} {value}")
@@ -502,14 +541,6 @@ def _setup_current_tx(band: BandReport) -> str:
     return value
 
 
-def _setup_current_min_rssi(rec: Recommendation | None) -> str:
-    if rec is None:
-        return "state unavailable"
-    if rec.kind is RecommendationKind.CONDITIONAL:
-        return "disabled"
-    return f"enabled at {rec.current} dBm" if rec.current is not None else "state unavailable"
-
-
 def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssignment | None) -> list[str]:
     channel = "auto" if band.channel is None else str(band.channel)
     width = f"{band.width_mhz} MHz" if band.width_mhz is not None else "width unknown"
@@ -538,7 +569,7 @@ def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssi
     min_rec = recs.get(MIN_RSSI)
     current_tx = _setup_current_tx(band)
     if tx_rec is None:
-        tx_value = f"{current_tx}; no recommendation"
+        tx_value = f"{current_tx}; {MISSING_PRECONDITION.get(band.outcome, NO_RECOMMENDATION)}"
     elif tx_rec.deferred_by is Deferral.CHANNEL_PLAN:
         tx_value = f"{current_tx}; reassess after channel changes"
     elif tx_rec.kind is RecommendationKind.CHANGE:
@@ -550,14 +581,15 @@ def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssi
         tx_value = f"{current_tx}; keep current"
     else:
         tx_value = f"{current_tx}; no change: {safe_text(tx_rec.reason, 100)}"
+    current_min = _min_rssi_state_text(band.min_rssi)
     if min_rec is None:
-        min_value = "state unavailable; no recommendation"
+        min_value = f"{current_min}; {_min_rssi_missing(band)}"
     elif min_rec.deferred_by is Deferral.CHANNEL_PLAN:
-        min_value = f"{_setup_current_min_rssi(min_rec)}; reassess after channel changes"
+        min_value = f"{current_min}; reassess after channel changes"
     elif min_rec.deferred_by is Deferral.TX_CHANGE:
-        min_value = f"{_setup_current_min_rssi(min_rec)}; reassess after the TX change"
+        min_value = f"{current_min}; reassess after the TX change"
     else:
-        min_value = _min_rssi_value(min_rec)
+        min_value = _min_rssi_value(min_rec, band.min_rssi)
         if band.assumed_client_tx_dbm is not None:
             min_value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
     lines += [
@@ -730,6 +762,21 @@ def _channel_plan(report: SiteReport) -> list[str]:
     return lines
 
 
+def _scan_passes(report: SiteReport) -> str:
+    if report.scan.state is ScanState.NOT_CONFIGURED:
+        return "no scan configured"
+    skipped = " (scans skipped)" if report.scan.state is ScanState.SKIPPED else ""
+    return f"{report.scan_passes}{skipped}"
+
+
+def _no_change_verdict(report: SiteReport, *, overview: bool) -> str:
+    """The verdict of a report without a pending change; it is qualified wherever the evidence is incomplete."""
+    incomplete = report.partial or report.scan.state is not ScanState.SCANNED
+    if not incomplete:
+        return "  No changes recommended."
+    return "  No changes recommended in the available data" + ("; see Data quality." if overview else ".")
+
+
 def _footer(report: SiteReport) -> list[str]:
     lines: list[str] = []
     changes = report.actionable_changes
@@ -750,7 +797,7 @@ def _footer(report: SiteReport) -> list[str]:
         if any(f.severity in (Severity.ADVISORY, Severity.WARNING, Severity.ERROR) for f in report.findings):
             lines.append("  No setting changes recommended; RF findings above still need review.")
         else:
-            lines.append("  No changes recommended.")
+            lines.append(_no_change_verdict(report, overview=False))
     if report.partial_reasons:
         reasons = ", ".join(r.value.replace("_", " ") for r in report.partial_reasons)
         lines.append(f"  Partial result ({reasons}); the exit code says so.")
@@ -800,7 +847,11 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
             reuse[finding.band] = finding
         else:
             other.append(finding)
-    lines: list[str] = ["· Neighbour RF was not evaluated without a scan."] if report.scan.skipped else []
+    lines: list[str] = []
+    if report.scan.state is ScanState.SKIPPED:
+        lines.append("· Neighbour RF was not evaluated without a scan.")
+    elif report.scan.state is ScanState.NOT_CONFIGURED:
+        lines.append("· Neighbour RF was not evaluated: no neighbour pair is configured.")
     if report.extended_channel_plan is not None:
         unchanged = [
             plan.band.label
@@ -838,8 +889,19 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
 
 def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[str]:
     lines: list[str] = []
-    if report.scan.skipped:
+    if report.scan.state is ScanState.SKIPPED:
         lines.append("Neighbour scans skipped; RF recommendations are unavailable.")
+    elif report.scan.state is ScanState.NOT_CONFIGURED:
+        lines.append("No scan ran: RF recommendations need neighbour pairs (docs/WALKTHROUGH.md section 3).")
+    elif not report.scan.scanned:
+        offline = sum(1 for ap in report.aps if ap.state is DeviceState.DISCONNECTED)
+        causes = [
+            f"{count} {cause}"
+            for count, cause in ((len(report.scan.unknown_names), "absent from the controller"), (offline, "offline"))
+            if count
+        ]
+        because = f" ({', '.join(causes)})" if causes else ""
+        lines.append(f"No access point was scanned{because}.")
     else:
         successes = sum(report.scan.successes_by_ap.values())
         expected = len(report.scan.scanned) * report.scan.passes
@@ -878,7 +940,7 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[s
             f"Channel plan unavailable ({', '.join(bands)}): {safe_text(reason, LINE_MAX)}"
             for reason, bands in unavailable.items()
         )
-    if not report.scan.skipped:
+    if report.scan.state is ScanState.SCANNED and report.scan.scanned:
         lines.append("AP beacon readings do not establish client roaming or channel airtime.")
     return lines
 
@@ -886,6 +948,7 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[s
 def _overview_wlans(report: SiteReport) -> list[str]:
     """The WLANs as the controller UI lists them; a setting's path is named only where it is hard to find."""
     lines: list[str] = []
+    roaming = {r.wlan: r for r in report.roaming}
     for finding in report.compliance.findings:
         lines.append(_finding_line(finding, "  ", with_subject=True))
     if report.compliance.findings:
@@ -893,7 +956,11 @@ def _overview_wlans(report: SiteReport) -> list[str]:
     for evaluation in report.compliance.evaluations:
         lines += _header("WLAN", _wlan_title(evaluation))
         for check in in_ui_order(evaluation.checks, lambda item: item.code):
-            lines += _check_line(check, hints_only=True)
+            summary = roaming.get(evaluation.wlan) if check.code == "roaming_assistant" else None
+            more = len(summary.reasons) - _reasons_in_check(check, summary) if summary is not None else 0
+            lines += _check_line(
+                check, hints_only=True, more_reasons=more if check.status is CheckStatus.INCOMPLETE else 0
+            )
         for finding in evaluation.findings:
             lines.append(_finding_line(finding))
         lines.append("")
@@ -931,7 +998,7 @@ def _overview_setting(rec: Recommendation | None, label: str, value: str) -> lis
     if rec is None:
         return [_row("·", label, value)]
     lines = [_row(KIND_MARK[rec.kind], label, value)]
-    if rec.is_change and rec.deferred_by is not None:
+    if rec.deferred_by is not None:
         lines.append(f"        {_WAITS_FOR[rec.deferred_by]}")
     return lines
 
@@ -960,7 +1027,7 @@ def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: C
     min_rec = recs.get(MIN_RSSI)
     set_tx = _overview_set_tx(band)
     if tx_rec is None:
-        tx_value = f"{set_tx}; no recommendation"
+        tx_value = f"{set_tx}; {MISSING_PRECONDITION.get(band.outcome, NO_RECOMMENDATION)}"
     elif tx_rec.kind is RecommendationKind.CHANGE:
         target = (
             f"{tx_rec.recommended} dBm" if band.tx.mode is TxPowerMode.CUSTOM else f"Custom, {tx_rec.recommended} dBm"
@@ -973,9 +1040,9 @@ def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: C
     else:
         tx_value = f"{set_tx}; no change: {safe_text(tx_rec.reason, 100)}"
     if min_rec is None:
-        min_value = "state unavailable; no recommendation"
+        min_value = f"{_min_rssi_state_text(band.min_rssi)}; {_min_rssi_missing(band)}"
     else:
-        min_value = _min_rssi_value(min_rec)
+        min_value = _min_rssi_value(min_rec, band.min_rssi)
         if band.assumed_client_tx_dbm is not None:
             min_value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
     width = f"{band.width_mhz} MHz" if band.width_mhz is not None else "unknown"
@@ -1055,11 +1122,7 @@ def _overview_footer(report: SiteReport) -> list[str]:
     if waiting:
         lines.append(f"  {waiting} further item(s) wait for the changes above; run the tool again after applying them.")
     if not changes and not failed and not channel_change and not waiting:
-        lines.append(
-            "  No changes recommended in the available data; see Data quality."
-            if report.partial
-            else "  No changes recommended."
-        )
+        lines.append(_no_change_verdict(report, overview=True))
     lines += ["  Full evidence: run with --details.", ""]
     return lines
 

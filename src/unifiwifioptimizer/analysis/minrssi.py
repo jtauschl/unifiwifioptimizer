@@ -7,29 +7,43 @@ alternative advisory where no other access point can take the client over.
 """
 
 from unifiwifioptimizer.domain.models import AccessPoint, Band
-from unifiwifioptimizer.domain.report import MIN_RSSI, Finding, Recommendation, RecommendationKind, Severity
+from unifiwifioptimizer.domain.report import (
+    MIN_RSSI,
+    Finding,
+    MinRssiState,
+    Recommendation,
+    RecommendationKind,
+    Severity,
+)
 from unifiwifioptimizer.rf.constants import MIN_RSSI_MAX_DBM, MIN_RSSI_MIN_DBM
 from unifiwifioptimizer.rf.corridor import Corridor
 from unifiwifioptimizer.rf.minrssi import recommend_min_rssi
 from unifiwifioptimizer.rf.settings import RfSettings
 
 
+def min_rssi_state(ap: AccessPoint, band: Band) -> MinRssiState:
+    radio = ap.radio(band)
+    enabled = radio is not None and radio.min_rssi_enabled
+    return MinRssiState(enabled=enabled, dbm=radio.min_rssi_dbm if radio is not None and enabled else None)
+
+
 def recommend_band_min_rssi(
     ap: AccessPoint, band: Band, corridor: Corridor, tx_eff_dbm: int, rf: RfSettings
 ) -> Recommendation:
-    radio = ap.radio(band)
     stats = ap.stats(band)
-    enabled = radio is not None and radio.min_rssi_enabled
-    current = radio.min_rssi_dbm if radio is not None and enabled else None
+    state = min_rssi_state(ap, band)
+    current = state.dbm
     assumed_client_tx = rf.client_tx_assumption(
         band, stats.channel if stats is not None else None, stats.width_mhz if stats is not None else None
     )
     derived = recommend_min_rssi(corridor, tx_eff_dbm, assumed_client_tx, rf.min_rssi_offset_db)
     recommended = min(max(derived, MIN_RSSI_MIN_DBM), MIN_RSSI_MAX_DBM)
-    if not enabled:
+    if not state.enabled:
         kind, reason = RecommendationKind.CONDITIONAL, "disabled; the value to use if enabled"
     elif current == recommended:
         kind, reason = RecommendationKind.CONFIRMED, "enabled at the recommended uplink value"
+    elif current is None:
+        kind, reason = RecommendationKind.CHANGE, "enabled, but the controller sent no value"
     else:
         kind, reason = RecommendationKind.CHANGE, "enabled at another value than the recommended uplink value"
     return Recommendation(

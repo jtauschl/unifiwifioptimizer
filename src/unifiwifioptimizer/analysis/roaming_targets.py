@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from unifiwifioptimizer.analysis.neighbors import NeighbourMatrix, PeerReading
-from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, WlanRoamingStatus
+from unifiwifioptimizer.domain.analysis import ReadingSource, RoamingCap, RoamingThreshold, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import AccessPoint, Band, SiteSnapshot, WlanConfig
 from unifiwifioptimizer.rf.constants import (
     ROAMING_ASSISTANT_MAX_DBM,
@@ -214,12 +214,15 @@ def roaming_targets(
     return targets
 
 
-def thresholds_for_compliance(targets: Mapping[str, WlanRoamingTarget]) -> dict[str, int]:
-    """Only an OK target carries a value into the compliance check."""
+def thresholds_for_compliance(targets: Mapping[str, WlanRoamingTarget]) -> dict[str, RoamingThreshold]:
+    """Every target reaches the compliance check with its status and reasons; only an OK target carries a value."""
     return {
-        name: target.threshold_dbm
+        name: RoamingThreshold(
+            status=target.status,
+            dbm=target.threshold_dbm if target.status is WlanRoamingStatus.OK else None,
+            reasons=target.reasons,
+        )
         for name, target in targets.items()
-        if target.status is WlanRoamingStatus.OK and target.threshold_dbm is not None
     }
 
 

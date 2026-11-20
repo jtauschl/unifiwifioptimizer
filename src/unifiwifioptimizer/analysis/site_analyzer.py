@@ -18,6 +18,7 @@ from unifiwifioptimizer.analysis.groups import group_reports
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.minrssi import (
     min_rssi_before_roaming,
+    min_rssi_state,
     min_rssi_without_alternative,
     recommend_band_min_rssi,
 )
@@ -56,6 +57,7 @@ from unifiwifioptimizer.domain.report import (
     Recommendation,
     RfSummary,
     RoamingApDetail,
+    ScanState,
     ScanSummary,
     Severity,
     SiteCompliance,
@@ -63,7 +65,14 @@ from unifiwifioptimizer.domain.report import (
     TxSummaryReport,
     WlanRoamingSummary,
 )
-from unifiwifioptimizer.domain.scan import BandScanStatus, ScanFailure, ScanFailureKind, SiteScan
+from unifiwifioptimizer.domain.scan import (
+    BandScanStatus,
+    ScanFailure,
+    ScanFailureKind,
+    ScanInput,
+    ScanSkipped,
+    SiteScan,
+)
 from unifiwifioptimizer.rf.channels import DFS_CHANNELS_5G, cac_seconds
 from unifiwifioptimizer.rf.constants import ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM
 from unifiwifioptimizer.rf.corridor import Corridor, corridor_for
@@ -207,6 +216,12 @@ def _empty_band_message(ap: AccessPoint, band: Band) -> str:
     return generic
 
 
+def _interface_down_message(toggle_was_on: bool) -> str:
+    if toggle_was_on:
+        return "the scan interface is down and could not be brought up (not a managed interface, or ifconfig up failed)"
+    return "the scan interface is down and `scan_interface_toggle` is off; enable it to let the scan bring it up"
+
+
 def _band_scan_findings(
     ap: AccessPoint, band: Band, scan: SiteScan | None, configured: bool, partial: list[PartialReason]
 ) -> tuple[Finding, ...]:
@@ -230,7 +245,7 @@ def _band_scan_findings(
                 Severity.WARNING,
                 "scan_unusable",
                 ap.name,
-                "the scan interface is down and `scan_interface_toggle` is off; enable it to scan this band",
+                _interface_down_message(ap_scan.interface_toggle),
                 band,
             ),
         )
@@ -248,8 +263,16 @@ def _band_scan_findings(
     return ()
 
 
+def _scan_of(scan: ScanInput) -> tuple[SiteScan | None, ScanState]:
+    if isinstance(scan, SiteScan):
+        return scan, ScanState.SCANNED
+    if isinstance(scan, ScanSkipped):
+        return None, ScanState.SKIPPED
+    return None, ScanState.NOT_CONFIGURED
+
+
 def _scan_summary(
-    scan: SiteScan | None, passes: int, skipped: bool, names: Iterable[str]
+    scan: SiteScan | None, state: ScanState, passes: int, names: Iterable[str]
 ) -> tuple[ScanSummary, int, int, list[Finding], list[PartialReason]]:
     """The summary plus the verifiable count, the host-key failed count, AP-level findings and partial reasons."""
     failures: dict[str, tuple[ScanFailureKind, ...]] = {}
@@ -295,7 +318,7 @@ def _scan_summary(
         unknown_names=tuple(names),
         failures_by_ap=failures,
         successes_by_ap=successes,
-        skipped=skipped,
+        state=state,
     )
     return summary, verifiable, host_key_failed, findings, partial
 
@@ -337,6 +360,8 @@ def _band_report(
     ap: AccessPoint,
     band: Band,
     inp: SiteAnalysisInput,
+    scan: SiteScan | None,
+    skipped: bool,
     matrix: NeighbourMatrix,
     corridor: Corridor,
     channels: ChannelAnalysis,
@@ -350,10 +375,10 @@ def _band_report(
     stats = ap.stats(band)
     table = (
         MaxReason.NOT_SCANNED
-        if inp.scan is None
-        else serving_table(inp.scan.scan_of(ap.mac), band, stats.channel if stats is not None else None)
+        if scan is None
+        else serving_table(scan.scan_of(ap.mac), band, stats.channel if stats is not None else None)
     )
-    tx = analyse_band_tx(ap, band, cells, corridor, inp.scan_skipped, table)
+    tx = analyse_band_tx(ap, band, cells, corridor, skipped, table)
     if ap.name in roles.children or ap.name in roles.parents:
         tx = apply_mesh_guard(ap, band, tx)
     findings: list[Finding] = list(tx.findings)
@@ -375,7 +400,7 @@ def _band_report(
                 )
             )
     findings.extend(f for f in channels.findings if f.subject == ap.name and f.band is band)
-    findings.extend(_band_scan_findings(ap, band, inp.scan, configured, partial))
+    findings.extend(_band_scan_findings(ap, band, scan, configured, partial))
     clients_report: ClientReport | None = None
     tx_eff = tx.summary.effective_dbm
     judged = tx.outcome not in (BandTxOutcome.OFFLINE, BandTxOutcome.DFS_WAIT, BandTxOutcome.SCAN_SKIPPED)
@@ -405,7 +430,7 @@ def _band_report(
     if alternative is not None:
         findings.append(alternative)
     airtime = airtime_of(ap, band)
-    foreign = foreign_networks(ap, band, inp.scan, inp.snapshot)
+    foreign = foreign_networks(ap, band, scan, inp.snapshot)
     geometry = geometry_of(ap, band)
     stats = ap.stats(band)
     assumed_client_tx = inp.rf.client_tx_assumption(
@@ -433,6 +458,7 @@ def _band_report(
         neighbours=_rows(cells, tx.markers),
         findings=tuple(findings),
         recommendations=tuple(recommendations),
+        min_rssi=min_rssi_state(ap, band),
         airtime=AirtimeReport(
             utilisation_pct=airtime.utilisation_pct,
             self_rx_pct=airtime.self_rx_pct,
@@ -481,9 +507,10 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     partial: list[PartialReason] = []
     site_findings: list[Finding] = []
     snapshot, shared_names = _without_shared_names(inp.snapshot, partial, site_findings)
-    scan = inp.scan
+    scan, scan_state = _scan_of(inp.scan)
+    skipped = scan_state is ScanState.SKIPPED
     adjacency = symmetric_neighbours(inp.neighbours)
-    matrix = build_matrix(snapshot, scan, inp.neighbours, inp.scan_skipped)
+    matrix = build_matrix(snapshot, scan, inp.neighbours, skipped)
     corridors = {band: corridor_for(band, inp.environment, inp.rf.cell_edge) for band in EVALUATED_BANDS}
     channels = analyse_channels(snapshot, scan, inp.neighbours, snapshot.settings.channel_ai)
     targets = roaming_targets(snapshot, matrix, corridors[Band.GHZ_5], inp.rf)
@@ -501,7 +528,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
     aps_by_name = {ap.name: ap for ap in snapshot.access_points}
     unparsable_names = {d.name for d in snapshot.unparsable_devices if d.name is not None}
     configured_names = set(adjacency)
-    if inp.scan_skipped:
+    if skipped:
         site_findings.append(
             _finding(
                 Severity.INFO,
@@ -540,7 +567,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
             )
         )
     scan_summary, verifiable, host_key_failed, scan_findings, scan_partial = _scan_summary(
-        scan, inp.scan_passes, inp.scan_skipped, unknown_names
+        scan, scan_state, inp.scan_passes, unknown_names
     )
     partial.extend(scan_partial)
     scan_findings_by_ap: dict[str, list[Finding]] = {}
@@ -589,8 +616,9 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
             if ap.radio(band) is None:
                 continue
             report = _band_report(
-                ap, band, inp, matrix, corridors[band], channels, targets, roles, configured, partial, offsets_reported
-            )
+                ap, band, inp, scan, skipped, matrix, corridors[band], channels, targets, roles, configured, partial,
+                offsets_reported,
+            )  # fmt: skip
             bands.append(report)
         ap_reports.append(_ap_report(ap, configured, tuple(bands), ap_findings))
     if snapshot.clients is not None:
@@ -658,7 +686,6 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
         partial_reasons=tuple(dict.fromkeys(partial)),
         verifiable_ap_count=verifiable,
         host_key_failed_ap_count=host_key_failed,
-        scanning=scan is not None,
         extended_channel_plan=plan,
     )
 

@@ -232,6 +232,15 @@ class ForeignReport:
     overlapping_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class MinRssiState:
+    """The radio's Minimum RSSI as the controller reports it: `dbm` is the value set while the feature is on, and None
+    when it is off or the controller sent no value."""
+
+    enabled: bool
+    dbm: int | None
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BandReport:
     band: Band
@@ -248,6 +257,7 @@ class BandReport:
     neighbours: tuple[NeighbourRow, ...]
     findings: tuple[Finding, ...]
     recommendations: tuple[Recommendation, ...]
+    min_rssi: MinRssiState
     airtime: AirtimeReport | None
     clients: ClientReport | None
     foreign: ForeignReport | None
@@ -316,6 +326,16 @@ class GroupReport:
         return not self.missing and not self.overlapping and not self.reuse_infeasible
 
 
+class ScanState(StrEnum):
+    """Whether neighbour scans produced this report's evidence."""
+
+    SCANNED = "scanned"
+    # The site has neighbour pairs and the run was told not to scan.
+    SKIPPED = "skipped"
+    # The site has no neighbour pair, so no scan is configured for it.
+    NOT_CONFIGURED = "not_configured"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ScanSummary:
     passes: int
@@ -325,7 +345,7 @@ class ScanSummary:
     failures_by_ap: Mapping[str, tuple[ScanFailureKind, ...]]
     # AP name -> number of successful passes.
     successes_by_ap: Mapping[str, int]
-    skipped: bool
+    state: ScanState
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "failures_by_ap", MappingProxyType(dict(self.failures_by_ap)))
@@ -412,8 +432,6 @@ class SiteReport:
     partial_reasons: tuple[PartialReason, ...]
     verifiable_ap_count: int
     host_key_failed_ap_count: int
-    # Whether neighbour scans ran for this site (False under `--no-scan` and for a controller-only site).
-    scanning: bool
     extended_channel_plan: ExtendedChannelPlan | None = None
 
     def __post_init__(self) -> None:

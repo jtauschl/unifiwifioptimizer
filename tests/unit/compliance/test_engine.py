@@ -7,7 +7,7 @@ from unifiwifioptimizer.compliance.engine import evaluate_site, evaluate_wlan
 from unifiwifioptimizer.domain.models import Band, UserGroup
 from unifiwifioptimizer.domain.report import CheckStatus, Severity
 
-from .builders import PROFILES, profile, standard_wlan, wlan
+from .builders import PROFILES, ok, profile, standard_wlan, wlan
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 UNLIMITED = UserGroup(id="g1", name="Unlimited", down_kbps=None, up_kbps=None)
@@ -22,7 +22,7 @@ def test_a_disabled_wlan_is_reported_as_that_and_nothing_else() -> None:
 
 def test_a_compliant_wlan_passes_every_prescribed_check_and_lists_the_rest_with_a_note() -> None:
     evaluation = evaluate_wlan(
-        standard_wlan(usergroup_id="g1"), profile(), roaming_threshold_dbm=-70, user_groups=(UNLIMITED,)
+        standard_wlan(usergroup_id="g1"), profile(), roaming_threshold=ok(-70), user_groups=(UNLIMITED,)
     )
     statuses = {c.code: c.status for c in evaluation.checks}
     assert statuses.pop("roaming_assistant") is CheckStatus.PASSED
@@ -47,19 +47,19 @@ def test_a_compliant_wlan_passes_every_prescribed_check_and_lists_the_rest_with_
 
 def test_a_wlan_on_6_ghz_gets_the_detect_only_roaming_result_through_the_engine() -> None:
     both = standard_wlan(bands=frozenset({Band.GHZ_2, Band.GHZ_5, Band.GHZ_6}), roaming_assistant_6e_enabled=True)
-    evaluation = evaluate_wlan(both, profile(), roaming_threshold_dbm=-70)
+    evaluation = evaluate_wlan(both, profile(), roaming_threshold=ok(-70))
     by_code = {c.code: c for c in evaluation.checks}
     assert len(by_code) == len(evaluation.checks)
     assert by_code["roaming_assistant"].status is CheckStatus.PASSED
     six = by_code["roaming_assistant_6g"]
     assert six.status is CheckStatus.NOT_EVALUABLE and six.actual == "Enabled" and six.detail == "6 GHz is detect-only"
-    assert "roaming_assistant_6g" not in {c.code for c in evaluate_wlan(standard_wlan(), profile(), -70).checks}
+    assert "roaming_assistant_6g" not in {c.code for c in evaluate_wlan(standard_wlan(), profile(), ok(-70)).checks}
 
 
 def test_evaluate_site_follows_the_mapping_and_reports_each_configuration_problem() -> None:
     wlans = [standard_wlan(id="a", name="Main"), wlan(id="b", name="Twin"), wlan(id="c", name="Twin")]
     mapping = {"Main": "Standard", "Ghost": "IoT", "Twin": "IoT", "Main2": "NoSuchProfile"}
-    compliance = evaluate_site(wlans, mapping, PROFILES, roaming_thresholds_dbm={"Main": -70})
+    compliance = evaluate_site(wlans, mapping, PROFILES, roaming_thresholds={"Main": ok(-70)})
     assert [e.wlan for e in compliance.evaluations] == ["Main"]
     assert [(f.code, f.subject, f.severity) for f in compliance.findings] == [
         ("wlan_not_found", "Ghost", Severity.ERROR),
@@ -67,7 +67,7 @@ def test_evaluate_site_follows_the_mapping_and_reports_each_configuration_proble
         ("profile_unknown", "Main2", Severity.ERROR),
     ]
     assert compliance.has_failures
-    clean = evaluate_site(wlans[:1], {"Main": "Standard"}, PROFILES, {"Main": -70})
+    clean = evaluate_site(wlans[:1], {"Main": "Standard"}, PROFILES, {"Main": ok(-70)})
     assert clean.has_failures is False
 
 

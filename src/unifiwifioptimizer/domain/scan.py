@@ -18,7 +18,8 @@ class BandScanStatus(StrEnum):
     OK = "ok"
     # The access point runs no radio on this band (no AP-mode interface for it).
     NO_RADIO = "no_radio"
-    # A scan-capable interface exists but is down, and the configuration forbids toggling it.
+    # A scan-capable interface exists but is down: the toggle is off, or the script could not bring it up (it tries
+    # only a managed interface).
     INTERFACE_DOWN = "interface_down"
     # The scan ran and saw nothing; distinct from OK with an empty list only in the report wording.
     EMPTY = "empty"
@@ -104,11 +105,13 @@ class ScanFailure:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ApScan:
-    """Every pass the orchestrator ran against one access point, in order."""
+    """Every pass the orchestrator ran against one access point, in order. `interface_toggle` is the setting the
+    scan ran with: whether it may raise a scan interface that is down."""
 
     ap_mac: Mac
     ap_name: str
     passes: tuple[ScanPass | ScanFailure, ...]
+    interface_toggle: bool
 
     @property
     def successful_passes(self) -> tuple[ScanPass, ...]:
@@ -130,6 +133,19 @@ class SiteScan:
 
     def scan_of(self, ap_mac: Mac) -> ApScan | None:
         return next((s for s in self.scans if s.ap_mac == ap_mac), None)
+
+
+@dataclass(frozen=True, slots=True)
+class ScanSkipped:
+    """The site has neighbour pairs, and the run was told not to scan (`--no-scan`)."""
+
+
+@dataclass(frozen=True, slots=True)
+class NoScanConfigured:
+    """The site has no neighbour pair, so no scan is configured for it."""
+
+
+ScanInput = SiteScan | ScanSkipped | NoScanConfigured
 
 
 class SshAuthMethod(StrEnum):

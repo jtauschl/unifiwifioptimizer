@@ -199,7 +199,12 @@ class ScanOrchestrator:
                 self._sleep(self._pass_pause_s)
             for target, outcome in self._run_pass(targets, concurrency, progress, index, passes):
                 results[target.ap_mac].append(outcome)
-        scans = tuple(ApScan(ap_mac=t.ap_mac, ap_name=t.ap_name, passes=tuple(results[t.ap_mac])) for t in targets)
+        scans = tuple(
+            ApScan(
+                ap_mac=t.ap_mac, ap_name=t.ap_name, passes=tuple(results[t.ap_mac]), interface_toggle=t.interface_toggle
+            )
+            for t in targets
+        )
         return SiteScan(site_id=site_id, scans=scans, unknown_names=tuple(unknown_names))
 
     def _run_pass(

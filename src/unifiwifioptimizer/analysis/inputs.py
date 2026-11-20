@@ -6,20 +6,19 @@ from dataclasses import dataclass
 
 from unifiwifioptimizer.domain.models import SiteSnapshot
 from unifiwifioptimizer.domain.profile import ProfileSet
-from unifiwifioptimizer.domain.scan import SiteScan
+from unifiwifioptimizer.domain.scan import ScanInput
 from unifiwifioptimizer.rf.corridor import PathLossModel
 from unifiwifioptimizer.rf.settings import RfSettings
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SiteAnalysisInput:
-    """`scan` is None when the site does not scan or the scan was skipped; `scan_skipped` tells the two
-    apart. `neighbours` is the operator's adjacency as configured (one direction is enough; the analysis
-    symmetrises it)."""
+    """`scan` is what the site's scan produced, or says why there is none (skipped by the run, or no neighbour
+    pair configured). `neighbours` is the operator's adjacency as configured (one direction is enough; the
+    analysis symmetrises it)."""
 
     snapshot: SiteSnapshot
-    scan: SiteScan | None
-    scan_skipped: bool
+    scan: ScanInput
     neighbours: Mapping[str, frozenset[str]]
     environment: PathLossModel
     rf: RfSettings

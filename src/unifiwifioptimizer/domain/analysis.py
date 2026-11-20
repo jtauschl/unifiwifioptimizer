@@ -3,6 +3,7 @@ reading can be missing, where a reading came from, why a run is partial, and how
 capped. These live in the domain so the report model can name them without importing the layers that
 compute them (the report is data; `rf` and `analysis` import this module, never the other way round)."""
 
+from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -47,8 +48,12 @@ class BandTxOutcome(StrEnum):
     SCAN_SKIPPED = "scan_skipped"
     OFFLINE = "offline"
     DFS_WAIT = "dfs_wait"
+    # Row 4: the controller's power values are missing or outside the radio's range.
     NOT_EVALUABLE = "not_evaluable"
+    # Row 5: no configured neighbour has a radio on this band.
     NO_PEERS = "no_peers"
+    # Row 7: configured neighbours exist, none of them could be evaluated.
+    NO_EVALUABLE_NEIGHBOUR = "no_evaluable_neighbour"
     NO_SIGHTING = "no_sighting"
     IN_CORRIDOR = "in_corridor"
     IN_CORRIDOR_PARTIAL = "in_corridor_partial"
@@ -57,6 +62,23 @@ class BandTxOutcome(StrEnum):
     TOO_STRONG_AT_MINIMUM = "too_strong_at_minimum"
     REDUCTION_BLOCKED = "reduction_blocked"
     OUT_OF_CORRIDOR = "out_of_corridor"
+
+    @property
+    def carries_recommendation(self) -> bool:
+        """Whether the row always yields a transmit-power recommendation; the others state why there is none."""
+        return self not in _WITHOUT_RECOMMENDATION
+
+
+_WITHOUT_RECOMMENDATION = frozenset(
+    {
+        BandTxOutcome.SCAN_SKIPPED,
+        BandTxOutcome.OFFLINE,
+        BandTxOutcome.DFS_WAIT,
+        BandTxOutcome.NOT_EVALUABLE,
+        BandTxOutcome.NO_PEERS,
+        BandTxOutcome.NO_EVALUABLE_NEIGHBOUR,
+    }
+)
 
 
 class PartialReason(StrEnum):
@@ -141,3 +163,13 @@ class MaxReason(StrEnum):
             MaxReason.NO_ANTENNA_GAIN: "no antenna gain from the controller",
             MaxReason.REFUTED: "radio runs above the reported limits",
         }[self]
+
+
+@dataclass(frozen=True, slots=True)
+class RoamingThreshold:
+    """What the site analysis hands the compliance check for one WLAN: the value to set (present only when the status
+    is OK) and, otherwise, why none could be derived."""
+
+    status: WlanRoamingStatus
+    dbm: int | None
+    reasons: tuple[str, ...]

@@ -87,7 +87,7 @@ def test_the_cli_run_dump_writes_the_site_report(monkeypatch: pytest.MonkeyPatch
     assert cli.main(["--dump-api", str(directory), "run", "--no-scan"]) == ExitCode.OK
     document = json.loads((directory / "s_default_run.json").read_text())
     assert document["label"] == "s/default/run" and document["models"]["site_id"] == "default"
-    assert document["models"]["scan"]["skipped"] is True and "unknown_field_count" in document
+    assert document["models"]["scan"]["state"] == "skipped" and "unknown_field_count" in document
 
 
 def test_a_symlinked_dump_directory_is_refused(tmp_path: Path) -> None:

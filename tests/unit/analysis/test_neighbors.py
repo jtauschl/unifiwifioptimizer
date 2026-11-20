@@ -105,7 +105,9 @@ def test_reduce_band_passes_prefers_usable_then_empty_then_the_last_status() -> 
     down = scan_pass(band_scan(Band.GHZ_2, (), BandScanStatus.INTERFACE_DOWN))
 
     def usage(*passes: ScanPass) -> BandUsage:
-        return reduce_band_passes(ApScan(ap_mac="02:00:00:00:00:08", ap_name="AP-2", passes=tuple(passes)), Band.GHZ_2)
+        return reduce_band_passes(
+            ApScan(ap_mac="02:00:00:00:00:08", ap_name="AP-2", passes=tuple(passes), interface_toggle=False), Band.GHZ_2
+        )
 
     assert usage(failed, ok, empty).status is BandScanStatus.OK and len(usage(failed, ok, empty).usable_passes) == 1
     assert usage(failed, empty).status is BandScanStatus.EMPTY
@@ -113,18 +115,26 @@ def test_reduce_band_passes_prefers_usable_then_empty_then_the_last_status() -> 
     assert usage(failed, down).status is BandScanStatus.INTERFACE_DOWN
     assert usage(down, failed).status is BandScanStatus.FAILED
     assert usage().status is None
-    only_failures = ApScan(ap_mac="x", ap_name="AP-2", passes=(ScanFailure(kind=ScanFailureKind.TIMEOUT, detail="t"),))
+    only_failures = ApScan(
+        ap_mac="x",
+        ap_name="AP-2",
+        passes=(ScanFailure(kind=ScanFailureKind.TIMEOUT, detail="t"),),
+        interface_toggle=False,
+    )
     assert reduce_band_passes(only_failures, Band.GHZ_2).status is None
     assert reduce_band_passes(None, Band.GHZ_2).status is None
 
 
 def test_a_pass_whose_scanner_is_in_cac_is_not_usable_on_5_ghz() -> None:
     in_cac = scan_pass(five=band_scan(Band.GHZ_5, (reading(SNAP, "AP-1", Band.GHZ_5, -60),)), cac="active")
-    usage = reduce_band_passes(ApScan(ap_mac="x", ap_name="AP-2", passes=(in_cac,)), Band.GHZ_5)
+    usage = reduce_band_passes(ApScan(ap_mac="x", ap_name="AP-2", passes=(in_cac,), interface_toggle=False), Band.GHZ_5)
     assert usage.usable_passes == () and usage.cac_active_in_every_pass is True
     # The 2.4 GHz readings of the same pass stay usable.
     two = scan_pass(two=band_scan(Band.GHZ_2, (reading(SNAP, "AP-1", Band.GHZ_2, -60),)), cac="active")
-    assert reduce_band_passes(ApScan(ap_mac="x", ap_name="AP-2", passes=(two,)), Band.GHZ_2).status is BandScanStatus.OK
+    assert (
+        reduce_band_passes(ApScan(ap_mac="x", ap_name="AP-2", passes=(two,), interface_toggle=False), Band.GHZ_2).status
+        is BandScanStatus.OK
+    )
 
 
 @pytest.mark.parametrize(

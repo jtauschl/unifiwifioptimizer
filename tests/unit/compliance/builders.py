@@ -4,10 +4,21 @@ from dataclasses import fields, replace
 from typing import Any
 
 from unifiwifioptimizer.config.profiles import shipped_profiles
+from unifiwifioptimizer.domain.analysis import RoamingThreshold, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import Band, WlanConfig
 from unifiwifioptimizer.domain.profile import Profile
 
 PROFILES = shipped_profiles()
+
+
+def ok(dbm: int) -> RoamingThreshold:
+    """A target the analysis derived: the value to set."""
+    return RoamingThreshold(status=WlanRoamingStatus.OK, dbm=dbm, reasons=())
+
+
+def underived(*reasons: str, status: WlanRoamingStatus = WlanRoamingStatus.INCOMPLETE) -> RoamingThreshold:
+    """A target the analysis could not derive, with its reasons."""
+    return RoamingThreshold(status=status, dbm=None, reasons=reasons)
 
 
 def wlan(**overrides: Any) -> WlanConfig:

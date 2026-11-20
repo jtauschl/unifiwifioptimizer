@@ -3,10 +3,11 @@ from unifiwifioptimizer.compliance.roaming_check import (
     roaming_assistant_check,
     roaming_assistant_checks,
 )
+from unifiwifioptimizer.domain.analysis import RoamingThreshold, WlanRoamingStatus
 from unifiwifioptimizer.domain.models import Band
 from unifiwifioptimizer.domain.report import CheckStatus
 
-from .builders import profile, wlan
+from .builders import ok, profile, underived, wlan
 
 EXPECTS_ON = profile("Standard")
 EXPECTS_OFF = profile("IoT")
@@ -15,18 +16,18 @@ EXPECTS_OFF = profile("IoT")
 def test_a_wlan_without_5_ghz_should_have_the_suggestions_off_whatever_the_profile_expects() -> None:
     only_2g = frozenset({Band.GHZ_2})
     for p in (EXPECTS_ON, EXPECTS_OFF):
-        off = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=False), -70)
+        off = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=False), ok(-70))
         assert off.status is CheckStatus.PASSED and (off.expected, off.actual) == ("Disabled", "Disabled")
-        on = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=True), -70)
+        on = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=True), ok(-70))
         assert on.status is CheckStatus.FAILED and on.expected == "Disabled" and on.actual == "Enabled"
         assert on.detail == "the WLAN has no 5 GHz band to hand a client to"
-        unsent = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=None), -70)
+        unsent = roaming_assistant_check(p, wlan(bands=only_2g, roaming_assistant_na_enabled=None), ok(-70))
         assert unsent.status is CheckStatus.NOT_APPLICABLE and unsent.detail == "5 GHz not broadcast"
 
 
 def test_an_older_api_without_the_switch_is_incomplete_on_a_5_ghz_wlan() -> None:
     for p in (EXPECTS_ON, EXPECTS_OFF):
-        older = roaming_assistant_check(p, wlan(roaming_assistant_na_enabled=None), -70)
+        older = roaming_assistant_check(p, wlan(roaming_assistant_na_enabled=None), ok(-70))
         assert older.status is CheckStatus.INCOMPLETE and "older API" in older.detail
 
 
@@ -34,7 +35,7 @@ def test_profile_expecting_it_off() -> None:
     off = roaming_assistant_check(EXPECTS_OFF, wlan(roaming_assistant_na_enabled=False), None)
     assert off.status is CheckStatus.PASSED and (off.expected, off.actual) == ("Disabled", "Disabled")
     on = roaming_assistant_check(
-        EXPECTS_OFF, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-75), -70
+        EXPECTS_OFF, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-75), ok(-70)
     )
     assert on.status is CheckStatus.FAILED and on.actual == "Enabled, -75 dBm"
 
@@ -50,23 +51,23 @@ def test_profile_expecting_it_on_without_a_threshold_judges_only_the_switch() ->
 
 def test_profile_expecting_it_on_with_a_threshold() -> None:
     match = roaming_assistant_check(
-        EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-70), -70
+        EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-70), ok(-70)
     )
     assert match.status is CheckStatus.PASSED and match.expected == "Enabled, -70 dBm"
     off_by_one = roaming_assistant_check(
-        EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-71), -70
+        EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-71), ok(-70)
     )
     assert off_by_one.status is CheckStatus.FAILED and off_by_one.actual == "Enabled, -71 dBm"
-    disabled = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=False), -70)
+    disabled = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=False), ok(-70))
     assert disabled.status is CheckStatus.FAILED and disabled.actual == "Disabled"
     # The derived threshold is the value to set once switched on, so the expectation carries it.
     assert disabled.expected == "Enabled, -70 dBm"
-    no_rssi = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=True), -70)
+    no_rssi = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=True), ok(-70))
     assert no_rssi.status is CheckStatus.FAILED and no_rssi.expected == "Enabled, -70 dBm"
 
 
 def test_a_switched_on_assistant_without_a_reported_rssi_is_its_own_deviation_never_a_number() -> None:
-    for threshold in (-70, None):
+    for threshold in (ok(-70), None):
         blank = roaming_assistant_check(
             EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=None), threshold
         )
@@ -77,7 +78,7 @@ def test_a_switched_on_assistant_without_a_reported_rssi_is_its_own_deviation_ne
 
 def test_the_6_ghz_switch_is_reported_as_detect_only_and_never_judged() -> None:
     six_only = wlan(bands=frozenset({Band.GHZ_6}), roaming_assistant_6e_enabled=False)
-    results = roaming_assistant_checks(EXPECTS_ON, six_only, -70)
+    results = roaming_assistant_checks(EXPECTS_ON, six_only, ok(-70))
     assert [(r.code, r.status) for r in results] == [
         ("roaming_assistant", CheckStatus.NOT_APPLICABLE),
         ("roaming_assistant_6g", CheckStatus.NOT_EVALUABLE),
@@ -91,7 +92,7 @@ def test_the_6_ghz_switch_is_reported_as_detect_only_and_never_judged() -> None:
         roaming_assistant_na_rssi=-70,
         roaming_assistant_6e_enabled=True,
     )
-    results = roaming_assistant_checks(EXPECTS_ON, both, -70)
+    results = roaming_assistant_checks(EXPECTS_ON, both, ok(-70))
     assert [(r.code, r.status, r.actual) for r in results] == [
         ("roaming_assistant", CheckStatus.PASSED, "Enabled, -70 dBm"),
         ("roaming_assistant_6g", CheckStatus.NOT_EVALUABLE, "Enabled"),
@@ -107,8 +108,38 @@ def test_the_6_ghz_switch_is_reported_as_detect_only_and_never_judged() -> None:
     assert (
         len(
             roaming_assistant_checks(
-                EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-70), -70
+                EXPECTS_ON, wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-70), ok(-70)
             )
         )
         == 1
     )
+
+
+SINGLE_AP = RoamingThreshold(
+    status=WlanRoamingStatus.NOT_APPLICABLE_SINGLE_AP,
+    dbm=None,
+    reasons=("no handoff target: only one access point broadcasts this WLAN",),
+)
+
+
+def test_a_wlan_that_one_access_point_broadcasts_is_not_applicable_before_the_profile_expectation_is_judged() -> None:
+    # No hand-off target exists, so neither a disabled switch nor a missing RSSI is a deviation.
+    for switch in (True, False):
+        check = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=switch), SINGLE_AP)
+        assert check.status is CheckStatus.NOT_APPLICABLE and check.detail == SINGLE_AP.reasons[0]
+    # The expectation to have it off is still judged, and the older API still ends as incomplete.
+    on = roaming_assistant_check(EXPECTS_OFF, wlan(roaming_assistant_na_enabled=True), SINGLE_AP)
+    assert on.status is CheckStatus.FAILED and on.expected == "Disabled"
+    older = roaming_assistant_check(EXPECTS_ON, wlan(roaming_assistant_na_enabled=None), SINGLE_AP)
+    assert older.status is CheckStatus.INCOMPLETE and "older API" in older.detail
+
+
+def test_an_incomplete_target_names_its_first_reason_in_the_check_detail() -> None:
+    reasons = ("AP-3: no reading of neighbour AP-4 (not sighted)", "AP-4: no reading of neighbour AP-3 (not sighted)")
+    check = roaming_assistant_check(
+        EXPECTS_ON,
+        wlan(roaming_assistant_na_enabled=True, roaming_assistant_na_rssi=-70),
+        underived(*reasons),
+    )
+    assert check.status is CheckStatus.INCOMPLETE
+    assert check.detail == "threshold not derived: AP-3: no reading of neighbour AP-4 (not sighted)"

@@ -287,7 +287,7 @@ def analyse_band_tx(
             f"no configured neighbour could be evaluated ({_reason_text(cells)})",
             _names(cells),
         )
-        return result(BandTxOutcome.NOT_EVALUABLE, None, [warning])
+        return result(BandTxOutcome.NO_EVALUABLE_NEIGHBOUR, None, [warning])
     plan = recommend_tx(current, min_tx, eff_max, weakest, corridor)
     _mark(markers, cells, corridor, plan.recommended - current, min_tx - current)
     # Rows 8/9.

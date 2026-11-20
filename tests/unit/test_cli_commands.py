@@ -478,7 +478,7 @@ def test_run_json_prints_one_document(run_faked: None, capsys: pytest.CaptureFix
     assert cli.main(["run", "--no-scan", "--json", "--details"]) == ExitCode.OK
     document = json.loads(capsys.readouterr().out)
     assert document["schema_version"] == 1 and [s["site_id"] for s in document["sites"]] == ["default"]
-    assert document["sites"][0]["scan"]["skipped"] is True
+    assert document["sites"][0]["scan"]["state"] == "skipped"
 
 
 def test_extended_no_scan_prints_unavailable_bands_in_text_and_json(

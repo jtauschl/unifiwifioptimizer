@@ -38,6 +38,7 @@ from unifiwifioptimizer.domain.models import (
     UserGroup,
     WlanConfig,
 )
+from unifiwifioptimizer.domain.report import ScanState
 from unifiwifioptimizer.domain.scan import ScanFailure, ScanPass, ScanTarget
 from unifiwifioptimizer.domain.secrets import Secret
 
@@ -195,9 +196,12 @@ def test_the_environment_is_checked_before_the_passwords_and_only_when_a_site_sc
     quiet = loaded({"default": {"wlans": {"SSID-1": "Standard"}}})
     result, api, scanner, _ = run(quiet, environment_check=broken_environment)
     assert result.verdict is RunVerdict.OK and scanner.calls == [] and "scan:AP-1" not in api.calls
+    # A site without neighbour pairs has no scan configured, with or without `--no-scan`.
+    assert result.reports[0].scan.state is ScanState.NOT_CONFIGURED
+    assert run(quiet, skip_scan=True)[0].reports[0].scan.state is ScanState.NOT_CONFIGURED
     # `--no-scan` skips both checks as well.
     result, _, scanner, _ = run(cfg, skip_scan=True, environment_check=broken_environment)
-    assert scanner.calls == [] and result.reports[0].scan.skipped
+    assert scanner.calls == [] and result.reports[0].scan.state is ScanState.SKIPPED
 
 
 def test_every_site_is_resolved_read_and_prepared_before_the_first_scan() -> None:

@@ -31,14 +31,14 @@
                                            points is missing where roaming needs it)
     ✓ Radio Band                           2.4 GHz, 5 GHz
     ✓ Fast Roaming (802.11r)               Enabled
-    ? Handoff Suggestions (802.11v)        threshold not available without neighbour data
+    ? Handoff Suggestions (802.11v)        threshold not derived: AP-3: no reading of neighbour AP-4
+                                           (not sighted)
         AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the
           floor -75 dBm; clamped to the floor (-81 dBm on the uplink) — no reachable roaming
           neighbour, fix placement
         AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the
           floor -75 dBm; clamped to the floor (-79 dBm on the uplink) — no reachable roaming
           neighbour, fix placement
-        AP-3: no reading of neighbour AP-4 (not sighted)
         AP-4: no reading of neighbour AP-3 (not sighted)
         Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN; apply
           those first and re-run; the threshold follows the effective power

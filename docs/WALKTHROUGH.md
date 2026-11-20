@@ -176,8 +176,8 @@ Every WLAN is compared with its profile, and every setting of the controller's W
   WLAN       SSID-1  (profile Standard)  → network Network-1, VLAN 40
 […]
     ✓ Fast Roaming (802.11r)               Enabled
-    ? Handoff Suggestions (802.11v)        threshold not available without neighbour data
-        AP-1: no reading of neighbour AP-2 (scan skipped)
+    ? Handoff Suggestions (802.11v)        threshold not derived: AP-1: no reading of neighbour AP-2
+                                           (scan skipped)
 […]
   WLAN       SSID-2  (profile Compat)  → network Network-1, VLAN 40
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -219,7 +219,8 @@ The default output lists the WLANs and the access points the way the controller 
                                            points is missing where roaming needs it)
     ✓ Radio Band                           2.4 GHz, 5 GHz
     ✓ Fast Roaming (802.11r)               Enabled
-    ? Handoff Suggestions (802.11v)        threshold not available without neighbour data
+    ? Handoff Suggestions (802.11v)        threshold not derived: AP-3: no reading of neighbour AP-4
+                                           (not sighted) (+1 more: --details)
     ✓ Minimum Data Rate Mode               Manual
     ✓ Minimum Data Rate 2.4 GHz            12 Mbps
     ✗ Minimum Data Rate 5 GHz              12 Mbps (currently 24 Mbps)
@@ -297,6 +298,7 @@ The default output lists the WLANs and the access points the way the controller 
     ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm —
                                          headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -78 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   AP         AP-2 (UAPA693)
@@ -308,6 +310,7 @@ The default output lists the WLANs and the access points the way the controller 
     ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm —
                                          headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -70 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   5 GHz
     · Channel Width                      80 MHz
@@ -326,6 +329,7 @@ The default output lists the WLANs and the access points the way the controller 
     ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm —
                                          headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -75 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   5 GHz
     · Channel Width                      80 MHz
@@ -344,6 +348,7 @@ The default output lists the WLANs and the access points the way the controller 
     ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm —
                                          headroom above the demonstrated power is unverified
     · Minimum RSSI                       disabled (if enabled: -74 dBm on the uplink)
+        provisional: re-run after the transmit-power changes are applied
 
   5 GHz
     · Channel Width                      80 MHz

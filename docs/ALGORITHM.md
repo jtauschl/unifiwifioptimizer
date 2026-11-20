@@ -119,6 +119,13 @@ is the first matching row:
 | 12 | weakest still above the corridor at the radio minimum | **too strong at the minimum**: reposition, disable the band on a middle AP, or accept; the reduction to the minimum is still recommended |
 | 13 | otherwise | the clamped shift |
 
+A band without a recommendation (rows 1–3, 4, 5 and 7) states what it lacks: `no scan ran`, `radio in its DFS channel
+availability check`, `the controller's power values are missing or outside the radio's range`, `no configured neighbour
+on this band`, `no configured neighbour could be evaluated`. The JSON `outcome` names the row (`not_evaluable` for row 4,
+`no_evaluable_neighbour` for row 7). The Minimum RSSI row of such a band shows the controller's own state (`disabled`,
+`enabled at N dBm`, `enabled, value not sent`; the JSON `min_rssi` carries `enabled` and `dbm`) and, where it has no
+recommendation, its own reason: no scan or DFS check first, then no configured neighbour, then no effective power.
+
 The weakest evaluable reading is an upper bound of the true weakest, so an **increase** is safe while a
 neighbour is unevaluated; a reduction, a confirmation or a "too strong" verdict is not, and the report
 names the unevaluated neighbours instead. A radio carrying a wireless uplink (child or parent) never
@@ -344,6 +351,9 @@ changes and failed checks that wait) and the JSON all read that mark. The power-
 there to preserve the proposed layout, in both views. Unavailable plans, conditional Minimum RSSI values and downlink
 power trials are not presented as settings to apply. The default text view is a short decision view of the same report;
 `--details` prints the full evidence and JSON carries all of it (the new JSON fields are additive).
+The scan state of a site is one fact, `scan.state` in the JSON: `scanned`, `skipped` (neighbour pairs exist and `--no-scan`
+was given) or `not_configured` (no neighbour pair, so no scan). A site that is not scanned says so in Data quality and never
+ends in a bare `No changes recommended.`; a scanning site that scanned nobody names why (absent or offline access points).
 
 The extended section uses the same controller snapshot and neighbour scans as the ordinary report;
 it makes no extra request and changes no setting. It plans 2.4 and 5 GHz independently. For each online

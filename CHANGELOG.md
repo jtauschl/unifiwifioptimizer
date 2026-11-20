@@ -24,6 +24,9 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - Optional `rf.client_tx_dbm_5g_upper` sets the assumed client power for 5 GHz channels 100–140; Minimum RSSI and Roaming Assistant show it.
 - Advice that depends on another pending change carries a `deferred_by` mark in the text, the JSON and the footer counts.
 - `derived.pending_tx_changes` counts only the power changes that can be applied now; `derived.waiting_items` counts the items that wait.
+- A band without a power recommendation says what it lacks (no scan, DFS check, power values, neighbour); the Minimum RSSI row shows the controller's own state.
+- The Handoff Suggestions row names why no threshold was derived; a WLAN that only one access point broadcasts is not applicable.
+- The JSON names the scan state (`scan.state`: `scanned`, `skipped`, `not_configured`), the outcome `no_evaluable_neighbour` and each band's `min_rssi` state.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
 - The effective maximum of a radio names its basis: demonstrated, reported by the access point's channel limits, or the model maximum with a reason.
