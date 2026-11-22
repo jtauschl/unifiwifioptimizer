@@ -34,11 +34,11 @@
     ? Handoff Suggestions (802.11v)        threshold not derived: AP-3: no reading of neighbour AP-4
                                            (not sighted)
         AP-1: weakest neighbour AP-2 at -72 dBm would give -77 dBm at the client, below the
-          floor -75 dBm; clamped to the floor (-81 dBm on the uplink) — no reachable roaming
-          neighbour, fix placement
+          floor -75 dBm; clamped to the floor (-81 dBm on the uplink) — by this model no neighbour
+          is in reach; verify with clients before moving an access point
         AP-2: weakest neighbour AP-1 at -71 dBm would give -76 dBm at the client, below the
-          floor -75 dBm; clamped to the floor (-79 dBm on the uplink) — no reachable roaming
-          neighbour, fix placement
+          floor -75 dBm; clamped to the floor (-79 dBm on the uplink) — by this model no neighbour
+          is in reach; verify with clients before moving an access point
         AP-4: no reading of neighbour AP-3 (not sighted)
         Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN; apply
           those first and re-run; the threshold follows the effective power
@@ -138,8 +138,10 @@
     radio has not demonstrated power above 20 dBm on this channel
 
   Recommendations:
-    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
-                               the demonstrated power is unverified
+    ✗ Transmit Power           set to Custom, 23 dBm (EIRP 26 dBm; raise by 3 dB from 20 dBm) —
+                               headroom above the demonstrated power is unverified: the access point
+                               may hold it at the channel's regulatory limit; re-run to see the
+                               power it runs
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
@@ -163,8 +165,9 @@
     beacons systematically off [AP-3]
 
   Recommendations:
-    ✗ Transmit Power           10 dBm (raise by 4 dB from 6 dBm) — headroom above the demonstrated
-                               power is unverified
+    ✗ Transmit Power           10 dBm (EIRP 14 dBm; raise by 4 dB from 6 dBm) — headroom above the
+                               demonstrated power is unverified: the access point may hold it at the
+                               channel's regulatory limit; re-run to see the power it runs
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -70 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
@@ -179,8 +182,8 @@
   AP-1                      -71 dBm n=3 offset +3 dB *
   AP-3                      -68 dBm n=3 offset +6 dB *
 
-  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective
-    maximum 18 dBm): add an access point or accept [AP-1, AP-3]
+  * the weakest reading (AP-1) is 4 dB below the cell edge at the effective maximum 18 dBm;
+    modelled: verify with clients, then add an access point or accept [AP-1, AP-3]
   · AP-2 and AP-3 disagree by 6 dB after the power difference; one receiver reads the other's
     beacons systematically off [AP-3]
 
@@ -204,8 +207,9 @@
   AP-4                      -76 dBm ~ °
 
   Recommendations:
-    ✗ Transmit Power           17 dBm (raise by 6 dB from 11 dBm) — headroom above the demonstrated
-                               power is unverified
+    ✗ Transmit Power           17 dBm (EIRP 20 dBm; raise by 6 dB from 11 dBm) — headroom above the
+                               demonstrated power is unverified: the access point may hold it at the
+                               channel's regulatory limit; re-run to see the power it runs
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -75 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
@@ -219,8 +223,8 @@
   AP-2                      -69 dBm n=3 offset -6 dB
   AP-4                      — (not sighted)
 
-  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an
-    access point [AP-4]
+  * at the effective maximum 23 dBm and unsighted by AP-4 both ways: no reading supports a hand-off;
+    verify with clients, then reposition or add an access point [AP-4]
 
   Recommendations:
     - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
@@ -240,12 +244,13 @@
   Neighbour AP:             RSSI @ neighbour:
   AP-3                      -77 dBm n=3 °
 
-  * the scan saw nothing on this band; restart the radio or the access point before trusting any
-    conclusion
+  * the scan saw nothing on this band, so its readings of its neighbours and its channel evidence
+    are missing; restart the radio or the access point to restore it [AP-3]
 
   Recommendations:
-    ✗ Transmit Power           17 dBm (raise by 7 dB from 10 dBm) — headroom above the demonstrated
-                               power is unverified
+    ✗ Transmit Power           17 dBm (EIRP 21 dBm; raise by 7 dB from 10 dBm) — headroom above the
+                               demonstrated power is unverified: the access point may hold it at the
+                               channel's regulatory limit; re-run to see the power it runs
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -74 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
@@ -257,8 +262,8 @@
   Neighbour AP:             RSSI @ neighbour:
   AP-3                      — (not sighted)
 
-  * at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an
-    access point [AP-3]
+  * at the effective maximum 18 dBm and unsighted by AP-3 both ways: no reading supports a hand-off;
+    verify with clients, then reposition or add an access point [AP-3]
 
   Recommendations:
     - Transmit Power           18 dBm, no change: at the effective maximum, neighbour unsighted

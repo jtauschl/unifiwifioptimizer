@@ -326,7 +326,7 @@
                 {
                   "band": "5g",
                   "code": "coverage_gap",
-                  "message": "hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept",
+                  "message": "the weakest reading (AP-1) is 4 dB below the cell edge at the effective maximum 18 dBm; modelled: verify with clients, then add an access point or accept",
                   "peers": [
                     "AP-1",
                     "AP-3"
@@ -543,7 +543,7 @@
                 {
                   "band": "5g",
                   "code": "coverage_gap",
-                  "message": "at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point",
+                  "message": "at the effective maximum 23 dBm and unsighted by AP-4 both ways: no reading supports a hand-off; verify with clients, then reposition or add an access point",
                   "peers": [
                     "AP-4"
                   ],
@@ -657,8 +657,10 @@
                 {
                   "band": "2g",
                   "code": "radio_restart_suggested",
-                  "message": "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion",
-                  "peers": [],
+                  "message": "the scan saw nothing on this band, so its readings of its neighbours and its channel evidence are missing; restart the radio or the access point to restore it",
+                  "peers": [
+                    "AP-3"
+                  ],
                   "severity": "warning",
                   "subject": "AP-4"
                 }
@@ -745,7 +747,7 @@
                 {
                   "band": "5g",
                   "code": "coverage_gap",
-                  "message": "at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point",
+                  "message": "at the effective maximum 18 dBm and unsighted by AP-3 both ways: no reading supports a hand-off; verify with clients, then reposition or add an access point",
                   "peers": [
                     "AP-3"
                   ],
@@ -1544,7 +1546,7 @@
           {
             "band": "5g",
             "code": "coverage_gap",
-            "message": "hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective maximum 18 dBm): add an access point or accept",
+            "message": "the weakest reading (AP-1) is 4 dB below the cell edge at the effective maximum 18 dBm; modelled: verify with clients, then add an access point or accept",
             "peers": [
               "AP-1",
               "AP-3"
@@ -1565,7 +1567,7 @@
           {
             "band": "5g",
             "code": "coverage_gap",
-            "message": "at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an access point",
+            "message": "at the effective maximum 23 dBm and unsighted by AP-4 both ways: no reading supports a hand-off; verify with clients, then reposition or add an access point",
             "peers": [
               "AP-4"
             ],
@@ -1575,15 +1577,17 @@
           {
             "band": "2g",
             "code": "radio_restart_suggested",
-            "message": "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion",
-            "peers": [],
+            "message": "the scan saw nothing on this band, so its readings of its neighbours and its channel evidence are missing; restart the radio or the access point to restore it",
+            "peers": [
+              "AP-3"
+            ],
             "severity": "warning",
             "subject": "AP-4"
           },
           {
             "band": "5g",
             "code": "coverage_gap",
-            "message": "at the effective maximum 18 dBm and still unsighted by AP-3: structural, reposition or add an access point",
+            "message": "at the effective maximum 18 dBm and unsighted by AP-3 both ways: no reading supports a hand-off; verify with clients, then reposition or add an access point",
             "peers": [
               "AP-3"
             ],

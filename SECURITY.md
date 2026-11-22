@@ -23,10 +23,10 @@ Expect an acknowledgment within 5 business days.
 
 ## What the tool does
 
-`unifiwifioptimizer` is a read-only diagnostic tool. It:
+`unifiwifioptimizer` is a diagnostic tool that changes no setting on the controller or on an access point. It:
 
 - Reads configuration, device and (optionally) client data from the UniFi Network API with `GET` requests only.
-- Runs `ssh` to the managed access points and executes one scan script there to collect neighbour RSSI.
+- Runs `ssh` to the managed access points and executes one scan script there to collect neighbour RSSI; the scan takes each radio off-channel briefly, so clients on it lose service for that time.
 - **Never writes** to the UniFi controller. The one change it can make on an access point is bringing a scan
   interface up and down around a scan, and only when you set `scan_interface_toggle: true` for that site; the
   script puts back the interface state it found.

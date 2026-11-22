@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "unifiwifioptimizer"
 dynamic = ["version"]
-description = "Read-only RF-tuning and WLAN-baseline recommendations for UniFi access points"
+description = "RF-tuning and WLAN-baseline recommendations for UniFi access points; changes no setting, a scan briefly takes radios off-channel"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

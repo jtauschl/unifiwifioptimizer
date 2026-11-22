@@ -54,6 +54,8 @@ class StderrProgress:
     def site_started(self, site_id: str, scanning: bool) -> None:
         what = "reading and scanning" if scanning else "reading"
         self._say(f"  {what} site {safe_text(site_id)}...")
+        if scanning:
+            self._say("  a scan takes each radio off-channel briefly; clients on it lose service for that time")
 
     def scan_started(self, ap_name: str, pass_index: int, passes: int) -> None:
         self._active += 1

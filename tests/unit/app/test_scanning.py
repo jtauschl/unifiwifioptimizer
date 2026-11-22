@@ -304,3 +304,10 @@ def test_a_site_without_ssh_cannot_be_scanned() -> None:
     cfg = loaded({"neighbors": {"AP-1": [], "AP-2": []}})
     with pytest.raises(ConfigError, match=r"sites\.default\.ssh: neighbour scans need an ssh section"):
         build_targets(snapshot(), cfg.config.sites["default"], cfg)
+
+
+@pytest.mark.parametrize("toggle", [True, False])
+def test_every_ap_scan_records_the_toggle_the_scan_ran_with(toggle: bool) -> None:
+    cfg = loaded({"ssh": {"scan_interface_toggle": toggle}, "neighbors": NEIGHBOURS})
+    result = scan(ScanOrchestrator(FakeScanner(), lambda _: None), cfg)
+    assert result.scans and {s.interface_toggle for s in result.scans} == {toggle}

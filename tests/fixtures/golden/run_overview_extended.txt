@@ -87,8 +87,10 @@
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            44 (auto); plan unavailable
-    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm (EIRP
+                                         26 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -78 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -99,8 +101,10 @@
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            1; plan unavailable
-    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm (EIRP
+                                         14 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -70 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -118,8 +122,10 @@
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            6; plan unavailable
-    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm
+                                         (EIRP 20 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -75 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -137,8 +143,10 @@
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            11; plan unavailable
-    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm
+                                         (EIRP 21 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -74 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -151,8 +159,8 @@
 
   Notes:
     * 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients.
-    * AP-4 2.4 GHz: the scan saw nothing on this band; restart the radio or the access point before
-      trusting any conclusion
+    * AP-4 2.4 GHz: the scan saw nothing on this band, so its readings of its neighbours and its
+      channel evidence are missing; restart the radio or the access point to restore it [AP-3]
 
   Data quality:
     Scan: 4 APs, 12/12 passes successful.

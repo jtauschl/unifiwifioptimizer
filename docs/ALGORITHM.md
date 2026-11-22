@@ -37,8 +37,12 @@ merges the attempts by the strongest reading per BSSID; the passes are then aggr
 of the readings taken on the peer's **current primary frequency**: a reading on another
 channel predates a channel move and is not comparable, and a maximum over 2–4 noisy samples is biased
 1–3 dB high while the median is unbiased. 6 GHz radios are detected and reported, not evaluated.
-On a U6 Lite (UAL6) with firmware 6.7.57 the controller's quick scan, seen nightly at 03:00 local, can leave the 5 GHz
-scan empty, and restarting the access point restored it in the measured cases; the empty-band finding names that cause for this model and firmware only.
+On a U6 Lite (UAL6) with firmware 6.7.31, 6.7.57 or 6.7.58 the controller's quick scan, seen nightly at 03:00 controller
+time, can leave the 5 GHz scan empty, and restarting the access point restored it in the measured cases; the empty-band
+finding names that cause for this model and these firmwares only. A band without a usable own scan (empty, failed,
+interface down) removes the radio's own readings of its neighbours, its foreign-network evidence and its part in a
+channel plan. A neighbour's cell for this radio that the neighbour measured stands; one the neighbour missed loses its
+reciprocity substitute and is held as not evaluated. A verdict that rests on a neighbour's measurement of the radio stands.
 
 ## 3. Neighbour Evaluation
 
@@ -94,7 +98,7 @@ carries the evidence behind it, strongest first:
    its reported or model level stands.
 
 An increase above the demonstrated power is marked as unverified headroom, whether the ceiling is reported or only
-the model maximum: the raise is a trial, and the report says which basis the ceiling has. The structural `coverage_gap` finding is only
+the model maximum: the raise is a trial, and the report says which basis the ceiling has. The `coverage_gap` finding is only
 claimed at a demonstrated or reported maximum; a radio whose maximum rests on the model maximum alone is not at its maximum below it.
 
 ### Corridor test and decision table
@@ -110,11 +114,11 @@ is the first matching row:
 | 1–3 | scan skipped; AP offline; radio in its DFS channel-availability check | nothing judged (the DFS case says how long to wait: 60 s, 600 s on channels 120–128) |
 | 4 | effective power, minimum or maximum missing, or the effective power outside the radio's own range | not evaluable, no defaults |
 | 5 | no configured neighbour on the band | nothing |
-| 6 | a neighbour missed in **both** directions with working scans | below the maximum: raise to the maximum; at the maximum: coverage gap, structural |
+| 6 | a neighbour missed in **both** directions with working scans | below the maximum: raise to the maximum; at the maximum: coverage gap (no reading supports a hand-off; verify with clients) |
 | 7 | no evaluable neighbour at all | not evaluable; every neighbour named with its reason |
 | 8 | weakest inside the corridor, every neighbour evaluable | confirmed |
 | 9 | weakest inside the corridor, a neighbour unevaluated | no change, not fully evaluated |
-| 10 | corridor out of reach upwards, radio at its effective maximum | **coverage gap**: hand-off happens below the edge, add an access point or accept |
+| 10 | corridor out of reach upwards, radio at its effective maximum | **coverage gap**: the weakest reading is below the edge (a modelled shortfall, not a client measurement): verify with clients, then add an access point or accept |
 | 11 | corridor out of reach upwards, radio below its maximum | raise to the maximum; a neighbour still below the corridor after the raise (`*`) is a coverage gap too |
 | 12 | weakest still above the corridor at the radio minimum | **too strong at the minimum**: reposition, disable the band on a middle AP, or accept; the reduction to the minimum is still recommended |
 | 13 | otherwise | the clamped shift |
@@ -135,8 +139,8 @@ gets a reduction.
 
 The maximum is recommended only after a miss in **both** directions with scans that demonstrably worked
 (the peer saw other networks). A one-way miss is substituted by reciprocity; a miss with a failed, empty
-or down scan is not evaluable. A radio already at its maximum and still unsighted is a structural finding:
-reposition or add an access point, never "raise" again on every run.
+or down scan is not evaluable. A radio already at its maximum and still unsighted is a coverage gap by the readings (no reading supports a hand-off):
+verify with clients, then reposition or add an access point, never "raise" again on every run.
 
 ### Per-neighbour markers
 

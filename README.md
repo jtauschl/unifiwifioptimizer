@@ -13,7 +13,7 @@ It reads radio configuration and WLAN settings from the UniFi Network API, compa
 - access point settings: `Transmit Power`, `Minimum RSSI`
 - channel plan checks: overlap, co-channel contention, reuse feasibility
 
-The tool **never writes** to the controller or to an access point. You apply every recommendation yourself in UniFi Network.
+The tool **never changes a setting** on the controller or on an access point; you apply every recommendation yourself in UniFi Network. A scan takes each radio off-channel briefly, so clients on it lose service for that time, and with `scan_interface_toggle` it raises and lowers the scan interface of a radio.
 
 The shipped profiles are recommendations with an evidence tier per setting (standard, vendor, practice) for everyday WLANs, WLANs for older or stationary clients, 2.4 GHz-only IoT WLANs and public hotspots; see [docs/PROFILES.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/PROFILES.md).
 
@@ -42,7 +42,7 @@ Models in the same UniFi firmware family share the same kernel and driver archit
 - **U6 family** (firmware 6.x, MediaTek): U6 Lite, U6-LR, U6+, UAP-nanoHD, IW-HD, FlexHD, BeaconHD
 - **U7 family** (firmware 8.x, Qualcomm): U7 Lite, U7 Outdoor, U7 In-Wall, U7 Pro, U7 Pro Wall, U7 Pro Max, U7 Pro Outdoor, U7 Pro XG, U7 Pro XG-Wall, U7 Pro XGS, E7, E7-Campus, E7-Audience
 
-On a U6 Lite with firmware 6.7.57 the controller's quick scan (seen nightly at 03:00 local) can leave the 5 GHz neighbour scan empty, and restarting the access point restored it in the measured cases; the report names it when that scan is empty. An off-channel scan interrupts service on the scanning access point for the duration of the scan. Radios on 6 GHz are recognised as their own band and reported as not evaluated; U7 Pro, E7, and other models with a 6 GHz radio are analyzed on 2.4 GHz and 5 GHz.
+On a U6 Lite with firmware 6.7.31, 6.7.57 or 6.7.58 the controller's quick scan (seen nightly at 03:00 controller time) can leave the 5 GHz neighbour scan empty, and restarting the access point restored it in the measured cases; the report names it when that scan is empty. An off-channel scan interrupts service on the scanning access point for the duration of the scan. Radios on 6 GHz are recognised as their own band and reported as not evaluated; U7 Pro, E7, and other models with a 6 GHz radio are analyzed on 2.4 GHz and 5 GHz.
 
 ## Install
 

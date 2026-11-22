@@ -27,6 +27,9 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - A band without a power recommendation says what it lacks (no scan, DFS check, power values, neighbour); the Minimum RSSI row shows the controller's own state.
 - The Handoff Suggestions row names why no threshold was derived; a WLAN that only one access point broadcasts is not applicable.
 - The JSON names the scan state (`scan.state`: `scanned`, `skipped`, `not_configured`), the outcome `no_evaluable_neighbour` and each band's `min_rssi` state.
+- An empty band scan names what it removes and the neighbours leaning on an estimate; the U6 Lite quick-scan note covers firmware 6.7.31, 6.7.57, 6.7.58.
+- A coverage gap reads as a modelled shortfall to verify with clients; a power target shows its EIRP, and an absent channel reads `unavailable`.
+- The tool states that it changes no setting; a scan takes a radio off-channel briefly, and `run` says so when it starts a scan.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
 - The effective maximum of a radio names its basis: demonstrated, reported by the access point's channel limits, or the model maximum with a reason.

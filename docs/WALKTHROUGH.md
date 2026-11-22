@@ -295,8 +295,10 @@ The default output lists the WLANs and the access points the way the controller 
   5 GHz
     · Channel Width                      80 MHz
     · Channel                            44 (auto)
-    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm (EIRP
+                                         26 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -78 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -307,8 +309,10 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            1
-    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm (EIRP
+                                         14 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -70 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -326,8 +330,10 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            6
-    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 11 dBm (effective 11 dBm, EIRP 14 dBm) → 17 dBm
+                                         (EIRP 20 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -75 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -345,8 +351,10 @@ The default output lists the WLANs and the access points the way the controller 
   2.4 GHz
     · Channel Width                      20 MHz
     · Channel                            11
-    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm —
-                                         headroom above the demonstrated power is unverified
+    ✗ Transmit Power                     Custom, 10 dBm (effective 10 dBm, EIRP 14 dBm) → 17 dBm
+                                         (EIRP 21 dBm) — headroom above the demonstrated power is
+                                         unverified: the access point may hold it at the channel's
+                                         regulatory limit; re-run to see the power it runs
     · Minimum RSSI                       disabled (if enabled: -74 dBm on the uplink)
         provisional: re-run after the transmit-power changes are applied
 
@@ -359,8 +367,8 @@ The default output lists the WLANs and the access points the way the controller 
 
   Notes:
     * 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients.
-    * AP-4 2.4 GHz: the scan saw nothing on this band; restart the radio or the access point before
-      trusting any conclusion
+    * AP-4 2.4 GHz: the scan saw nothing on this band, so its readings of its neighbours and its
+      channel evidence are missing; restart the radio or the access point to restore it [AP-3]
 
   Data quality:
     Scan: 4 APs, 12/12 passes successful.
@@ -408,8 +416,10 @@ The report is built per access point and band. The first access point shows the 
     radio has not demonstrated power above 20 dBm on this channel
 
   Recommendations:
-    ✗ Transmit Power           set to Custom, 23 dBm (raise by 3 dB from 20 dBm) — headroom above
-                               the demonstrated power is unverified
+    ✗ Transmit Power           set to Custom, 23 dBm (EIRP 26 dBm; raise by 3 dB from 20 dBm) —
+                               headroom above the demonstrated power is unverified: the access point
+                               may hold it at the channel's regulatory limit; re-run to see the
+                               power it runs
         → AP settings → Radios → Transmit Power (2.4/5 GHz) -- set to Custom, then the dBm field
     · Minimum RSSI             disabled (if enabled: -78 dBm on the uplink)
 ```
@@ -426,27 +436,27 @@ Two situations deserve a closer look. A pair that is below the cell edge even at
   5 GHz  (channel 60, DFS (CAC 60 s), width 80 MHz, TX 18 dBm (configured 24 dBm, regulatory cap);
          max 18 dBm)
 […]
-  * hand-off between AP-2 and AP-1, AP-3 happens below the cell edge (4 dB short at the effective
-    maximum 18 dBm): add an access point or accept [AP-1, AP-3]
+  * the weakest reading (AP-1) is 4 dB below the cell edge at the effective maximum 18 dBm;
+    modelled: verify with clients, then add an access point or accept [AP-1, AP-3]
 ```
 
 A neighbour that is not heard at all, in either direction, at the maximum power is a placement question:
 
 <!-- source: golden -->
 ```text
-  * at the effective maximum 23 dBm and still unsighted by AP-4: structural, reposition or add an
-    access point [AP-4]
+  * at the effective maximum 23 dBm and unsighted by AP-4 both ways: no reading supports a hand-off;
+    verify with clients, then reposition or add an access point [AP-4]
 
   Recommendations:
     - Transmit Power           23 dBm, no change: at the effective maximum, neighbour unsighted
 ```
 
-A band whose scan comes back empty is reported as such, and its recommendations wait for a re-run after a restart:
+A band whose scan comes back empty is reported as such. What is missing is that radio's own readings of its neighbours and its channel evidence; a power verdict that rests on a neighbour's measurement of it stands:
 
 <!-- source: golden -->
 ```text
-  * the scan saw nothing on this band; restart the radio or the access point before trusting any
-    conclusion
+  * the scan saw nothing on this band, so its readings of its neighbours and its channel evidence
+    are missing; restart the radio or the access point to restore it [AP-3]
 ```
 
 The end of the report summarises the site:
@@ -469,6 +479,6 @@ A partial result ends with exit code 6; the [README](../README.md#exit-codes) li
 ## 7. Apply and Re-Run
 
 1. Fix the WLAN deviations first: they are quick and independent of the RF settings. A WLAN you do not want checked belongs out of `wlans:`, not in the controller's settings.
-2. Change the transmit power as recommended, except on a band the report marks as empty: restart that radio or access point and re-run first. The Roaming Assistant threshold and the Minimum RSSI follow the effective power, so apply the power changes first and re-run before you touch them.
+2. Change the transmit power as recommended. On a band the report marks as empty, restart that radio or access point and re-run to restore its own readings; a neighbour's measurement of it still carries the recommendation. The Roaming Assistant threshold and the Minimum RSSI follow the effective power, so apply the power changes first and re-run before you touch them.
 3. Re-run `unifiwifioptimizer run` and repeat until the recommendations stop changing.
 4. Re-test with real clients. The report works from controller configuration and access-point-to-access-point readings; it cannot see non-WiFi interference or what a client experiences.

@@ -608,20 +608,25 @@ def _empty_band_text(model: str | None, firmware: str | None, band: Band) -> str
             ]
         },
     )
-    (finding,) = _band_scan_findings(ap, band, scan, True, [])
+    (finding,) = _band_scan_findings(ap, band, scan, True, [], [])
     assert finding.code == "radio_restart_suggested"
     return finding.message
 
 
 GENERIC_EMPTY = (
-    "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion"
+    "the scan saw nothing on this band, so its readings of its neighbours and its channel evidence are missing; "
+    "restart the radio or the access point to restore it"
 )
 
 
-@pytest.mark.parametrize("firmware", ["6.7.57.15670", "6.7.57"])
+@pytest.mark.parametrize("firmware", ["6.7.31.15618", "6.7.57.15670", "6.7.57", "6.7.58.15850"])
 def test_a_u6_lite_on_the_measured_firmware_names_the_quick_scan_on_5_ghz(firmware: str) -> None:
     text = _empty_band_text("UAL6", firmware, Band.GHZ_5)
-    assert text.startswith("the scan saw nothing on this band; ") and "quick scan" in text and "03:00 local" in text
+    assert (
+        text.startswith("the scan saw nothing on this band; ")
+        and "quick scan" in text
+        and "03:00 controller time" in text
+    )
     assert "restarting the access point restored it in the measured cases" in text
 
 
@@ -629,7 +634,8 @@ def test_a_u6_lite_on_the_measured_firmware_names_the_quick_scan_on_5_ghz(firmwa
     ("model", "firmware", "band"),
     [
         ("UAL6", "6.7.57.15670", Band.GHZ_2),
-        ("UAL6", "6.7.58.1", Band.GHZ_5),
+        ("UAL6", "6.7.59.1", Band.GHZ_5),
+        ("UAL6", "6.7.30.1", Band.GHZ_5),
         ("UAL6", "6.7.570.1", Band.GHZ_5),
         ("UAL6", None, Band.GHZ_5),
         (None, "6.7.57.15670", Band.GHZ_5),
@@ -694,9 +700,19 @@ def test_the_interface_down_finding_names_the_toggle_the_scan_ran_with() -> None
         ]
         return messages[0]
 
+    lost = ", so its readings of its neighbours and its channel evidence are missing"
     assert message(False) == (
-        "the scan interface is down and `scan_interface_toggle` is off; enable it to let the scan bring it up"
+        "the scan interface is down and `scan_interface_toggle` is off; enable it to let the scan bring it up" + lost
     )
     assert message(True) == (
-        "the scan interface is down and could not be brought up (not a managed interface, or ifconfig up failed)"
+        "the scan interface is down and could not be brought up (not a managed interface, or ifconfig up failed)" + lost
     )
+
+
+def test_a_minimum_rssi_enabled_without_a_value_says_the_controller_sent_none() -> None:
+    inp = golden_input()
+    enabled = with_radio(ap_named(inp.snapshot, "AP-2"), Band.GHZ_2, min_rssi_enabled=True, min_rssi_dbm=None)
+    report = analyze_site(replace(inp, snapshot=with_ap(inp.snapshot, enabled)))
+    (rec,) = [r for r in band_of(report, "AP-2", Band.GHZ_2).recommendations if r.setting == "min_rssi"]
+    assert rec.kind is RecommendationKind.CHANGE and rec.current is None
+    assert rec.reason == "enabled, but the controller sent no value"

@@ -65,7 +65,10 @@ Handler = Callable[[argparse.Namespace], ExitCode]
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROG,
-        description="Read-only RF-tuning and WLAN-baseline recommendations for UniFi access points.",
+        description=(
+            "RF-tuning and WLAN-baseline recommendations for UniFi access points. It changes no setting on the "
+            "controller or an access point; a scan briefly takes each radio off-channel."
+        ),
     )
     parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     parser.add_argument(

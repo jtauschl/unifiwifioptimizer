@@ -258,8 +258,8 @@ def analyse_band_tx(
                 "coverage_gap",
                 ap,
                 band,
-                f"at {_at_maximum(cap)} and still unsighted by {', '.join(names)}: structural, "
-                "reposition or add an access point",
+                f"at {_at_maximum(cap)} and unsighted by {', '.join(names)} both ways: no reading supports a hand-off; "
+                "verify with clients, then reposition or add an access point",
                 names,
             )
             held = _recommendation(
@@ -305,15 +305,15 @@ def analyse_band_tx(
     if plan.uncapped > eff_max:
         short = corridor.low - (weakest + (eff_max - current))
         if at_max:
-            below = [c.peer for c in cells if c.rssi_dbm is not None and c.rssi_dbm < corridor.low]
+            below = sorted((c.rssi_dbm, c.peer) for c in cells if c.rssi_dbm is not None and c.rssi_dbm < corridor.low)
             warning = _finding(
                 Severity.WARNING,
                 "coverage_gap",
                 ap,
                 band,
-                f"hand-off between {ap.name} and {', '.join(below)} happens below {band_floor_wording(band)} "
-                f"({short} dB short at {_at_maximum(cap)}): add an access point or accept",
-                below,
+                f"the weakest reading ({below[0][1]}) is {short} dB below {band_floor_wording(band)} at "
+                f"{_at_maximum(cap)}; modelled: verify with clients, then add an access point or accept",
+                [peer for _, peer in below],
             )
             held = _recommendation(
                 ap, band, summary, current, current, RecommendationKind.HELD, "at the effective maximum"

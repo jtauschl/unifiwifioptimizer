@@ -101,7 +101,10 @@ def run(
     skipped: bool = False,
     table: PhyChannelPower | MaxReason = NO_TABLE,
 ) -> BandTxResult:
-    return analyse_band_tx(ap, band, cells, corridor, skipped, table)
+    result = analyse_band_tx(ap, band, cells, corridor, skipped, table)
+    # Which rows state a recommendation is a fact of the outcome the report reads (`carries_recommendation`).
+    assert (result.recommendation is not None) is result.outcome.carries_recommendation, result.outcome
+    return result
 
 
 def summary_of(ap: AccessPoint, band: Band = Band.GHZ_5, table: PhyChannelPower | MaxReason = NO_TABLE) -> TxSummary:
@@ -472,7 +475,7 @@ def test_row_10_at_a_verified_cap_the_gap_is_a_design_finding_with_the_shortfall
     assert (
         gap.code == "coverage_gap"
         and gap.peers == ("AP-3",)
-        and "9 dB short" in gap.message
+        and "9 dB below the cell edge" in gap.message
         and "cell edge" in gap.message
     )
     assert result.markers == {"AP-3": NeighbourMarker.BELOW_UNFIXABLE}

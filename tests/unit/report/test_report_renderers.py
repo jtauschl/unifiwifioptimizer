@@ -443,7 +443,7 @@ def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
         r for r in report.recommendations if r.subject == "AP-3" and r.band is Band.GHZ_5 and r.setting == "tx_power"
     )
     assert rec.kind is RecommendationKind.CHANGE and rec.recommended == 23
-    assert f"✗ {'Transmit Power':<24} 23 dBm (raise by 8 dB from 15 dBm)" in render_report(report)
+    assert f"✗ {'Transmit Power':<24} 23 dBm (EIRP 26 dBm; raise by 8 dB from 15 dBm)" in render_report(report)
 
 
 def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
@@ -454,7 +454,7 @@ def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
     assert rec.kind is RecommendationKind.HELD and rec.is_change is False
     text = render_report(REPORT)
     assert f"- {'Transmit Power':<24} 23 dBm, no change: at the effective maximum, neighbour unsighted" in text
-    assert "structural" in text
+    assert "no reading supports a hand-off" in text
 
 
 def test_site_level_findings_offline_unparsable_and_failed_scans_carry_their_names() -> None:
@@ -525,7 +525,7 @@ def test_long_lines_fold_at_the_width_with_a_hanging_indent_and_whole_lines_on_r
     cap = next(i for i, line in enumerate(folded) if line.startswith("        AP-") and "weakest neighbour" in line)
     assert folded[cap].startswith("        AP-")
     assert folded[cap + 1].startswith("          ") and not folded[cap + 1].startswith("           ")
-    finding = next(i for i, line in enumerate(folded) if line.startswith("  * hand-off"))
+    finding = next(i for i, line in enumerate(folded) if line.startswith("  * the weakest reading"))
     assert folded[finding + 1].startswith("    ") and not folded[finding + 1].startswith("     ")
     # No word is ever broken, and both renderings carry the same words.
     assert " ".join(" ".join(folded).split()) == " ".join(" ".join(whole).split())
@@ -533,7 +533,9 @@ def test_long_lines_fold_at_the_width_with_a_hanging_indent_and_whole_lines_on_r
     rec = next(i for i, line in enumerate(folded) if "✗ Transmit Power" in line and "headroom" in line)
     column = folded[rec].index("set to Custom") if "set to Custom" in folded[rec] else folded[rec].index(" dBm") - 2
     assert folded[rec + 1].startswith(" " * column) and not folded[rec + 1].startswith(" " * (column + 1))
-    assert folded[rec + 1].lstrip().startswith(("the demonstrated", "power is", "— headroom", "headroom"))
+    assert (
+        folded[rec + 1].lstrip().startswith(("the demonstrated", "demonstrated", "power is", "— headroom", "headroom"))
+    )
 
 
 def test_controller_field_problems_stay_one_per_line_after_folding() -> None:
@@ -699,7 +701,7 @@ def test_the_transmit_power_row_shows_the_set_value_first_and_the_effective_powe
         in _ap_rows(text, "AP-1", "2.4 GHz")[2]
     )
     assert _ap_rows(text, "AP-2", "2.4 GHz")[2].startswith(
-        "    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm — headroom"
+        "    ✗ Transmit Power                     Custom, 6 dBm (effective 6 dBm, EIRP 10 dBm) → 10 dBm (EIRP 14 dBm) —"
     )
     assert _ap_rows(text, "AP-1", "5 GHz")[2].startswith(
         "    ✗ Transmit Power                     Auto (effective 20 dBm, EIRP 23 dBm) → Custom, 23 dBm"

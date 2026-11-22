@@ -27,6 +27,7 @@ def test_stderr_progress_sanitises_names_and_names_the_failure_kind() -> None:
     safe = "AP-" + chr(0xFFFD) + "1"
     assert text.splitlines() == [
         "  reading and scanning site site...",
+        "  a scan takes each radio off-channel briefly; clients on it lose service for that time",
         f"    {safe}: scan failed (timeout, pass 1/3)",
         f"    {safe}: scan failed (authentication, pass 2/3)",
         "  analysing site site...",

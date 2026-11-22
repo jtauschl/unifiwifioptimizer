@@ -6,7 +6,7 @@ and no bands; the scan-status findings per band and the reasons a report is part
 """
 
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from unifiwifioptimizer.analysis.airtime import airtime_of
@@ -194,26 +194,32 @@ def _rows(cells: tuple[PeerReading, ...], markers: Mapping[str, NeighbourMarker]
     )
 
 
-# Measured on U6 Lite (UAL6) firmware 6.7.57: the controller's quick scan, seen nightly at 03:00 local, leaves the
-# 5 GHz client-interface scan empty, and a restart restored it (docs/ALGORITHM.md §2).
+# Measured on U6 Lite (UAL6) firmware 6.7.31, 6.7.57 and 6.7.58: the controller's quick scan, seen nightly at 03:00
+# controller time, leaves the 5 GHz client-interface scan empty, and a restart restored it (docs/ALGORITHM.md §2).
 QUICK_SCAN_MODEL = "UAL6"
-QUICK_SCAN_FIRMWARE = ["6", "7", "57"]
+QUICK_SCAN_FIRMWARES = (["6", "7", "31"], ["6", "7", "57"], ["6", "7", "58"])
+# What a band without a usable own scan takes away: this radio's readings of its neighbours (a neighbour's cell for
+# this radio that the neighbour missed loses its reciprocity substitute) and its channel evidence. A verdict that rests
+# on a neighbour's measurement of this radio stands.
+EMPTY_SCAN_LOSS = "its readings of its neighbours and its channel evidence are missing"
 
 
 def _empty_band_message(ap: AccessPoint, band: Band) -> str:
-    generic = "the scan saw nothing on this band; restart the radio or the access point before trusting any conclusion"
     if (
         band is Band.GHZ_5
         and ap.model == QUICK_SCAN_MODEL
         and ap.firmware is not None
-        and ap.firmware.split(".")[:3] == QUICK_SCAN_FIRMWARE
+        and ap.firmware.split(".")[:3] in QUICK_SCAN_FIRMWARES
     ):
         return (
             "the scan saw nothing on this band; on this model with this firmware the controller's quick scan "
-            "(seen nightly at 03:00 local) can leave the 5 GHz scan empty, and restarting the access point restored "
-            "it in the measured cases: restart it and scan before the next quick scan before trusting any conclusion"
+            "(seen nightly at 03:00 controller time) can leave the 5 GHz scan empty, and restarting the access point "
+            f"restored it in the measured cases; until then {EMPTY_SCAN_LOSS}: restart it and scan before the next "
+            "quick scan"
         )
-    return generic
+    return (
+        f"the scan saw nothing on this band, so {EMPTY_SCAN_LOSS}; restart the radio or the access point to restore it"
+    )
 
 
 def _interface_down_message(toggle_was_on: bool) -> str:
@@ -223,8 +229,9 @@ def _interface_down_message(toggle_was_on: bool) -> str:
 
 
 def _band_scan_findings(
-    ap: AccessPoint, band: Band, scan: SiteScan | None, configured: bool, partial: list[PartialReason]
-) -> tuple[Finding, ...]:
+    ap: AccessPoint, band: Band, scan: SiteScan | None, configured: bool, partial: list[PartialReason],
+    peers: Sequence[str],
+) -> tuple[Finding, ...]:  # fmt: skip
     """What the access point's own scan said about this band."""
     if scan is None or not configured or ap.offline:
         return ()
@@ -234,32 +241,20 @@ def _band_scan_findings(
     usage = reduce_band_passes(ap_scan, band)
     if usage.status is BandScanStatus.EMPTY:
         partial.append(PartialReason.BAND_EMPTY)
-        return (_finding(Severity.WARNING, "radio_restart_suggested", ap.name, _empty_band_message(ap, band), band),)
+        message = _empty_band_message(ap, band)
+        return (_finding(Severity.WARNING, "radio_restart_suggested", ap.name, message, band, peers),)
     if usage.status is BandScanStatus.FAILED:
         partial.append(PartialReason.BAND_FAILED)
-        return (_finding(Severity.WARNING, "scan_unusable", ap.name, "every scan attempt on this band failed", band),)
+        message = f"every scan attempt on this band failed, so {EMPTY_SCAN_LOSS}"
+        return (_finding(Severity.WARNING, "scan_unusable", ap.name, message, band, peers),)
     if usage.status is BandScanStatus.INTERFACE_DOWN:
         partial.append(PartialReason.INTERFACE_DOWN)
-        return (
-            _finding(
-                Severity.WARNING,
-                "scan_unusable",
-                ap.name,
-                _interface_down_message(ap_scan.interface_toggle),
-                band,
-            ),
-        )
+        message = f"{_interface_down_message(ap_scan.interface_toggle)}, so {EMPTY_SCAN_LOSS}"
+        return (_finding(Severity.WARNING, "scan_unusable", ap.name, message, band, peers),)
     if usage.status is BandScanStatus.NO_RADIO and ap.radio(band) is not None:
         partial.append(PartialReason.BAND_FAILED)
-        return (
-            _finding(
-                Severity.WARNING,
-                "scan_unusable",
-                ap.name,
-                "the access point found no scan interface for this band",
-                band,
-            ),
-        )
+        message = f"the access point found no scan interface for this band, so {EMPTY_SCAN_LOSS}"
+        return (_finding(Severity.WARNING, "scan_unusable", ap.name, message, band, peers),)
     return ()
 
 
@@ -400,7 +395,7 @@ def _band_report(
                 )
             )
     findings.extend(f for f in channels.findings if f.subject == ap.name and f.band is band)
-    findings.extend(_band_scan_findings(ap, band, scan, configured, partial))
+    findings.extend(_band_scan_findings(ap, band, scan, configured, partial, [c.peer for c in cells]))
     clients_report: ClientReport | None = None
     tx_eff = tx.summary.effective_dbm
     judged = tx.outcome not in (BandTxOutcome.OFFLINE, BandTxOutcome.DFS_WAIT, BandTxOutcome.SCAN_SKIPPED)

@@ -14,6 +14,7 @@ from tests.unit.analysis.builders import (
     with_ap,
     with_radio,
     with_stats,
+    without_stats,
 )
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
@@ -235,3 +236,136 @@ def test_a_confirmed_minimum_rssi_below_a_pending_power_change_is_marked_provisi
         f"    ✓ {MIN_RSSI:<34} enabled, -70 dBm\n"
         "        provisional: re-run after the transmit-power changes are applied"
     )
+
+
+def test_an_empty_band_scan_names_what_it_removes_and_the_neighbour_whose_verdict_leans_on_an_estimate() -> None:
+    lines = overview_lines(golden_input())
+    assert (
+        "    * AP-4 2.4 GHz: the scan saw nothing on this band, so its readings of its neighbours and its channel "
+        "evidence are missing; restart the radio or the access point to restore it [AP-3]"
+    ) in lines
+    # AP-4's own power change stands on AP-3's measurement and carries no wait line.
+    assert "provisional" not in band_rows(golden_input(), "AP-4", Band.GHZ_2)[TX]
+
+
+def test_a_radio_that_reports_no_channel_says_so_instead_of_auto() -> None:
+    inp = golden_input()
+    silent = without_stats(ap_named(inp.snapshot, "AP-3"), Band.GHZ_2)
+    inp = replace(inp, snapshot=with_ap(inp.snapshot, silent))
+    lines = overview_lines(inp)
+    section = lines[next(i for i, line in enumerate(lines) if line.startswith("  AP ") and line.split()[1] == "AP-3") :]
+    assert next(line for line in section if line.startswith("    · Channel  ")) == (
+        "    · Channel                            unavailable"
+    )
+    details = render_report(analyze_site(inp), width=None)
+    assert "  2.4 GHz  (channel unavailable, width n/a, TX n/a (configured 11 dBm))" in details
+
+
+def setup_rows(inp: SiteAnalysisInput) -> list[str]:
+    """The `Transmit Power` and `Minimum RSSI` rows of the AP setup view (`--details` with `--extended`)."""
+    lines = render_report(analyze_site(replace(inp, extended=True)), width=None).splitlines()
+    start = next(i for i, line in enumerate(lines) if "AP setup" in line)
+    return [line.strip() for line in lines[start:] if line.strip().startswith((TX, MIN_RSSI))]
+
+
+def offline(inp: SiteAnalysisInput, *names: str) -> SiteAnalysisInput:
+    snapshot = inp.snapshot
+    for name in names:
+        snapshot = with_ap(snapshot, replace(ap_named(snapshot, name), state_code=0))
+    return replace(inp, snapshot=snapshot)
+
+
+def footer(lines: list[str]) -> str:
+    return next(line for line in lines if line.startswith("  No changes recommended"))
+
+
+def test_the_ap_setup_view_states_the_same_missing_preconditions_as_the_overview() -> None:
+    rows = setup_rows(in_dfs_check(golden_input()))
+    dfs = "radio in its DFS channel availability check"
+    assert f"Transmit Power           18 dBm effective, configured 24 dBm (regulatory cap); {dfs}" in rows
+    assert "Minimum RSSI             disabled; radio in its DFS channel availability check" in rows
+    silent = with_changed_radio(
+        without_neighbour_pairs(golden_input()), "AP-2", Band.GHZ_2, min_rssi_enabled=True, min_rssi_dbm=None
+    )
+    rows = setup_rows(silent)
+    assert "Transmit Power           6 dBm effective; no configured neighbour on this band" in rows
+    assert "Minimum RSSI             enabled, value not sent; no configured neighbour on this band" in rows
+
+
+def test_a_scanning_site_that_scanned_nobody_never_ends_in_a_clean_verdict() -> None:
+    nobody = SiteScan(site_id="default", scans=(), unknown_names=())
+    inp = replace(offline(golden_input(), "AP-1", "AP-2", "AP-3", "AP-4"), wlan_profiles={}, scan=nobody)
+    lines = overview_lines(inp)
+    assert "    No access point was scanned (4 offline)." in lines
+    assert footer(lines) == "  No changes recommended in the available data; see Data quality."
+
+
+def test_only_the_configured_access_points_count_as_offline_when_nobody_was_scanned() -> None:
+    nobody = SiteScan(site_id="default", scans=(), unknown_names=())
+    inp = replace(
+        offline(golden_input(), "AP-1", "AP-2", "AP-3", "AP-4"),
+        wlan_profiles={},
+        neighbours={"AP-3": frozenset({"AP-4"})},
+        scan=nobody,
+    )
+    assert "    No access point was scanned (2 offline)." in overview_lines(inp)
+
+
+def test_a_band_row_without_a_recommendation_alone_qualifies_the_verdict() -> None:
+    inp = replace(without_neighbour_pairs(golden_input()), wlan_profiles={})
+    report = analyze_site(inp)
+    scanned = replace(report, scan=replace(report.scan, state=ScanState.SCANNED, scanned=("AP-1",)))
+    text = render_overview(scanned, width=None).splitlines()
+    assert footer(text) == "  No changes recommended in the available data; see Data quality."
+
+
+def test_the_verdict_is_qualified_under_no_scan_and_in_the_details_footer_too() -> None:
+    skipped = replace(golden_input(skip_scan=True), wlan_profiles={})
+    assert footer(overview_lines(skipped)) == "  No changes recommended in the available data; see Data quality."
+    details = render_report(
+        analyze_site(replace(without_neighbour_pairs(golden_input()), wlan_profiles={})), width=None
+    )
+    assert "  No changes recommended in the available data.\n" in details
+
+
+def test_a_site_without_pairs_says_in_its_notes_that_no_pair_is_configured() -> None:
+    lines = overview_lines(replace(without_neighbour_pairs(golden_input()), wlan_profiles={}))
+    assert "    · Neighbour RF was not evaluated: no neighbour pair is configured." in lines
+
+
+def test_a_target_without_a_known_antenna_gain_shows_no_eirp_for_the_target() -> None:
+    inp = with_changed_radio(golden_input(), "AP-2", Band.GHZ_2, antenna_gain_dbi=None)
+    row = band_rows(inp, "AP-2", Band.GHZ_2)[TX]
+    assert "→ 10 dBm — headroom above the demonstrated power is unverified" in row and "EIRP" not in row
+
+
+@pytest.mark.parametrize(
+    ("status", "cause"),
+    [
+        (BandScanStatus.FAILED, "every scan attempt on this band failed"),
+        (BandScanStatus.NO_RADIO, "the access point found no scan interface for this band"),
+    ],
+)
+def test_a_failed_band_scan_names_what_it_removes_and_the_neighbours_like_an_empty_one(
+    status: BandScanStatus, cause: str
+) -> None:
+    inp = golden_input()
+    assert isinstance(inp.scan, SiteScan)
+    broken = tuple(scan_pass(two=band_scan(Band.GHZ_2, (), status)) for _ in range(3))
+    scans = tuple(replace(s, passes=broken) if s.ap_name == "AP-1" else s for s in inp.scan.scans)
+    lines = overview_lines(replace(inp, scan=replace(inp.scan, scans=scans)))
+    assert (
+        f"    * AP-1 2.4 GHz: {cause}, so its readings of its neighbours and its channel evidence are missing [AP-2]"
+    ) in lines
+
+
+def test_a_check_incomplete_for_another_cause_does_not_swallow_the_targets_reasons() -> None:
+    inp = golden_input()
+    wlans = tuple(
+        replace(w, roaming_assistant_na_enabled=None) if w.name == "SSID-1" else w for w in inp.snapshot.wlans
+    )
+    older = replace(inp, snapshot=replace(inp.snapshot, wlans=wlans))
+    overview = "\n".join(overview_lines(older))
+    assert "older API without roaming_assistant_na_*" in overview and "more: --details" not in overview
+    details = render_report(analyze_site(older), width=None)
+    assert "AP-3: no reading of neighbour AP-4 (not sighted)" in details

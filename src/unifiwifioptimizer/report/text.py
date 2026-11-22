@@ -302,8 +302,9 @@ def _wlans(report: SiteReport) -> list[str]:
 def _reasons_in_check(check: CheckResult, summary: WlanRoamingSummary | None) -> int:
     """How many of the target's reasons the check line itself already states: the first, when the check is
     incomplete for that target."""
-    incomplete = summary is not None and summary.status is WlanRoamingStatus.INCOMPLETE
-    return 1 if incomplete and check.status is CheckStatus.INCOMPLETE else 0
+    if summary is None or summary.status is not WlanRoamingStatus.INCOMPLETE or not summary.reasons:
+        return 0
+    return 1 if check.status is CheckStatus.INCOMPLETE and check.detail.endswith(summary.reasons[0]) else 0
 
 
 def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport, shown: int) -> list[str]:
@@ -325,7 +326,7 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport, show
             lines.append(
                 f"        {name(detail.ap)}: {where} would give {detail.raw_cap_dbm} dBm at the client, below the "
                 f"floor {report.rf.roam_floor_dbm} dBm; clamped to the floor ({detail.uplink_dbm} dBm on the "
-                "uplink) — no reachable roaming neighbour, fix placement"
+                "uplink) — by this model no neighbour is in reach; verify with clients before moving an access point"
             )
         else:
             lines.append(
@@ -351,21 +352,46 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport, show
     return lines
 
 
-def _tx_value(rec: Recommendation) -> str:
+UNVERIFIED_HEADROOM = (
+    " — headroom above the demonstrated power is unverified: the access point may hold it at the channel's "
+    "regulatory limit; re-run to see the power it runs"
+)
+
+
+def _target_eirp_dbm(rec: Recommendation, antenna_gain_dbi: int | None) -> int | None:
+    """The EIRP the target implies, the same sum the row shows for the current setting."""
+    return rec.recommended + antenna_gain_dbi if antenna_gain_dbi is not None else None
+
+
+def _target_eirp(rec: Recommendation, antenna_gain_dbi: int | None) -> str:
+    eirp = _target_eirp_dbm(rec, antenna_gain_dbi)
+    return f" (EIRP {eirp} dBm)" if eirp is not None else ""
+
+
+def _tx_value(rec: Recommendation, antenna_gain_dbi: int | None) -> str:
     mode = rec.current_mode
     if rec.kind is RecommendationKind.CHANGE:
-        text = f"set to Custom, {rec.recommended} dBm" if mode is not TxPowerMode.CUSTOM else f"{rec.recommended} dBm"
+        text = f"{rec.recommended} dBm" if mode is TxPowerMode.CUSTOM else f"set to Custom, {rec.recommended} dBm"
+        eirp = _target_eirp_dbm(rec, antenna_gain_dbi)
+        facts = [] if eirp is None else [f"EIRP {eirp} dBm"]
         if rec.current is not None:
             delta = rec.recommended - rec.current
-            text += f" ({'raise' if delta > 0 else 'reduce'} by {abs(delta)} dB from {rec.current} dBm)"
+            facts.append(f"{'raise' if delta > 0 else 'reduce'} by {abs(delta)} dB from {rec.current} dBm")
+        if facts:
+            text += f" ({'; '.join(facts)})"
         if rec.unverified_headroom:
-            text += " — headroom above the demonstrated power is unverified"
+            text += UNVERIFIED_HEADROOM
         return text
     if rec.kind is RecommendationKind.CONFIRMED:
         return f"{rec.current} dBm" + (
             f" (mode {mode.value})" if mode is not None and mode is not TxPowerMode.CUSTOM else ""
         )
     return f"{rec.current} dBm, no change: {safe_text(rec.reason, 100)}"
+
+
+def _channel_text(band: BandReport) -> str:
+    """The channel the radio reports; when it reports none, say so (a configured Auto is a setting, not a channel)."""
+    return str(band.channel) if band.channel is not None else "unavailable"
 
 
 def _min_rssi_state_text(state: MinRssiState) -> str:
@@ -422,7 +448,7 @@ def _max_basis(tx: TxSummaryReport) -> str:
 
 def _band(band: BandReport) -> list[str]:
     tx = band.tx
-    channel = "auto" if band.channel is None else str(band.channel)
+    channel = _channel_text(band)
     if band.channel is not None:
         channel += " (auto)" if band.channel_auto else ""
         if band.configured_channel is not None and band.configured_channel != band.channel:
@@ -462,7 +488,11 @@ def _band(band: BandReport) -> list[str]:
         lines.append("  Recommendations:")
         for rec in band.recommendations:
             label = SETTING_LABEL.get(rec.setting, rec.setting)
-            value = _tx_value(rec) if rec.setting == TX_POWER else _min_rssi_value(rec, band.min_rssi)
+            value = (
+                _tx_value(rec, band.tx.antenna_gain_dbi)
+                if rec.setting == TX_POWER
+                else _min_rssi_value(rec, band.min_rssi)
+            )
             if rec.setting == MIN_RSSI and band.assumed_client_tx_dbm is not None:
                 value += f"; assumed client TX {band.assumed_client_tx_dbm} dBm"
             lines.append(f"    {KIND_MARK[rec.kind]} {label:<{NAME}} {value}")
@@ -542,7 +572,7 @@ def _setup_current_tx(band: BandReport) -> str:
 
 
 def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssignment | None) -> list[str]:
-    channel = "auto" if band.channel is None else str(band.channel)
+    channel = _channel_text(band)
     width = f"{band.width_mhz} MHz" if band.width_mhz is not None else "width unknown"
     observed = f"ch {channel}/{width}"
     if band.channel_auto and band.channel is not None:
@@ -573,7 +603,7 @@ def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssi
     elif tx_rec.deferred_by is Deferral.CHANNEL_PLAN:
         tx_value = f"{current_tx}; reassess after channel changes"
     elif tx_rec.kind is RecommendationKind.CHANGE:
-        action = _tx_value(tx_rec)
+        action = _tx_value(tx_rec, band.tx.antenna_gain_dbi)
         if not action.startswith("set to "):
             action = f"set to {action}"
         tx_value = f"{current_tx}; {action}"
@@ -771,7 +801,12 @@ def _scan_passes(report: SiteReport) -> str:
 
 def _no_change_verdict(report: SiteReport, *, overview: bool) -> str:
     """The verdict of a report without a pending change; it is qualified wherever the evidence is incomplete."""
-    incomplete = report.partial or report.scan.state is not ScanState.SCANNED
+    incomplete = (
+        report.partial
+        or report.scan.state is not ScanState.SCANNED
+        or not report.scan.scanned
+        or any(not band.outcome.carries_recommendation for ap in report.aps for band in ap.bands)
+    )
     if not incomplete:
         return "  No changes recommended."
     return "  No changes recommended in the available data" + ("; see Data quality." if overview else ".")
@@ -878,9 +913,10 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
     other.sort(key=lambda finding: _SEVERITY_ORDER[finding.severity])
     for finding in other[:6]:
         band_label = f" {finding.band.label}" if finding.band is not None else ""
+        peers = f" [{', '.join(label(peer) for peer in finding.peers)}]" if finding.peers else ""
         lines.append(
             f"{SEVERITY_MARK[finding.severity]} {label(finding.subject)}{band_label}: "
-            f"{safe_text(finding.message, LINE_MAX)}"
+            f"{safe_text(finding.message, LINE_MAX)}{peers}"
         )
     if len(other) > 6:
         lines.append(f"· {len(other) - 6} further findings: run with --details.")
@@ -894,7 +930,7 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[s
     elif report.scan.state is ScanState.NOT_CONFIGURED:
         lines.append("No scan ran: RF recommendations need neighbour pairs (docs/WALKTHROUGH.md section 3).")
     elif not report.scan.scanned:
-        offline = sum(1 for ap in report.aps if ap.state is DeviceState.DISCONNECTED)
+        offline = sum(1 for ap in report.aps if ap.configured and ap.state is DeviceState.DISCONNECTED)
         causes = [
             f"{count} {cause}"
             for count, cause in ((len(report.scan.unknown_names), "absent from the controller"), (offline, "offline"))
@@ -957,10 +993,8 @@ def _overview_wlans(report: SiteReport) -> list[str]:
         lines += _header("WLAN", _wlan_title(evaluation))
         for check in in_ui_order(evaluation.checks, lambda item: item.code):
             summary = roaming.get(evaluation.wlan) if check.code == "roaming_assistant" else None
-            more = len(summary.reasons) - _reasons_in_check(check, summary) if summary is not None else 0
-            lines += _check_line(
-                check, hints_only=True, more_reasons=more if check.status is CheckStatus.INCOMPLETE else 0
-            )
+            more = len(summary.reasons) - 1 if summary is not None and _reasons_in_check(check, summary) else 0
+            lines += _check_line(check, hints_only=True, more_reasons=more)
         for finding in evaluation.findings:
             lines.append(_finding_line(finding))
         lines.append("")
@@ -972,7 +1006,7 @@ def _row(mark: str, label: str, value: str) -> str:
 
 
 def _overview_channel(band: BandReport, plan: BandChannelPlan | None, assignment: ChannelAssignment | None) -> str:
-    channel = "auto" if band.channel is None else str(band.channel)
+    channel = _channel_text(band)
     observed = channel + (" (auto)" if band.channel_auto and band.channel is not None else "")
     if band.dfs:
         observed += ", DFS"
@@ -1032,9 +1066,9 @@ def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: C
         target = (
             f"{tx_rec.recommended} dBm" if band.tx.mode is TxPowerMode.CUSTOM else f"Custom, {tx_rec.recommended} dBm"
         )
-        tx_value = f"{set_tx} → {target}"
+        tx_value = f"{set_tx} → {target}{_target_eirp(tx_rec, band.tx.antenna_gain_dbi)}"
         if tx_rec.unverified_headroom:
-            tx_value += " — headroom above the demonstrated power is unverified"
+            tx_value += UNVERIFIED_HEADROOM
     elif tx_rec.kind is RecommendationKind.CONFIRMED:
         tx_value = set_tx
     else:
