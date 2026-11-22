@@ -40,6 +40,7 @@ from unifiwifioptimizer.domain.errors import (
     UwoError,
 )
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
+from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind
 from unifiwifioptimizer.report.color import colourise, wants_colour
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
@@ -325,7 +326,38 @@ def _run(args: argparse.Namespace) -> ExitCode:
         paint = colourise if wants_colour(sys.stdout, environ) else str
         for report in result.reports:
             print(paint(render_report(report) if args.details else render_overview(report)), end="")
-    return exit_code_for_run(result)
+    code = exit_code_for_run(result)
+    if code is ExitCode.HOST_KEY:
+        for line in host_key_exit_lines(result):
+            print(line, file=sys.stderr)
+    return code
+
+
+def host_key_exit_lines(result: RunResult) -> list[str]:
+    """Exit 5, said in words: per site that had no verifiable access point, the host-key failures with their steps."""
+    lines: list[str] = []
+    for outcome in result.outcomes:
+        if not outcome.no_verifiable_ap:
+            continue
+        parts: list[str] = []
+        for kind in ScanFailureKind:
+            count = outcome.host_key_failures.get(kind)
+            if not count:
+                continue
+            advice = FAILURE_ADVICE[kind]
+            step = advice.next_step.format(site=outcome.site_id)
+            if kind is ScanFailureKind.HOST_KEY_UNKNOWN:
+                step = (
+                    f"the host-key lines above say why; then {step}"
+                    if result.host_key_gate_ran
+                    else f"{step}, or run again with the report on a terminal"
+                )
+            noun = "access point" if count == 1 else "access points"
+            lead = f"{count} {noun} with" if not parts else f"{count} with"
+            parts.append(f"{lead} {advice.words} ({step})")
+        text = f"{PROG}: exit {int(ExitCode.HOST_KEY)}: site {outcome.site_id}: {', '.join(parts)}"
+        lines.append(safe_text(text, max_chars=MAX_ERROR_CHARS))
+    return lines
 
 
 def _can_ask_host_keys(args: argparse.Namespace) -> bool:

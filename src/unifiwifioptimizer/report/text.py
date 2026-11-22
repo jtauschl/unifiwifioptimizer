@@ -44,6 +44,7 @@ from unifiwifioptimizer.domain.report import (
     WlanEvaluation,
     WlanRoamingSummary,
 )
+from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind, failure_words
 from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
 from unifiwifioptimizer.report.ui_paths import in_ui_order, ui_hint, ui_path
 from unifiwifioptimizer.rf.constants import (
@@ -709,16 +710,24 @@ def _groups(report: SiteReport) -> list[str]:
     return lines
 
 
+def _failure_steps(report: SiteReport) -> list[str]:
+    """What to do about each kind of failed scan, once per kind for the site, in declaration order."""
+    present = {kind for kinds in report.scan.failures_by_ap.values() for kind in kinds}
+    return [
+        f"{FAILURE_ADVICE[kind].words}: {FAILURE_ADVICE[kind].next_step.format(site=report.site_id)}"
+        for kind in ScanFailureKind
+        if kind in present
+    ]
+
+
 def _scan(report: SiteReport) -> list[str]:
     scan = report.scan
     lines: list[str] = []
     for ap_name, kinds in scan.failures_by_ap.items():
         if kinds:
             ok = scan.successes_by_ap.get(ap_name, 0)
-            lines.append(
-                f"  ! {name(ap_name)}: {len(kinds)} failed pass(es), {ok} successful "
-                f"({', '.join(sorted({k.value for k in kinds}))})"
-            )
+            lines.append(f"  ! {name(ap_name)}: {len(kinds)} failed pass(es), {ok} successful ({failure_words(kinds)})")
+    lines += [f"  · {step}" for step in _failure_steps(report)]
     for unknown in scan.unknown_names:
         lines.append(f"  ✗ {name(unknown)}: configured under neighbors but not on the controller")
     if lines:
@@ -944,8 +953,8 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[s
         lines.append(f"Scan: {len(report.scan.scanned)} APs, {successes}/{expected} passes successful.")
     for ap_name, failures in report.scan.failures_by_ap.items():
         if failures:
-            kinds = ", ".join(sorted({kind.value for kind in failures}))
-            lines.append(f"Scan failed on {label(ap_name)}: {len(failures)} pass(es) ({kinds}).")
+            lines.append(f"Scan failed on {label(ap_name)}: {len(failures)} pass(es) ({failure_words(failures)}).")
+    lines += _failure_steps(report)
     for ap_name in report.scan.unknown_names:
         lines.append(f"Configured neighbour {label(ap_name)} is absent from the controller.")
     if report.partial_reasons:

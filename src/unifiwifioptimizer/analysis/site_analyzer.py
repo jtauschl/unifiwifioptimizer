@@ -72,13 +72,13 @@ from unifiwifioptimizer.domain.scan import (
     ScanInput,
     ScanSkipped,
     SiteScan,
+    failure_words,
 )
 from unifiwifioptimizer.rf.channels import DFS_CHANNELS_5G, cac_seconds
 from unifiwifioptimizer.rf.constants import ROAMING_ASSISTANT_SUGGESTED_BELOW_DBM
 from unifiwifioptimizer.rf.corridor import Corridor, corridor_for
 
 WIRELESS_UPLINK = "wireless"
-HOST_KEY_KINDS = frozenset({ScanFailureKind.HOST_KEY_UNKNOWN, ScanFailureKind.HOST_KEY_MISMATCH})
 # A failure of these kinds happened after the host key matched: one such pass verifies the access point.
 VERIFIED_FAILURE_KINDS = frozenset(
     {
@@ -268,22 +268,19 @@ def _scan_of(scan: ScanInput) -> tuple[SiteScan | None, ScanState]:
 
 def _scan_summary(
     scan: SiteScan | None, state: ScanState, passes: int, names: Iterable[str]
-) -> tuple[ScanSummary, int, int, list[Finding], list[PartialReason]]:
-    """The summary plus the verifiable count, the host-key failed count, AP-level findings and partial reasons."""
+) -> tuple[ScanSummary, int, list[Finding], list[PartialReason]]:
+    """The summary plus the verifiable count, AP-level findings and partial reasons."""
     failures: dict[str, tuple[ScanFailureKind, ...]] = {}
     successes: dict[str, int] = {}
     findings: list[Finding] = []
     partial: list[PartialReason] = []
     verifiable = 0
-    host_key_failed = 0
     if scan is not None:
         for ap_scan in scan.scans:
             kinds = tuple(p.kind for p in ap_scan.passes if isinstance(p, ScanFailure))
             ok = len(ap_scan.successful_passes)
             failures[ap_scan.ap_name] = kinds
             successes[ap_scan.ap_name] = ok
-            if any(k in HOST_KEY_KINDS for k in kinds):
-                host_key_failed += 1
             if ok > 0 or any(k in VERIFIED_FAILURE_KINDS for k in kinds):
                 verifiable += 1
             if kinds and ok == 0:
@@ -293,7 +290,7 @@ def _scan_summary(
                         Severity.WARNING,
                         "scan_failed",
                         ap_scan.ap_name,
-                        "every scan pass failed: " + ", ".join(sorted({k.value for k in kinds})),
+                        f"every scan pass failed: {failure_words(kinds)}",
                     )
                 )
             elif kinds:
@@ -303,7 +300,7 @@ def _scan_summary(
                         "scan_partial",
                         ap_scan.ap_name,
                         f"{len(kinds)} of {len(ap_scan.passes)} passes failed "
-                        f"({', '.join(sorted({k.value for k in kinds}))}); "
+                        f"({failure_words(kinds)}); "
                         "the readings come from the successful passes",
                     )
                 )
@@ -315,7 +312,7 @@ def _scan_summary(
         successes_by_ap=successes,
         state=state,
     )
-    return summary, verifiable, host_key_failed, findings, partial
+    return summary, verifiable, findings, partial
 
 
 def _roaming_summary(target: WlanRoamingTarget, pending_5g: frozenset[str]) -> WlanRoamingSummary:
@@ -561,7 +558,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
                 "configured under neighbors but not on the controller; check the name",
             )
         )
-    scan_summary, verifiable, host_key_failed, scan_findings, scan_partial = _scan_summary(
+    scan_summary, verifiable, scan_findings, scan_partial = _scan_summary(
         scan, scan_state, inp.scan_passes, unknown_names
     )
     partial.extend(scan_partial)
@@ -680,7 +677,7 @@ def analyze_site(inp: SiteAnalysisInput) -> SiteReport:
         unparsable=snapshot.unparsable_devices,
         partial_reasons=tuple(dict.fromkeys(partial)),
         verifiable_ap_count=verifiable,
-        host_key_failed_ap_count=host_key_failed,
+        host_key_failed_ap_count=scan_summary.host_key_failed_ap_count,
         extended_channel_plan=plan,
     )
 

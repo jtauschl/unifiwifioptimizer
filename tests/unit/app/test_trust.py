@@ -299,9 +299,7 @@ def test_a_public_address_is_refused_before_any_keyscan_unless_the_site_opts_in(
         confirm=lambda q: True,
         scan=scan,
     )
-    assert (
-        report.results[0].outcome is TrustOutcome.FAILED and "not a private network address" in report.results[0].detail
-    )
+    assert report.results[0].outcome is TrustOutcome.FAILED and "is not used for SSH" in report.results[0].detail
     assert scanned == []
     cfg = loaded({"ssh": {"allow_public_ap_addresses": True}, "neighbors": {public.name: []}})
     report = trust_host_keys(
@@ -378,3 +376,20 @@ def test_a_garbled_controller_fingerprint_fails_that_access_point_only() -> None
         scan=lambda address, port, key_type: [key_for(1)],
     )
     assert report.results[0].outcome is TrustOutcome.FAILED and "unknown form" in report.results[0].detail
+
+
+def test_an_access_point_named_twice_with_ap_is_asked_about_once() -> None:
+    aps = access_points()
+    unverified = next(ap for ap in aps if not ap.ssh_host_key_fingerprint)
+    cfg = loaded({"ssh": {}, "neighbors": {unverified.name: []}})
+    asked: list[str] = []
+
+    def confirm(prompt: Prompt) -> bool:
+        asked.append(prompt.text)
+        return False
+
+    report = trust_host_keys(
+        FixtureApi(), cfg, MemoryStore(), "default", [unverified.name, unverified.name],
+        assume_yes=False, accept_unverified=False, confirm=confirm, scan=lambda address, port, key_type: [key_for(5)],
+    )  # fmt: skip
+    assert len(asked) == 1 and len(report.results) == 1

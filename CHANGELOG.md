@@ -30,6 +30,9 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - An empty band scan names what it removes and the neighbours leaning on an estimate; the U6 Lite quick-scan note covers firmware 6.7.31, 6.7.57, 6.7.58.
 - A coverage gap reads as a modelled shortfall to verify with clients; a power target shows its EIRP, and an absent channel reads `unavailable`.
 - The tool states that it changes no setting; a scan takes a radio off-channel briefly, and `run` says so when it starts a scan.
+- A failed scan names its cause in words and the next step once per kind; the progress line adds the access point's cause.
+- Exit code 5 prints one stderr line per site without a verifiable access point, naming each host-key failure and its next step.
+- A certificate failure names the next step for the TLS mode in use; a pin mismatch says to compare before the pin changes.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
 - The effective maximum of a radio names its basis: demonstrated, reported by the access point's channel limits, or the model maximum with a reason.
@@ -53,7 +56,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - New `controller` keys: `ca_cert`, `cert_fingerprint`, `timeout_s`.
 - New per-site `ssh` keys: `auth`, `key_file`, `host_keys`, `scan_interface_toggle`, `allow_public_ap_addresses`, `scan_concurrency`, `scan_attempts`.
 - New `rf:` section: `noise_floor_dbm`, `required_snr_db`, `client_tx_dbm`, `min_rssi_offset_db`, `roam_offset_db`, `roam_margin_db`, `roam_floor_dbm`, `roam_ceiling_dbm`.
-- `UNIFI_API_KEY` and `UNIFI_SSH_PASSWORD` override the secrets in the file and are removed from the process environment once read.
+- `UNIFI_API_KEY` overrides the key in the file and `UNIFI_SSH_PASSWORD` fills a missing SSH password; both leave the process environment once read.
 - `run [--site ID]... [--json] [--no-scan] [--clients]` analyses the controller snapshot and the AP-to-AP neighbour scans of each site.
 - `--json` prints one document (`schema_version` 1) for every site.
 - `--no-scan` analyses the controller side only, the natural first run before `trust-host-keys`.

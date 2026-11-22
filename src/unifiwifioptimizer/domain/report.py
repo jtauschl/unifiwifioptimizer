@@ -20,7 +20,7 @@ from unifiwifioptimizer.domain.analysis import (
     WlanRoamingStatus,
 )
 from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, TxPowerMode, UnparsableDevice
-from unifiwifioptimizer.domain.scan import ScanFailureKind
+from unifiwifioptimizer.domain.scan import HOST_KEY_KINDS, ScanFailureKind
 
 
 class Severity(StrEnum):
@@ -350,6 +350,21 @@ class ScanSummary:
     def __post_init__(self) -> None:
         object.__setattr__(self, "failures_by_ap", MappingProxyType(dict(self.failures_by_ap)))
         object.__setattr__(self, "successes_by_ap", MappingProxyType(dict(self.successes_by_ap)))
+
+    @property
+    def host_key_failures(self) -> Mapping[ScanFailureKind, int]:
+        """Per host-key kind, the access points with at least one pass that failed on it, in declaration order."""
+        counts = {
+            kind: sum(1 for kinds in self.failures_by_ap.values() if kind in kinds)
+            for kind in ScanFailureKind
+            if kind in HOST_KEY_KINDS
+        }
+        return MappingProxyType({kind: count for kind, count in counts.items() if count})
+
+    @property
+    def host_key_failed_ap_count(self) -> int:
+        """Access points with a pass that failed on any host-key kind; one with both kinds counts once."""
+        return sum(1 for kinds in self.failures_by_ap.values() if any(kind in HOST_KEY_KINDS for kind in kinds))
 
 
 class ChannelPlanStatus(StrEnum):

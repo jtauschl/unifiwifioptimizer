@@ -45,13 +45,24 @@ class TlsError(UwoError):
     """The TLS layer refused the controller connection."""
 
 
+class TlsVerificationError(TlsError):
+    """The controller's certificate did not verify against the roots or the CA file in use."""
+
+    def __init__(self, message: str, verify_code: int, verify_message: str) -> None:
+        super().__init__(message)
+        self.verify_code = verify_code
+        self.verify_message = verify_message
+
+
 class TlsPinMismatchError(TlsError):
     """The controller presented a certificate whose SHA-256 differs from the pinned one."""
 
     def __init__(self, expected: bytes, observed: bytes) -> None:
         super().__init__(
             "controller certificate fingerprint mismatch: "
-            f"expected {format_fingerprint(expected)}, observed {format_fingerprint(observed)}"
+            f"expected {format_fingerprint(expected)}, observed {format_fingerprint(observed)}; the certificate "
+            "changed or this is not your controller: compare it with the certificate view of the controller before "
+            "you change `controller.cert_fingerprint`"
         )
         self.expected = expected
         self.observed = observed
@@ -76,7 +87,15 @@ class ToolEnvironmentError(UwoError):
 
 
 class ScanError(UwoError):
-    """A neighbour scan on one access point failed; the run isolates it and continues with the others."""
+    """A neighbour scan on one access point failed; the run isolates it and continues with the others.
+
+    `cause` is the display-ready text that says why, with its origin named and any text the access point chose quoted
+    (`domain/scan.py` `ap_said`); None when the message already says everything.
+    """
+
+    def __init__(self, message: str, cause: str | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
 
 
 class HostKeyUnknownError(ScanError):
@@ -113,9 +132,12 @@ class RemoteScriptError(ScanError):
 class ScanParseError(ScanError):
     """The access point's output did not follow the scan protocol."""
 
+    def __init__(self, message: str) -> None:
+        super().__init__(message, cause=message)
+
 
 class AddressRefusedError(ScanError):
-    """The access point's address is not private and `allow_public_ap_addresses` is off."""
+    """The tool does not connect to the address the controller reports for the access point."""
 
 
 class HostKeyTrustError(UwoError):

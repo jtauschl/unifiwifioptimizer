@@ -154,7 +154,7 @@ def test_overview_names_scan_failures_and_missing_configured_aps() -> None:
         unknown_names=("AP-missing",),
     )
     text = render_overview(replace(REPORT, scan=scan))
-    assert "Scan failed on AP-2: 2 pass(es) (timeout)." in text
+    assert "Scan failed on AP-2: 2 pass(es) (scan timed out)." in text
     assert "Configured neighbour AP-missing is absent from the controller." in text
 
 
@@ -481,7 +481,7 @@ def test_site_level_findings_offline_unparsable_and_failed_scans_carry_their_nam
     assert "  ✗ Phantom: configured under neighbors but not on the controller; check the name" in text
     assert "  * Ghost: not usable: $.data[9].ip: missing" in text
     assert "  offline (no radio statistics)" in text and "  * offline (no radio statistics)" in text
-    assert "  ! AP-1: 3 failed pass(es), 0 successful (host_key_unknown)" in text
+    assert "  ! AP-1: 3 failed pass(es), 0 successful (host key not stored)" in text
     assert "  ✗ Phantom: configured under neighbors but not on the controller" in text
     assert "  ✗ Ghost: not usable ($.data[9].ip: missing)" in text
 

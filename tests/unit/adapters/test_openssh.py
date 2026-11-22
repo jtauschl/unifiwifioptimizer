@@ -192,6 +192,8 @@ def test_paths_handed_to_ssh_are_absolute_quoted_and_percent_escaped() -> None:
         ("127.0.0.1", False, False),
         ("0.0.0.0", False, False),  # noqa: S104 — the unspecified address is what the gate must refuse
         ("224.0.0.1", False, False),
+        ("240.0.0.1", False, False),
+        ("255.255.255.255", False, False),
         ("8.8.8.8", True, True),
         ("127.0.0.1", True, False),
         ("224.0.0.1", True, False),
@@ -221,7 +223,7 @@ def test_an_ipv4_mapped_address_is_judged_by_its_ipv4_part_even_where_ipaddress_
 
 @pytest.mark.security("T15")
 def test_a_public_address_is_refused_before_argv_is_built_unless_the_gate_allows_it() -> None:
-    with pytest.raises(AddressRefusedError, match="not a private network address"):
+    with pytest.raises(AddressRefusedError, match="is not used for SSH"):
         build_invocation(target(address=ip_address("8.8.8.8")), STORE, ASKPASS, SCRIPT, ENVIRON)
     built = build_invocation(
         target(address=ip_address("8.8.8.8")), STORE, ASKPASS, SCRIPT, ENVIRON, public_address_gate
@@ -601,7 +603,7 @@ def test_a_target_that_opts_in_passes_a_public_address_through_the_default_gate(
     public = target(address=ip_address("8.8.4.4"), allow_public_address=True)
     invocation = build_invocation(public, STORE, ASKPASS, SCRIPT, ENVIRON, None, 120.0)
     assert "admin@8.8.4.4" in invocation.argv
-    with pytest.raises(AddressRefusedError, match="not a private network address"):
+    with pytest.raises(AddressRefusedError, match="is not used for SSH"):
         build_invocation(target(address=ip_address("8.8.4.4")), STORE, ASKPASS, SCRIPT, ENVIRON, None, 120.0)
 
 

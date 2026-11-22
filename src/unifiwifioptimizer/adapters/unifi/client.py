@@ -14,10 +14,22 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from unifiwifioptimizer.adapters.unifi import parse
-from unifiwifioptimizer.adapters.unifi.tls import AbortableHTTPSConnection, TlsPolicy, connect, open_connection
+from unifiwifioptimizer.adapters.unifi.tls import (
+    AbortableHTTPSConnection,
+    TlsPolicy,
+    connect,
+    open_connection,
+    verification_step,
+)
 from unifiwifioptimizer.adapters.unifi.validate import Fields, Json, walk_depth
 from unifiwifioptimizer.config.schema import ControllerConfig
-from unifiwifioptimizer.domain.errors import ControllerError, ResponseTooLargeError, SchemaError, TlsError
+from unifiwifioptimizer.domain.errors import (
+    ControllerError,
+    ResponseTooLargeError,
+    SchemaError,
+    TlsError,
+    TlsVerificationError,
+)
 from unifiwifioptimizer.domain.models import (
     SITE_ID_RE,
     ApGroup,
@@ -189,6 +201,11 @@ class UnifiClient:
                 if expired.is_set():
                     raise deadline_error() from None
                 raise _RetryableError(ControllerError(path, "connect timeout")) from None
+            except TlsVerificationError as exc:
+                if expired.is_set():
+                    raise deadline_error() from None
+                step = verification_step(self._policy.mode, exc.verify_code)
+                raise TlsVerificationError(f"{exc}; {step}", exc.verify_code, exc.verify_message) from None
             except (OSError, TlsError) as exc:
                 if expired.is_set():
                     raise deadline_error() from None

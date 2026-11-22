@@ -71,6 +71,8 @@ def test_pin_mismatch_shows_both_digests_in_the_form_the_configuration_takes() -
     assert str(error) == (
         "controller certificate fingerprint mismatch: "
         "expected SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA, "
-        "observed SHA256:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        "observed SHA256:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8; the certificate changed or this is not your "
+        "controller: compare it with the certificate view of the controller before you change "
+        "`controller.cert_fingerprint`"
     )
     assert format_fingerprint(bytes(range(32))) == "SHA256:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"

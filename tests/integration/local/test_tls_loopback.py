@@ -164,7 +164,7 @@ def test_pin_mismatch_closes_before_any_request(server: tuple[str, int]) -> None
 @pytest.mark.security("T1")
 def test_system_roots_reject_the_self_signed_certificate(server: tuple[str, int]) -> None:
     client = UnifiClient(controller(server[1]), TlsPolicy.from_options(None, None))
-    with pytest.raises(TlsError, match="certificate verification failed"):
+    with pytest.raises(TlsError, match=r"certificate verification failed.*`unifiwifioptimizer controller-fingerprint`"):
         client.sites()
     assert Handler.seen_headers == []
 
@@ -186,7 +186,9 @@ def test_ca_file_mode_rejects_a_certificate_that_does_not_name_the_host(
 ) -> None:
     policy = TlsPolicy.from_options(dns_only_certificate.cert, None)
     client = UnifiClient(controller(dns_only_server[1]), policy)
-    with pytest.raises(TlsError, match=r"certificate verification failed for 127\.0\.0\.1"):
+    with pytest.raises(
+        TlsError, match=r"certificate verification failed for 127\.0\.0\.1.*`controller\.ca_cert` signed"
+    ):
         client.sites()
     assert Handler.seen_headers == []
     assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy).sites().items) == 2

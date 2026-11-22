@@ -1,5 +1,6 @@
 import http.client
 import json
+import ssl
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -7,9 +8,15 @@ import pytest
 
 from unifiwifioptimizer.adapters.unifi import client as client_module
 from unifiwifioptimizer.adapters.unifi.client import ClientOptions, UnifiClient, UnknownKeyObserver, decode_json
-from unifiwifioptimizer.adapters.unifi.tls import AbortableHTTPSConnection, TlsPolicy
+from unifiwifioptimizer.adapters.unifi.tls import AbortableHTTPSConnection, TlsMode, TlsPolicy
 from unifiwifioptimizer.config.schema import ControllerConfig
-from unifiwifioptimizer.domain.errors import ControllerError, ResponseTooLargeError, SchemaError, TlsError
+from unifiwifioptimizer.domain.errors import (
+    ControllerError,
+    ResponseTooLargeError,
+    SchemaError,
+    TlsError,
+    TlsVerificationError,
+)
 from unifiwifioptimizer.domain.secrets import Secret
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -92,6 +99,9 @@ class FakeConnection:
         # every answer to our own `Connection: close` does.
         self.sock = None
         return self.response
+
+    def close(self) -> None:
+        self._log.append("close")
 
     def dispose(self) -> None:
         self._log.append("dispose")
@@ -520,3 +530,66 @@ def test_default_read_timeout_follows_the_controller_configuration() -> None:
     client.get("/x")
     assert connections[0].last_sock.timeouts == [float(CONTROLLER.timeout_s)]
     assert client_module.RETRY_BACKOFF_S == (0.5, 1.0, 2.0) and client_module.RETRY_ATTEMPTS == 4
+
+
+def verification_failure() -> ssl.SSLCertVerificationError:
+    failure = ssl.SSLCertVerificationError(1, "verify failed")
+    failure.verify_code = 20
+    failure.verify_message = "unable to get local issuer certificate"
+    return failure
+
+
+@pytest.mark.parametrize(
+    ("policy", "step"),
+    [
+        (
+            TlsPolicy.from_options(None, None),
+            "compare the output of `unifiwifioptimizer controller-fingerprint` with the certificate view of the "
+            "controller, then set `controller.cert_fingerprint` (or `controller.ca_cert`)",
+        ),
+        (
+            TlsPolicy(mode=TlsMode.CA_FILE, ca_file=Path("/ca.pem")),
+            "check that `controller.ca_cert` signed the controller's certificate and that `controller.url` uses a name "
+            "the certificate carries",
+        ),
+    ],
+)
+def test_a_verification_failure_names_the_next_step_of_the_mode_in_use(policy: TlsPolicy, step: str) -> None:
+    log: list[str] = []
+    script = iter([ConnectFails(verification_failure())])
+
+    def factory(_: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
+        return FakeConnection(script, log)  # type: ignore[return-value]
+
+    client = UnifiClient(CONTROLLER, policy, connection_factory=factory, watchdog=FakeWatchdog(log))
+    with pytest.raises(TlsVerificationError) as raised:
+        client.sites()
+    assert str(raised.value) == (
+        "certificate verification failed for unifi.example: unable to get local issuer certificate; " + step
+    )
+    assert raised.value.verify_code == 20
+
+
+@pytest.mark.parametrize("verify_code", [9, 10])
+@pytest.mark.parametrize(
+    "policy", [TlsPolicy.from_options(None, None), TlsPolicy(mode=TlsMode.CA_FILE, ca_file=Path("/ca.pem"))]
+)
+def test_an_expired_or_not_yet_valid_certificate_names_the_certificate_dates_and_not_the_trust_step(
+    policy: TlsPolicy, verify_code: int
+) -> None:
+    failure = verification_failure()
+    failure.verify_code = verify_code
+    failure.verify_message = "certificate has expired"
+    log: list[str] = []
+    script = iter([ConnectFails(failure)])
+
+    def factory(_: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
+        return FakeConnection(script, log)  # type: ignore[return-value]
+
+    client = UnifiClient(CONTROLLER, policy, connection_factory=factory, watchdog=FakeWatchdog(log))
+    with pytest.raises(TlsVerificationError) as raised:
+        client.sites()
+    assert str(raised.value) == (
+        "certificate verification failed for unifi.example: certificate has expired; renew the controller's "
+        "certificate, or correct this machine's clock if its date is wrong"
+    )

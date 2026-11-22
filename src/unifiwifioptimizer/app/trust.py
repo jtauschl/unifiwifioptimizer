@@ -196,7 +196,7 @@ def inspect_access_point(subject: TrustSubject, writer: KnownHostsWriter, scan: 
     key's type when that key is trusted already, the full scan otherwise) and `plan_trust`."""
     if not is_allowed_address(subject.address, subject.allow_public_address):
         # The same rule as the scan: a controller-supplied address must not make the tool probe the internet.
-        return Refused(f"address {subject.address} is not a private network address")
+        return Refused(f"address {subject.address} is not used for SSH")
     try:
         controller = (
             normalize_fingerprint(subject.controller_fingerprint)
@@ -317,7 +317,7 @@ def trust_host_keys(
         raise ConfigError(f"sites.{site.id}.ssh", "no ssh section for this site; nothing to trust")
     devices = api.devices(site.id)
     by_name = {ap.name: ap for ap in devices.access_points}
-    names = tuple(only) if only else scan_members(site_config)
+    names = tuple(dict.fromkeys(only)) if only else scan_members(site_config)
     if not names:
         raise ConfigError(f"sites.{site.id}.neighbors", "no access points take part in a neighbour pair")
     origin = controller_origin(loaded.config.controller)

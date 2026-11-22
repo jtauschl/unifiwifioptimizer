@@ -5,8 +5,10 @@ import sys
 import unicodedata
 from typing import TextIO
 
-from unifiwifioptimizer.domain.scan import ScanFailure, ScanPass
+from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailure, ScanPass
 from unifiwifioptimizer.report.safe_text import safe_text
+
+MAX_CAUSE_CHARS = 240
 
 
 def _cell_width(value: str) -> int:
@@ -80,7 +82,13 @@ class StderrProgress:
         self._active -= 1
         if isinstance(outcome, ScanFailure):
             pass_index, passes = self._pass_of[ap_name]
-            self._say(f"    {safe_text(ap_name)}: scan failed ({outcome.kind.value}, pass {pass_index + 1}/{passes})")
+            advice = FAILURE_ADVICE[outcome.kind]
+            cause = (
+                f": {safe_text(outcome.detail, max_chars=MAX_CAUSE_CHARS)}"
+                if advice.show_detail and outcome.detail
+                else ""
+            )
+            self._say(f"    {safe_text(ap_name)}: scan failed ({advice.words}, pass {pass_index + 1}/{passes}){cause}")
 
     def analysis_started(self, site_id: str) -> None:
         self._say(f"  analysing site {safe_text(site_id)}...")

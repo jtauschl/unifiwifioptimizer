@@ -39,12 +39,16 @@ from unifiwifioptimizer.domain.models import (
     WlanConfig,
 )
 from unifiwifioptimizer.domain.report import ScanState
-from unifiwifioptimizer.domain.scan import ScanFailure, ScanPass, ScanTarget
+from unifiwifioptimizer.domain.scan import ScanFailure, ScanFailureKind, ScanPass, ScanTarget
 from unifiwifioptimizer.domain.secrets import Secret
 
 from ..analysis.builders import PROFILES, hears, scan_pass
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
+
+
+def host_key_unknown(count: int) -> dict[ScanFailureKind, int]:
+    return {ScanFailureKind.HOST_KEY_UNKNOWN: count} if count else {}
 
 
 def load(name: str) -> Any:
@@ -258,7 +262,7 @@ def outcome(**overrides: Any) -> SiteOutcome:
         "partial_reasons": (),
         "scanned_ap_count": 4,
         "verifiable_ap_count": 4,
-        "host_key_failed_ap_count": 0,
+        "host_key_failures": {},
     }
     values.update(overrides)
     return SiteOutcome(**values)
@@ -270,27 +274,57 @@ def outcome(**overrides: Any) -> SiteOutcome:
         ([outcome()], RunVerdict.OK),
         ([outcome(partial_reasons=(PartialReason.BAND_EMPTY,))], RunVerdict.PARTIAL),
         (
-            [outcome(verifiable_ap_count=0, host_key_failed_ap_count=4, partial_reasons=(PartialReason.SCAN_FAILED,))],
+            [
+                outcome(
+                    verifiable_ap_count=0,
+                    host_key_failures=host_key_unknown(4),
+                    partial_reasons=(PartialReason.SCAN_FAILED,),
+                )
+            ],
             RunVerdict.NO_VERIFIABLE_AP,
         ),
         # Host key plus timeout, nobody verified: still the host-key code.
         (
-            [outcome(verifiable_ap_count=0, host_key_failed_ap_count=1, partial_reasons=(PartialReason.SCAN_FAILED,))],
+            [
+                outcome(
+                    verifiable_ap_count=0,
+                    host_key_failures=host_key_unknown(1),
+                    partial_reasons=(PartialReason.SCAN_FAILED,),
+                )
+            ],
             RunVerdict.NO_VERIFIABLE_AP,
         ),
         # Every access point timed out: a scan failure, not a host-key problem.
         (
-            [outcome(verifiable_ap_count=0, host_key_failed_ap_count=0, partial_reasons=(PartialReason.SCAN_FAILED,))],
+            [
+                outcome(
+                    verifiable_ap_count=0,
+                    host_key_failures=host_key_unknown(0),
+                    partial_reasons=(PartialReason.SCAN_FAILED,),
+                )
+            ],
             RunVerdict.PARTIAL,
         ),
         # One host-key failure among verified access points is partial, not 5.
         (
-            [outcome(verifiable_ap_count=3, host_key_failed_ap_count=1, partial_reasons=(PartialReason.SCAN_FAILED,))],
+            [
+                outcome(
+                    verifiable_ap_count=3,
+                    host_key_failures=host_key_unknown(1),
+                    partial_reasons=(PartialReason.SCAN_FAILED,),
+                )
+            ],
             RunVerdict.PARTIAL,
         ),
         # One access point verified (its key matched before a later pass failed), three host-key failures: 6.
         (
-            [outcome(verifiable_ap_count=1, host_key_failed_ap_count=3, partial_reasons=(PartialReason.SCAN_FAILED,))],
+            [
+                outcome(
+                    verifiable_ap_count=1,
+                    host_key_failures=host_key_unknown(3),
+                    partial_reasons=(PartialReason.SCAN_FAILED,),
+                )
+            ],
             RunVerdict.PARTIAL,
         ),
         # A scanning site whose members are all offline or unknown scanned nobody.
@@ -300,13 +334,13 @@ def outcome(**overrides: Any) -> SiteOutcome:
         ),
         ([outcome(scanning=False, scanned_ap_count=0, verifiable_ap_count=0)], RunVerdict.OK),
         (
-            [outcome(), outcome(site_id="b", verifiable_ap_count=0, host_key_failed_ap_count=1)],
+            [outcome(), outcome(site_id="b", verifiable_ap_count=0, host_key_failures=host_key_unknown(1))],
             RunVerdict.NO_VERIFIABLE_AP,
         ),
     ],
 )
 def test_the_verdict_reduction(outcomes: list[SiteOutcome], verdict: RunVerdict) -> None:
-    assert RunResult(reports=(), outcomes=tuple(outcomes)).verdict is verdict
+    assert RunResult(reports=(), outcomes=tuple(outcomes), host_key_gate_ran=False).verdict is verdict
 
 
 @given(
@@ -314,12 +348,14 @@ def test_the_verdict_reduction(outcomes: list[SiteOutcome], verdict: RunVerdict)
         [
             outcome(),
             outcome(site_id="b", partial_reasons=(PartialReason.BAND_EMPTY,)),
-            outcome(site_id="c", verifiable_ap_count=0, host_key_failed_ap_count=2),
+            outcome(site_id="c", verifiable_ap_count=0, host_key_failures=host_key_unknown(2)),
         ]
     )
 )
 def test_the_verdict_is_independent_of_the_site_order(outcomes: list[SiteOutcome]) -> None:
-    assert RunResult(reports=(), outcomes=tuple(outcomes)).verdict is RunVerdict.NO_VERIFIABLE_AP
+    assert (
+        RunResult(reports=(), outcomes=tuple(outcomes), host_key_gate_ran=False).verdict is RunVerdict.NO_VERIFIABLE_AP
+    )
 
 
 @pytest.mark.security("T7")
@@ -327,7 +363,7 @@ def test_host_key_failures_everywhere_give_no_verifiable_access_point_and_timeou
     cfg = loaded({"default": scanning_site()})
     unknown = {name: HostKeyUnknownError(f"{name}: no key") for name in ("AP-1", "AP-2", "AP-3", "AP-4")}
     result, *_ = run(cfg, scanner=FakeScanner(unknown))
-    assert result.verdict is RunVerdict.NO_VERIFIABLE_AP and result.outcomes[0].host_key_failed_ap_count == 4
+    assert result.verdict is RunVerdict.NO_VERIFIABLE_AP and result.outcomes[0].host_key_failures == host_key_unknown(4)
     mixed = {**unknown, "AP-2": ScanTimeoutError("AP-2: slow")}
     assert run(cfg, scanner=FakeScanner(mixed))[0].verdict is RunVerdict.NO_VERIFIABLE_AP
     timeouts = {name: ScanTimeoutError(f"{name}: slow") for name in unknown}
@@ -428,7 +464,8 @@ def test_the_host_key_gate_runs_once_after_every_site_is_prepared_and_before_the
         api.calls.append("gate")
         seen.append([(s.site_id, s.name) for s in subjects])
 
-    run(cfg, api=api, host_key_gate=gate)
+    result, *_ = run(cfg, api=api, host_key_gate=gate)
+    assert result.host_key_gate_ran is True
     assert api.calls.count("gate") == 1
     gate_at = api.calls.index("gate")
     assert any(c.startswith("devices:site-2") for c in api.calls[:gate_at])
@@ -449,10 +486,16 @@ def test_a_configuration_error_ends_the_run_before_the_gate_asks_anything() -> N
 def test_there_is_no_gate_call_without_a_scan() -> None:
     cfg = loaded({"default": scanning_site()})
     asked: list[object] = []
-    run(cfg, skip_scan=True, host_key_gate=asked.append)
+    skipped, *_ = run(cfg, skip_scan=True, host_key_gate=asked.append)
     quiet = loaded({"default": {"wlans": {"SSID-1": "Standard"}}})
-    run(quiet, host_key_gate=asked.append)
+    unconfigured, *_ = run(quiet, host_key_gate=asked.append)
     assert asked == []
+    assert skipped.host_key_gate_ran is False and unconfigured.host_key_gate_ran is False
+
+
+def test_the_gate_did_not_run_when_none_was_given() -> None:
+    result, *_ = run(loaded({"default": scanning_site()}))
+    assert result.host_key_gate_ran is False
 
 
 def test_a_gate_subject_carries_the_target_the_pin_and_the_controller_fingerprint() -> None:

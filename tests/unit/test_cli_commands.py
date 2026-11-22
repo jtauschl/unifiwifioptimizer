@@ -49,8 +49,13 @@ from unifiwifioptimizer.domain.models import (
     UserGroup,
     WlanConfig,
 )
+from unifiwifioptimizer.domain.scan import ScanFailureKind
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
+
+
+def host_key_unknown(count: int) -> dict[ScanFailureKind, int]:
+    return {ScanFailureKind.HOST_KEY_UNKNOWN: count} if count else {}
 
 
 def load(name: str) -> object:
@@ -173,6 +178,10 @@ EXIT_CODE_BY_ERROR: dict[type[UwoError], tuple[UwoError, ExitCode]] = {
     errors.ConfigTimeoutError: (ConfigTimeoutError("$", "too slow"), ExitCode.CONFIG),
     errors.TlsError: (TlsError("handshake"), ExitCode.TLS),
     errors.TlsPinMismatchError: (TlsPinMismatchError(bytes(32), bytes(32)), ExitCode.TLS),
+    errors.TlsVerificationError: (
+        errors.TlsVerificationError("certificate verification failed", 20, "x"),
+        ExitCode.TLS,
+    ),
     errors.ToolEnvironmentError: (ToolEnvironmentError("no docker"), ExitCode.ENVIRONMENT),
     errors.HostKeyTrustError: (HostKeyTrustError("no match"), ExitCode.HOST_KEY),
     errors.SchemaError: (SchemaError("$.data", "expected a list"), ExitCode.UNEXPECTED_ERROR),
@@ -517,7 +526,7 @@ def scanner_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         # the snapshot taken at the start of the run must not.
         monkeypatch.delenv("XDG_STATE_HOME", raising=False)
         factory()
-        return RunResult(reports=(), outcomes=())
+        return RunResult(reports=(), outcomes=(), host_key_gate_ran=False)
 
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
     monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
@@ -550,16 +559,20 @@ def test_run_exit_codes_follow_the_verdict() -> None:
     def result(**overrides: object) -> RunResult:
         values: dict[str, object] = {
             "site_id": "default", "scanning": True, "partial_reasons": (), "scanned_ap_count": 4,
-            "verifiable_ap_count": 4, "host_key_failed_ap_count": 0,
+            "verifiable_ap_count": 4, "host_key_failures": {},
         }  # fmt: skip
         values.update(overrides)
-        return RunResult(reports=(), outcomes=(SiteOutcome(**values),))  # type: ignore[arg-type]
+        return RunResult(reports=(), outcomes=(SiteOutcome(**values),), host_key_gate_ran=False)  # type: ignore[arg-type]
 
     assert cli.exit_code_for_run(result()) == ExitCode.OK
     assert cli.exit_code_for_run(result(partial_reasons=(PartialReason.BAND_EMPTY,))) == ExitCode.PARTIAL
     assert (
         cli.exit_code_for_run(
-            result(verifiable_ap_count=0, host_key_failed_ap_count=1, partial_reasons=(PartialReason.SCAN_FAILED,))
+            result(
+                verifiable_ap_count=0,
+                host_key_failures=host_key_unknown(1),
+                partial_reasons=(PartialReason.SCAN_FAILED,),
+            )
         )
         == ExitCode.HOST_KEY
     )
@@ -662,7 +675,7 @@ def test_a_defect_that_is_no_domain_error_surfaces_instead_of_becoming_an_exit_c
         (
             {
                 "verifiable_ap_count": 0,
-                "host_key_failed_ap_count": 1,
+                "host_key_failures": host_key_unknown(1),
                 "partial_reasons": (PartialReason.SCAN_FAILED,),
             },
             ExitCode.HOST_KEY,
@@ -674,10 +687,10 @@ def test_run_exits_with_the_verdict_of_the_analysis_through_the_real_entry(
 ) -> None:
     values: dict[str, object] = {
         "site_id": "default", "scanning": True, "partial_reasons": (), "scanned_ap_count": 4,
-        "verifiable_ap_count": 4, "host_key_failed_ap_count": 0,
+        "verifiable_ap_count": 4, "host_key_failures": {},
     }  # fmt: skip
     values.update(overrides)
-    result = RunResult(reports=(), outcomes=(SiteOutcome(**values),))  # type: ignore[arg-type]
+    result = RunResult(reports=(), outcomes=(SiteOutcome(**values),), host_key_gate_ran=False)  # type: ignore[arg-type]
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
     monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
     monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)

@@ -4,9 +4,11 @@ A reading carries a BSSID, an RSSI and, when the radio reported it, the frequenc
 so the report can name foreign networks in aggregate. Nothing here identifies a client.
 """
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
+from types import MappingProxyType
 
 from unifiwifioptimizer.domain.models import Band, Mac
 from unifiwifioptimizer.domain.secrets import Secret
@@ -95,9 +97,91 @@ class ScanFailureKind(StrEnum):
     ADDRESS_REFUSED = "address_refused"
 
 
+HOST_KEY_KINDS = frozenset({ScanFailureKind.HOST_KEY_UNKNOWN, ScanFailureKind.HOST_KEY_MISMATCH})
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FailureAdvice:
+    """What a person needs from a failed scan: `words` is a noun phrase that reads in every sentence that names the
+    kind, `next_step` what to do (`{site}` is the controller's site id), `show_detail` whether the cause
+    (`ScanFailure.detail`) adds to the words."""
+
+    words: str
+    next_step: str
+    show_detail: bool
+
+
+_FAILURE_ADVICE: dict[ScanFailureKind, FailureAdvice] = {
+    ScanFailureKind.HOST_KEY_UNKNOWN: FailureAdvice(
+        words="host key not stored", next_step="`trust-host-keys --site {site}`", show_detail=False
+    ),
+    ScanFailureKind.HOST_KEY_MISMATCH: FailureAdvice(
+        words="changed host key",
+        next_step="find out why the key changed (reset, re-adoption), then `trust-host-keys --site {site}`",
+        show_detail=False,
+    ),
+    ScanFailureKind.AUTHENTICATION: FailureAdvice(
+        words="SSH login refused",
+        next_step=(
+            "check `sites.{site}.ssh.auth`: `controller` uses the device SSH settings of the controller, "
+            "`password` and `key` those of the configuration (`password` or `UNIFI_SSH_PASSWORD`; `key_file` or "
+            "the SSH agent)"
+        ),
+        show_detail=True,
+    ),
+    ScanFailureKind.TIMEOUT: FailureAdvice(
+        words="scan timed out",
+        next_step="run again; report it with the access point's firmware version when it repeats",
+        show_detail=False,
+    ),
+    ScanFailureKind.OUTPUT_TOO_LARGE: FailureAdvice(
+        words="scan output too large",
+        next_step="report it with the access point's firmware version",
+        show_detail=False,
+    ),
+    ScanFailureKind.TRANSPORT: FailureAdvice(
+        words="SSH connection failed",
+        next_step="check that the access point answers SSH on port 22 at the address the controller reports",
+        show_detail=True,
+    ),
+    ScanFailureKind.REMOTE_SCRIPT: FailureAdvice(
+        words="scan script failed",
+        next_step="report it with the access point's firmware version",
+        show_detail=True,
+    ),
+    ScanFailureKind.UNPARSABLE_OUTPUT: FailureAdvice(
+        words="scan output not understood",
+        next_step="report it with the access point's firmware version",
+        show_detail=True,
+    ),
+    ScanFailureKind.ADDRESS_REFUSED: FailureAdvice(
+        words="address not used for SSH",
+        next_step=(
+            "an address outside the private ranges needs `sites.{site}.ssh.allow_public_ap_addresses: true`; "
+            "loopback, multicast, reserved and unspecified addresses are never used"
+        ),
+        show_detail=True,
+    ),
+}
+FAILURE_ADVICE: Mapping[ScanFailureKind, FailureAdvice] = MappingProxyType(_FAILURE_ADVICE)
+
+
+def failure_words(kinds: Iterable[ScanFailureKind]) -> str:
+    """The words of every given kind, once each, in declaration order."""
+    present = set(kinds)
+    return ", ".join(FAILURE_ADVICE[kind].words for kind in ScanFailureKind if kind in present)
+
+
+def ap_said(text: str) -> str:
+    """Text an access point chose, quoted for display: the tool's own words stay outside the quotes, so a `"` in the
+    text is escaped and cannot close them."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ScanFailure:
-    """One pass that produced nothing; `detail` is static text or sanitised stderr, never a secret."""
+    """One pass that produced nothing; `detail` is the display-ready cause (`ScanError.cause`), empty when the words say
+    it all. It never holds a secret; the part an access point chose is quoted."""
 
     kind: ScanFailureKind
     detail: str

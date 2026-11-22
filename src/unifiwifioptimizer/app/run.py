@@ -7,7 +7,7 @@ Then the sites are scanned one after the other (access points serial within a si
 analysed. The outcome per site is typed; the command line maps it onto exit codes.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -24,7 +24,7 @@ from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import Site, SiteSnapshot
 from unifiwifioptimizer.domain.profile import ProfileSet
 from unifiwifioptimizer.domain.report import SiteReport
-from unifiwifioptimizer.domain.scan import NoScanConfigured, ScanInput, ScanSkipped, ScanTarget
+from unifiwifioptimizer.domain.scan import NoScanConfigured, ScanFailureKind, ScanInput, ScanSkipped, ScanTarget
 from unifiwifioptimizer.ports.clock import Clock
 from unifiwifioptimizer.ports.controller import ControllerApi
 from unifiwifioptimizer.ports.progress import Progress
@@ -51,8 +51,8 @@ class SiteOutcome:
     partial_reasons: tuple[PartialReason, ...]
     scanned_ap_count: int
     verifiable_ap_count: int
-    # Access points with at least one host-key failure (unknown or mismatched key), not failures.
-    host_key_failed_ap_count: int
+    # Per host-key kind (unknown, changed), the access points with a pass that failed on it; only kinds above zero.
+    host_key_failures: Mapping[ScanFailureKind, int]
 
     @property
     def no_verifiable_ap(self) -> bool:
@@ -61,7 +61,7 @@ class SiteOutcome:
             self.scanning
             and self.scanned_ap_count > 0
             and self.verifiable_ap_count == 0
-            and self.host_key_failed_ap_count > 0
+            and bool(self.host_key_failures)
         )
 
 
@@ -69,6 +69,8 @@ class SiteOutcome:
 class RunResult:
     reports: tuple[SiteReport, ...]
     outcomes: tuple[SiteOutcome, ...]
+    # Whether the host-key gate ran in this run (it asked, or refused an access point without asking).
+    host_key_gate_ran: bool
 
     @property
     def verdict(self) -> RunVerdict:
@@ -145,6 +147,7 @@ def run_analysis(
                 site=site, config=site_cfg, snapshot=snapshot, targets=targets, unknown_names=unknown, scanning=scanning
             )
         )
+    host_key_gate_ran = False
     if host_key_gate is not None:
         # After every site is prepared: a configuration error in a later site must not follow a store write.
         subjects = [
@@ -155,6 +158,7 @@ def run_analysis(
         ]
         if subjects:
             host_key_gate(subjects)
+            host_key_gate_ran = True
     orchestrator = ScanOrchestrator(scanner_factory(), sleep) if scanning_sites else None
     reports: list[SiteReport] = []
     outcomes: list[SiteOutcome] = []
@@ -189,7 +193,7 @@ def run_analysis(
                 partial_reasons=report.partial_reasons,
                 scanned_ap_count=len(item.targets),
                 verifiable_ap_count=report.verifiable_ap_count,
-                host_key_failed_ap_count=report.host_key_failed_ap_count,
+                host_key_failures=report.scan.host_key_failures,
             )
         )
-    return RunResult(reports=tuple(reports), outcomes=tuple(outcomes))
+    return RunResult(reports=tuple(reports), outcomes=tuple(outcomes), host_key_gate_ran=host_key_gate_ran)

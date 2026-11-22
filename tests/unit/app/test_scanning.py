@@ -196,7 +196,7 @@ def test_password_key_and_agent_modes_resolve_from_the_configuration() -> None:
 def test_passes_are_round_robin_serial_and_failures_are_isolated_per_access_point_and_pass() -> None:
     scanner = FakeScanner(
         {
-            ("AP-2", 0): SshAuthenticationError("AP-2: authentication failed"),
+            ("AP-2", 0): SshAuthenticationError("AP-2: authentication failed", cause='ssh said "Permission denied"'),
             ("AP-3", 1): ScanTimeoutError("AP-3: slow"),
         }
     )
@@ -209,7 +209,7 @@ def test_passes_are_round_robin_serial_and_failures_are_isolated_per_access_poin
     by_name = {s.ap_name: s for s in result.scans}
     assert len(by_name["AP-1"].successful_passes) == 2 and by_name["AP-1"].failures == ()
     (failure,) = by_name["AP-2"].failures
-    assert failure == ScanFailure(kind=ScanFailureKind.AUTHENTICATION, detail="AP-2: authentication failed")
+    assert failure == ScanFailure(kind=ScanFailureKind.AUTHENTICATION, detail='ssh said "Permission denied"')
     assert isinstance(by_name["AP-2"].passes[0], ScanFailure) and isinstance(by_name["AP-2"].passes[1], ScanPass)
     assert (
         isinstance(by_name["AP-3"].passes[1], ScanFailure) and by_name["AP-3"].passes[1].kind is ScanFailureKind.TIMEOUT

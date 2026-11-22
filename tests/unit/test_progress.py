@@ -20,7 +20,9 @@ def test_stderr_progress_sanitises_names_and_names_the_failure_kind() -> None:
     progress.scan_started(hostile, 0, 3)
     progress.scan_finished(hostile, ScanFailure(kind=ScanFailureKind.TIMEOUT, detail="slow"))
     progress.scan_started(hostile, 1, 3)
-    progress.scan_finished(hostile, ScanFailure(kind=ScanFailureKind.AUTHENTICATION, detail="x"))
+    progress.scan_finished(
+        hostile, ScanFailure(kind=ScanFailureKind.AUTHENTICATION, detail='ssh said "Permission denied"')
+    )
     progress.analysis_started("site")
     text = out.getvalue()
     assert "\x1b" not in text and RLO not in text
@@ -28,8 +30,8 @@ def test_stderr_progress_sanitises_names_and_names_the_failure_kind() -> None:
     assert text.splitlines() == [
         "  reading and scanning site site...",
         "  a scan takes each radio off-channel briefly; clients on it lose service for that time",
-        f"    {safe}: scan failed (timeout, pass 1/3)",
-        f"    {safe}: scan failed (authentication, pass 2/3)",
+        f"    {safe}: scan failed (scan timed out, pass 1/3)",
+        f'    {safe}: scan failed (SSH login refused, pass 2/3): ssh said "Permission denied"',
         "  analysing site site...",
     ]
 
@@ -59,7 +61,7 @@ def test_interactive_scan_rewrites_one_bounded_line_and_clears_it_before_errors(
     text = out.getvalue()
     assert text.count("Scanning") == 3 and text.count("scan failed") == 2
     assert "\r" in text and "\x1b" not in text and RLO not in text
-    assert "    AP: scan failed (timeout, pass 1/3)\n" in text
+    assert "    AP: scan failed (scan timed out, pass 1/3)\n" in text
     assert all(_cell_width(part) <= 39 for part in text.split("\r") if part.startswith("  Scanning"))
     assert "pass 2/3" in text
     assert text.endswith("  analysing site site...\n")

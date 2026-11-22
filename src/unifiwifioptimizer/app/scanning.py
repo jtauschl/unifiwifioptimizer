@@ -240,4 +240,4 @@ class ScanOrchestrator:
         try:
             return self._scanner.scan(target)
         except ScanError as exc:
-            return ScanFailure(kind=failure_kind(exc), detail=str(exc))
+            return ScanFailure(kind=failure_kind(exc), detail=exc.cause or "")

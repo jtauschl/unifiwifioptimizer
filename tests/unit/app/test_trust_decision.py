@@ -286,7 +286,7 @@ def test_the_address_is_checked_before_any_connection() -> None:
     public = dataclasses.replace(subject(), address=ip_address("8.8.8.8"))
     scan = Scans([cand(1)], [cand(1)])
     decision = inspect_access_point(public, Memory(), scan)
-    assert isinstance(decision, Refused) and "not a private network address" in decision.reason and scan.calls == []
+    assert isinstance(decision, Refused) and "is not used for SSH" in decision.reason and scan.calls == []
 
 
 def test_a_timeout_of_the_quick_check_is_a_refusal_not_a_fallback() -> None:

@@ -145,7 +145,7 @@ def gate_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
     def record(*args: object, **kwargs: object) -> RunResult:
         seen["gate"] = kwargs.get("host_key_gate")
-        return RunResult(reports=(), outcomes=())
+        return RunResult(reports=(), outcomes=(), host_key_gate_ran=False)
 
     monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
     monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))

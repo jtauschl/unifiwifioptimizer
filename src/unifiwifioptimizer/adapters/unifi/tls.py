@@ -13,13 +13,20 @@ import os
 import socket
 import ssl
 import threading
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
-from unifiwifioptimizer.domain.errors import ConfigError, ControllerError, TlsError, TlsPinMismatchError
+from unifiwifioptimizer.domain.errors import (
+    ConfigError,
+    ControllerError,
+    TlsError,
+    TlsPinMismatchError,
+    TlsVerificationError,
+)
 
 CONNECT_TIMEOUT_S = 5.0
 FINGERPRINT_BYTES = 32
@@ -29,6 +36,30 @@ class TlsMode(StrEnum):
     SYSTEM_ROOTS = "system-roots"
     CA_FILE = "ca-file"
     PIN = "pin"
+
+
+VERIFICATION_STEP: Mapping[TlsMode, str] = {
+    TlsMode.SYSTEM_ROOTS: (
+        "compare the output of `unifiwifioptimizer controller-fingerprint` with the certificate view of the "
+        "controller, then set `controller.cert_fingerprint` (or `controller.ca_cert`)"
+    ),
+    TlsMode.CA_FILE: (
+        "check that `controller.ca_cert` signed the controller's certificate and that `controller.url` uses a name "
+        "the certificate carries"
+    ),
+}
+
+# OpenSSL's X509_V_ERR_CERT_NOT_YET_VALID and X509_V_ERR_CERT_HAS_EXPIRED: the trust steps below would not fix
+# these, and pinning would silence the expiry.
+VALIDITY_ERROR_CODES = frozenset({9, 10})
+VALIDITY_STEP = "renew the controller's certificate, or correct this machine's clock if its date is wrong"
+
+
+def verification_step(mode: TlsMode, verify_code: int) -> str:
+    """The next step for a certificate that failed verification; the PIN mode never verifies, so it has none."""
+    if verify_code in VALIDITY_ERROR_CODES:
+        return VALIDITY_STEP
+    return VERIFICATION_STEP[mode]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -180,7 +211,11 @@ def connect(connection: AbortableHTTPSConnection) -> None:
         connection.connect()
     except ssl.SSLCertVerificationError as exc:
         connection.close()
-        raise TlsError(f"certificate verification failed for {connection.host}: {exc.verify_message}") from None
+        raise TlsVerificationError(
+            f"certificate verification failed for {connection.host}: {exc.verify_message}",
+            exc.verify_code,
+            exc.verify_message,
+        ) from None
     except ssl.SSLError as exc:
         connection.close()
         raise TlsError(f"TLS handshake with {connection.host} failed: {exc.reason or exc}") from None

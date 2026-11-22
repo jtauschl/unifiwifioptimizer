@@ -37,7 +37,7 @@ from unifiwifioptimizer.domain.errors import (
     SshAuthenticationError,
     ToolEnvironmentError,
 )
-from unifiwifioptimizer.domain.scan import ScanPass, ScanTarget, SshAuthMethod
+from unifiwifioptimizer.domain.scan import ScanPass, ScanTarget, SshAuthMethod, ap_said
 
 OPENSSH_MIN_VERSION = (8, 4)
 CALL_TIMEOUT_S = 120.0
@@ -164,7 +164,9 @@ def is_allowed_address(address: IPv4Address | IPv6Address, allow_public: bool) -
         address = address.ipv4_mapped
     if allow_public:
         return not (address.is_multicast or address.is_unspecified or address.is_reserved or address.is_loopback)
-    return address.is_private and not (address.is_loopback or address.is_unspecified or address.is_multicast)
+    return address.is_private and not (
+        address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved
+    )
 
 
 AddressGate = Callable[[IPv4Address | IPv6Address], bool]
@@ -211,7 +213,9 @@ def build_invocation(
     """argv, child environment and stdin for one scan; pure, so a test can pin every option."""
     gate = address_gate if address_gate is not None else address_gate_for(target)
     if not gate(target.address):
-        raise AddressRefusedError(f"{target.ap_name}: address {target.address} is not a private network address")
+        raise AddressRefusedError(
+            f"{target.ap_name}: address {target.address} is not used for SSH", cause=f"address {target.address}"
+        )
     credentials = target.credentials
     argv: list[str] = [
         "ssh", "-F", "none", "-T",
@@ -373,14 +377,17 @@ def classify_exit(returncode: int, stderr: bytes, target_name: str) -> Exception
     touched either way, so the worst case is a wrong label on a failed pass.
     """
     detail = sanitize_stderr(stderr)
+    ssh_said = f"ssh said {ap_said(detail)}" if detail else None
     if returncode == 255:
         if "Host key verification failed" in detail or "REMOTE HOST IDENTIFICATION HAS CHANGED" in detail:
             return HostKeyMismatchError(f"{target_name}: host key does not match the stored one ({detail})")
         if "Permission denied" in detail or "Too many authentication failures" in detail:
-            return SshAuthenticationError(f"{target_name}: authentication failed ({detail})")
-        return ScanTransportError(f"{target_name}: ssh failed ({detail or 'no message'})")
+            return SshAuthenticationError(f"{target_name}: authentication failed ({detail})", cause=ssh_said)
+        return ScanTransportError(f"{target_name}: ssh failed ({detail or 'no message'})", cause=ssh_said)
+    script_said = f", script said {ap_said(detail)}" if detail else ""
     return RemoteScriptError(
-        f"{target_name}: remote scan script exited with status {returncode} ({detail or 'no message'})"
+        f"{target_name}: remote scan script exited with status {returncode} ({detail or 'no message'})",
+        cause=f"exit status {returncode}{script_said}",
     )
 
 
