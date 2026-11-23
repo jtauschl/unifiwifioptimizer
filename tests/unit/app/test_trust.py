@@ -225,6 +225,33 @@ def test_unverified_keys_need_the_flag_or_a_yes_and_yes_alone_is_not_enough() ->
     )
 
 
+@pytest.mark.security("T8")
+@pytest.mark.parametrize(
+    ("ssh", "password_line"),
+    [({}, True), ({"auth": "controller"}, True), ({"auth": "password", "user": "u", "password": "p"}, True),
+     ({"auth": "key", "user": "u"}, False)],
+)  # fmt: skip
+def test_the_question_on_no_basis_names_the_device_and_says_what_the_auth_mode_hands_over(
+    ssh: dict[str, object], password_line: bool
+) -> None:
+    unverified = next(ap for ap in access_points() if not ap.ssh_host_key_fingerprint)
+    asked: list[Prompt] = []
+
+    def decline(question: Prompt) -> bool:
+        asked.append(question)
+        return False
+
+    trust_host_keys(
+        FixtureApi(), loaded({"ssh": ssh, "neighbors": {unverified.name: []}}), MemoryStore(), "default", [],
+        assume_yes=False, accept_unverified=False, confirm=decline, scan=lambda address, port, key_type: [key_for(5)],
+    )  # fmt: skip
+    (question,) = asked
+    assert question.warning[0] == f"access point {unverified.name}, MAC {unverified.mac}, address {unverified.ip}"
+    assert (
+        "the scan also logs in to them with the password for the site's access points" in question.warning
+    ) is password_line
+
+
 def test_ambiguity_a_stored_different_key_and_unknown_names_are_reported_not_fatal() -> None:
     aps = access_points()
     unverified = next(ap for ap in aps if not ap.ssh_host_key_fingerprint)

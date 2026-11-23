@@ -50,6 +50,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - New subcommand `controller-fingerprint [--url URL]` prints the controller's certificate fingerprint for pinning.
 - New subcommand `trust-host-keys` stores the access points' SSH host keys after verifying them and replaces a changed key on a verified basis or on typed confirmation.
 - In a terminal, `run` asks before its first scan whether to store a missing host key or replace a changed one.
+- A host key nothing verifies needs its first eight SHA-256 characters typed after warning lines; `y` suffices only for a new key the tool verified.
 - `config --profiles` prints the effective WLAN profiles with their evidence annotations.
 - Global options: `--config-file PATH`, `--profiles-file PATH` and `--dump-api DIR` (models with secrets masked, plus counts of unused fields).
 - `run` and `trust-host-keys` take `--known-hosts PATH` for the host-key store.

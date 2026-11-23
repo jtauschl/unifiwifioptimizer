@@ -1,5 +1,6 @@
 """`trust-host-keys` through `main`: arguments, confirmation wiring, exit codes, no raw strings on the terminal."""
 
+import io
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -7,10 +8,11 @@ from typing import cast
 
 import pytest
 
+from tests.unit.app.test_trust_decision import Memory, Scans, cand, subject
 from tests.unit.test_cli_commands import SCANNING_SITE, FixtureApi, configured, loaded
 from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsWriter, TrustBasis
 from unifiwifioptimizer.app.run import RunResult
-from unifiwifioptimizer.app.trust import TrustOutcome, TrustReport, TrustResult
+from unifiwifioptimizer.app.trust import TrustOutcome, TrustPolicy, TrustReport, TrustResult, check_host_keys
 from unifiwifioptimizer.cli import main as cli
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.prompt import terminal_confirm
@@ -195,3 +197,26 @@ def test_run_never_asks_with_no_scan_and_the_gate_stores_nothing_on_its_own(
     assert getattr(policy, "assume_yes", None) is False and getattr(policy, "accept_unverified", None) is False
     assert getattr(policy, "confirm", None) is terminal_confirm
     assert type(seen["writer"]) is KnownHostsWriter and getattr(seen["writer"], "path", None) == Path("/state/kh")
+
+
+@pytest.mark.security("T8")
+def test_the_chain_from_the_decision_to_the_terminal_declines_with_the_warning_and_the_way_to_answer(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    store = Memory()
+    results: list[TrustResult] = []
+    check_host_keys(
+        [subject()], store, TrustPolicy(assume_yes=False, accept_unverified=False, confirm=terminal_confirm),
+        results.append, Scans([], [cand(1)]),
+    )  # fmt: skip
+    assert [str(r.outcome) for r in results] == ["declined"] and store.rows == []
+    assert capsys.readouterr().err.splitlines() == [
+        f"unifiwifioptimizer: default: AP-1: store host key {cand(1).sha256.text} on first use? "
+        "— no terminal to ask; declined",
+        "unifiwifioptimizer: access point AP-1, MAC 02:00:00:00:00:01, address 192.168.1.2",
+        "unifiwifioptimizer: neither a pin nor the controller verifies this key",
+        "unifiwifioptimizer: if you accept it, the scan results come from whoever holds this key",
+        "unifiwifioptimizer: the scan also logs in to them with the password for the site's access points",
+        "unifiwifioptimizer: to store it without asking, add to the command: --ap=AP-1 --accept-unverified",
+    ]

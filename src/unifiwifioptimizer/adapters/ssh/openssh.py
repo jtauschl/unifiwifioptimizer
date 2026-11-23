@@ -422,10 +422,7 @@ class OpenSshScanner:
 
     def scan(self, target: ScanTarget) -> ScanPass:
         if not self._known_hosts.has_alias(target.host_key_alias):
-            raise HostKeyUnknownError(
-                f"{target.ap_name}: no stored host key for this access point; "
-                "run `trust-host-keys` or run again in a terminal"
-            )
+            raise HostKeyUnknownError(f"{target.ap_name}: no stored host key for this access point")
         if not self._version_checked:
             self._version_check()
             self._version_checked = True

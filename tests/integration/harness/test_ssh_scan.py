@@ -520,4 +520,5 @@ def trust_subject(harness: Harness, port: int) -> TrustSubject:
     return TrustSubject(
         site_id="default", name="AP-harness", alias=host_key_alias(ORIGIN, "default", MAC),
         address=harness.address, port=port, allow_public_address=False, config_pin=None, controller_fingerprint=None,
+        mac=MAC, sends_password=True,
     )  # fmt: skip

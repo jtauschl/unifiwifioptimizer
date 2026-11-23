@@ -143,7 +143,8 @@ def test_rule_6_a_stored_key_still_offered_but_not_the_one_the_controller_names_
 def subject() -> TrustSubject:
     return TrustSubject(
         site_id="default", name="AP-1", alias=ALIAS, address=ip_address("192.168.1.2"), port=22,
-        allow_public_address=False, config_pin=None, controller_fingerprint=None,
+        allow_public_address=False, config_pin=None, controller_fingerprint=None, mac="02:00:00:00:00:01",
+        sends_password=True,
     )  # fmt: skip
 
 
@@ -187,7 +188,9 @@ def test_a_new_key_follows_the_policy(
     result, asked = run_policy(decision, store, yes=yes, unverified=unverified, answer=answer)
     assert result is outcome and bool(asked) is asks
     assert store.rows == ([NEW.entry(ALIAS)] if outcome is TrustOutcome.STORED else [])
-    assert all(p.kind is PromptKind.NEW for p in asked)
+    unverified_basis = decision.basis is TrustBasis.UNVERIFIED
+    expected_kind = PromptKind.NEW_UNVERIFIED if unverified_basis else PromptKind.NEW
+    assert all(p.kind is expected_kind for p in asked)
 
 
 @pytest.mark.security("T8")
@@ -322,7 +325,7 @@ def test_the_run_gate_reports_every_result_except_already_stored() -> None:
         [subject(), second], store, TrustPolicy(assume_yes=False, accept_unverified=False, confirm=confirm),
         lambda result: reported.append(f"{result.ap_name}:{result.outcome}"), scan,
     )  # fmt: skip
-    assert reported == ["AP-2:stored"] and len(answers) == 1 and answers[0].kind is PromptKind.NEW
+    assert reported == ["AP-2:stored"] and len(answers) == 1 and answers[0].kind is PromptKind.NEW_UNVERIFIED
 
 
 def test_a_decline_in_the_run_gate_changes_nothing() -> None:
@@ -333,3 +336,114 @@ def test_a_decline_in_the_run_gate_changes_nothing() -> None:
         lambda result: reported.append(str(result.outcome)), Scans([], [cand(1)]),
     )  # fmt: skip
     assert reported == ["declined"] and store.rows == [] and store.writes == []
+
+
+# --- the question on no basis: kind, warning lines, the unattended answer --------------------------------------------
+
+LINES_WITH_PASSWORD = (
+    "access point AP-1, MAC 02:00:00:00:00:01, address 192.168.1.2",
+    "neither a pin nor the controller verifies this key",
+    "if you accept it, the scan results come from whoever holds this key",
+    "the scan also logs in to them with the password for the site's access points",
+)
+LINES_WITH_KEY = LINES_WITH_PASSWORD[:3]
+RESET = "a reset or a re-adoption explains a changed key; without one of them, answer no"
+
+
+def asked_prompt(decision: TrustDecision, subj: TrustSubject | None = None) -> Prompt:
+    asked: list[Prompt] = []
+
+    def decline(prompt: Prompt) -> bool:
+        asked.append(prompt)
+        return False
+
+    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=decline)
+    apply_decision(subj or subject(), decision, Memory([OLD.entry(ALIAS)]), policy)
+    (prompt,) = asked
+    return prompt
+
+
+def test_the_prompt_kind_follows_the_basis_and_only_the_typed_kinds_take_a_typed_answer() -> None:
+    assert asked_prompt(StoreNew(NEW, TrustBasis.CONTROLLER)).kind is PromptKind.NEW
+    assert asked_prompt(StoreNew(NEW, TrustBasis.CONFIG_PIN)).kind is PromptKind.NEW
+    assert asked_prompt(StoreNew(NEW, TrustBasis.UNVERIFIED)).kind is PromptKind.NEW_UNVERIFIED
+    # A warning on every question would train the reader past it: only a question on no basis carries one.
+    assert asked_prompt(StoreNew(NEW, TrustBasis.CONTROLLER)).warning == ()
+    assert asked_prompt(StoreNew(NEW, TrustBasis.CONFIG_PIN)).warning == ()
+    for basis in TrustBasis:
+        assert asked_prompt(Replace(OLD.entry(ALIAS), NEW, basis)).kind is PromptKind.REPLACE
+    assert {kind: kind.typed_answer for kind in PromptKind} == {
+        PromptKind.NEW: False,
+        PromptKind.NEW_UNVERIFIED: True,
+        PromptKind.REPLACE: True,
+    }
+    assert {kind: kind.action for kind in PromptKind} == {
+        PromptKind.NEW: "store",
+        PromptKind.NEW_UNVERIFIED: "store",
+        PromptKind.REPLACE: "replace",
+    }
+
+
+@pytest.mark.security("T8")
+def test_a_new_key_on_no_basis_opens_with_the_warning_lines_and_names_no_basis_in_a_parenthesis() -> None:
+    prompt = asked_prompt(StoreNew(NEW, TrustBasis.UNVERIFIED))
+    assert prompt.warning == LINES_WITH_PASSWORD
+    assert prompt.text == f"default: AP-1: store host key {NEW.sha256.text} on first use?"
+
+
+@pytest.mark.security("T8")
+def test_a_replace_on_no_basis_carries_the_warning_lines_and_the_reset_line_and_a_verified_one_carries_none() -> None:
+    unverified = asked_prompt(Replace(OLD.entry(ALIAS), NEW, TrustBasis.UNVERIFIED))
+    assert unverified.warning == (*LINES_WITH_PASSWORD, RESET)
+    assert "(" not in unverified.text
+    verified = asked_prompt(Replace(OLD.entry(ALIAS), NEW, TrustBasis.CONTROLLER))
+    assert verified.warning == () and f"({TrustBasis.CONTROLLER})" in verified.text
+
+
+@pytest.mark.security("T8")
+def test_the_password_sentence_is_said_in_password_and_controller_mode_and_not_in_key_mode() -> None:
+    key_mode = dataclasses.replace(subject(), sends_password=False)
+    assert asked_prompt(StoreNew(NEW, TrustBasis.UNVERIFIED), key_mode).warning == LINES_WITH_KEY
+    assert asked_prompt(Replace(OLD.entry(ALIAS), NEW, TrustBasis.UNVERIFIED), key_mode).warning == (
+        *LINES_WITH_KEY,
+        RESET,
+    )
+
+
+@pytest.mark.parametrize(
+    ("decision", "unattended"),
+    [
+        (StoreNew(NEW, TrustBasis.CONTROLLER), "to store it without asking, add to the command: --yes"),
+        (
+            StoreNew(NEW, TrustBasis.UNVERIFIED),
+            "to store it without asking, add to the command: --ap=AP-1 --accept-unverified",
+        ),
+        (
+            Replace(OLD.entry(ALIAS), NEW, TrustBasis.CONFIG_PIN),
+            "to replace it without asking, add to the command: --yes",
+        ),
+        (
+            Replace(OLD.entry(ALIAS), NEW, TrustBasis.UNVERIFIED),
+            "a changed key on no basis needs a terminal to be replaced",
+        ),
+    ],
+)
+def test_each_question_says_how_to_answer_it_without_a_terminal(decision: TrustDecision, unattended: str) -> None:
+    assert asked_prompt(decision).unattended == unattended
+
+
+def test_the_unattended_command_quotes_an_access_point_name_with_a_space() -> None:
+    named = dataclasses.replace(subject(), name="Living Room")
+    assert asked_prompt(StoreNew(NEW, TrustBasis.UNVERIFIED), named).unattended == (
+        "to store it without asking, add to the command: --ap='Living Room' --accept-unverified"
+    )
+
+
+@pytest.mark.parametrize("name", ["-x", "--yes", "--accept-unverified", "-1"])
+def test_the_unattended_hint_parses_for_a_name_that_looks_like_an_option(name: str) -> None:
+    from unifiwifioptimizer.cli.main import build_parser
+
+    hint = asked_prompt(StoreNew(NEW, TrustBasis.UNVERIFIED), dataclasses.replace(subject(), name=name)).unattended
+    added = hint.removeprefix("to store it without asking, add to the command: ").split(" ")
+    parsed = build_parser().parse_args(["trust-host-keys", "--site", "default", *added])
+    assert parsed.ap == [name] and parsed.accept_unverified is True and parsed.yes is False

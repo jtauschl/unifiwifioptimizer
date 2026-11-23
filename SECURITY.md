@@ -84,10 +84,14 @@ refused, so the cap cannot be bypassed. Every call has a timeout.
 - Keys are stored or replaced only by the trust step: `trust-host-keys`, or the question `run` asks before its first scan
   when stdin, stdout and stderr are terminals. A key is offered on one of three bases, in this order: a pin you configured
   (`ssh.host_keys`), the fingerprint the controller itself reports for that access point, or — when neither exists —
-  trust on first use, which needs your confirmation per access point or `--accept-unverified`. `--yes` confirms
+  trust on first use, which needs a typed answer per access point or `--accept-unverified`. `--yes` confirms
   verified matches only, a replace of a changed key included; `--accept-unverified` never replaces a stored key. A
-  replace in a terminal needs the first eight characters of the new key's SHA-256 typed, a guard against answering
-  by routine, not a verification. If a configured pin and the controller's fingerprint both exist and differ, or no
+  key nothing verifies, and every replace, need the first eight characters of the new key's SHA-256 typed, after
+  warning lines on a key on no basis; `y` is enough only for a new key the tool verified. The typed characters are a
+  guard against answering by routine, not a verification: a key accepted on no basis is the one the scan then
+  requires, so whoever holds it answers the scan and, in `password` and `controller` mode, receives the device
+  password. A pin verifies a key only when its value comes from a source other than the question or
+  `ssh-keyscan`. If a configured pin and the controller's fingerprint both exist and differ, or no
   offered key matches them, that access point is refused. `ssh-keyscan` output is no proof that the access point holds
   the key; the scan that follows connects with `StrictHostKeyChecking=yes`, which is.
 - Access-point addresses must be private addresses unless you set `allow_public_ap_addresses: true` for the site.

@@ -124,14 +124,14 @@ For a complete step-by-step example, see [docs/WALKTHROUGH.md](https://github.co
    unifiwifioptimizer run --no-scan
    ```
 
-7. Run the full analysis. In a terminal, `run` asks per access point before the first scan whether to store a missing host key or replace a changed one; the question names the site and the access point, the fingerprint and what verified it (your pin, the fingerprint the controller reports, or nothing). A replace shows the old and the new key and needs the first eight characters of the new key's SHA-256 typed. A refusal or a "no" changes nothing and the scan reports that access point as before. For a run without a terminal (cron, a pipe, a redirected report), store the keys beforehand:
+7. Run the full analysis. In a terminal, `run` asks per access point before the first scan whether to store a missing host key or replace a changed one; the question names the site and the access point, the fingerprint and what verified it (your pin, the fingerprint the controller reports, or nothing). A key nothing verifies, and every replace, need the first eight characters of the new key's SHA-256 typed (a replace shows the old and the new key); a question on no basis opens with warning lines that name the access point, its MAC and address and say what a wrong answer hands over. A refusal or a "no" changes nothing and the scan reports that access point as `host key not stored` or `changed host key`. For a run without a terminal (cron, a pipe, a redirected report), store the keys beforehand:
 
    ```bash
    unifiwifioptimizer trust-host-keys --site <site-id>
    unifiwifioptimizer run
    ```
 
-   `trust-host-keys` asks per access point before it stores a key or replaces a different stored one. `--yes` skips the question for a key that matches a configured pin or the fingerprint the controller reports, a replace included; `--accept-unverified` skips it for a new key nothing can verify (trust on first use) and never replaces a stored key. Without a terminal it declines every question it would ask, so only keys covered by `--yes` or `--accept-unverified` are stored; a declined key does not change the exit code. It exits 5 when an access point failed (a key that does not match or differs from the stored one, a public address, a failed key scan); a name that is not on the controller is reported and exits 0.
+   `trust-host-keys` asks per access point before it stores a key or replaces a different stored one. `--yes` skips the question for a key that matches a configured pin or the fingerprint the controller reports, a replace included; `--accept-unverified` skips it for a new key nothing can verify (trust on first use) and never replaces a stored key. Without a terminal it declines every question it would ask and names the answer to add to the command (`--yes`, or `--ap NAME --accept-unverified`; a changed key on no basis needs a terminal), so only keys covered by `--yes` or `--accept-unverified` are stored; a declined key does not change the exit code. It exits 5 when an access point failed (a key that does not match or differs from the stored one, a public address, a failed key scan); a name that is not on the controller is reported and exits 0.
 
 8. Establish a channel baseline with Channel AI, or inspect the optional `run --extended` candidate proposal after a scan.
 9. Fix per-WLAN profile deviations first.
@@ -254,7 +254,7 @@ Keys (every key not listed is an error):
 | `sites.<site>.ssh.user` | SSH user name; required for `key` and `password`; for `controller` it must match the controller's own SSH user if set |
 | `sites.<site>.ssh.password` | SSH password for `auth: password`; omit to use `UNIFI_SSH_PASSWORD` |
 | `sites.<site>.ssh.key_file` | Absolute path (or `~/...`) of your private key for `auth: key`; omit to use your ssh-agent |
-| `sites.<site>.ssh.host_keys` | Pins the host key of an access point: lower-case MAC -> `SHA256:...` fingerprint |
+| `sites.<site>.ssh.host_keys` | Pins the host key of an access point: lower-case MAC -> `SHA256:...` fingerprint. A pin verifies a key only when its value comes from a source other than this tool's own question or `ssh-keyscan`; a fingerprint copied from the question pins what was offered |
 | `sites.<site>.ssh.scan_interface_toggle` | `true` lets the scan bring a scan interface that is down up and put it down again; default `false` |
 | `sites.<site>.ssh.allow_public_ap_addresses` | `true` allows access points with a public address; default `false` |
 | `sites.<site>.ssh.scan_concurrency` | Access points scanned at the same time, 1..8, default 1; two at a time halved the scan time in a measurement but lost some sightings (see [docs/ALGORITHM.md](https://github.com/jtauschl/unifiwifioptimizer/blob/main/docs/ALGORITHM.md) §2) |

@@ -504,5 +504,13 @@ def test_a_gate_subject_carries_the_target_the_pin_and_the_controller_fingerprin
     run(cfg, host_key_gate=lambda subjects: seen.extend(subjects))
     assert [s.name for s in seen] == ["AP-1", "AP-2", "AP-3", "AP-4"]
     first = seen[0]
+    assert first.mac == "02:00:00:00:00:04" and first.sends_password is True
     assert first.alias.startswith("uwo-") and first.port == 22 and first.allow_public_address is False
     assert first.config_pin == bytes(32) and [s.config_pin for s in seen[1:]] == [None, None, None]
+
+
+def test_a_gate_subject_of_a_key_mode_site_does_not_send_a_password() -> None:
+    cfg = loaded({"default": scanning_site(ssh={"auth": "key", "user": "u"})})
+    seen: list[TrustSubject] = []
+    run(cfg, host_key_gate=lambda subjects: seen.extend(subjects))
+    assert seen and all(not s.sends_password for s in seen)

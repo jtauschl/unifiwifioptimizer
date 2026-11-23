@@ -3,14 +3,15 @@
 For every access point that takes part in a neighbour pair, the keys `ssh-keyscan` can obtain are compared
 against the expected fingerprint — the configuration pin first, the fingerprint the controller reports
 second. `plan_trust` turns what is stored, what is offered and what is expected into one decision; the caller's
-policy (a typed answer, `--yes`, `--accept-unverified`) decides whether it is applied. A verified key is stored
-or replaced on a confirmation, or on `--yes`; an unverified key is stored on a confirmation or
-`--accept-unverified` and never replaces a stored key without a confirmation.
+policy (an answer, `--yes`, `--accept-unverified`) decides whether it is applied. A verified key is stored on `y`
+or `--yes` and replaced on a typed answer or `--yes`; an unverified key is stored on a typed answer or
+`--accept-unverified` and replaces a stored key on a typed answer only.
 
 Two entry points share this code: `trust-host-keys`, and `run` when a terminal answers the questions. Only
 this module (and the composition root that builds the writer) changes the store.
 """
 
+import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -30,10 +31,10 @@ from unifiwifioptimizer.adapters.ssh.openssh import is_allowed_address
 from unifiwifioptimizer.app.scanning import SSH_PORT, controller_origin, scan_members
 from unifiwifioptimizer.app.use_cases import resolve_site
 from unifiwifioptimizer.config.load import LoadedConfig
-from unifiwifioptimizer.config.schema import SiteConfig
+from unifiwifioptimizer.config.schema import SiteConfig, SshAuth
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
 from unifiwifioptimizer.domain.hostkeys import host_key_alias, key_fingerprints, normalize_fingerprint
-from unifiwifioptimizer.domain.models import AccessPoint
+from unifiwifioptimizer.domain.models import AccessPoint, Mac
 from unifiwifioptimizer.domain.scan import ScanTarget
 from unifiwifioptimizer.ports.controller import ControllerApi
 
@@ -43,19 +44,36 @@ Keyscan = Callable[[Address, int, str | None], Sequence[HostKeyCandidate]]
 
 
 class PromptKind(StrEnum):
+    """What is asked. The kind owns the rule of which answer it takes: `y` only where the tool verified the new key
+    itself, a typed fingerprint prefix wherever the person is the only check (a key on no basis) or a stored key is
+    overwritten."""
+
     NEW = "new"
+    NEW_UNVERIFIED = "new_unverified"
     REPLACE = "replace"
+
+    @property
+    def typed_answer(self) -> bool:
+        return self is not PromptKind.NEW
+
+    @property
+    def action(self) -> str:
+        return "replace" if self is PromptKind.REPLACE else "store"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Prompt:
-    """One question for the person at the terminal. The app layer decides what is asked; the command line
-    decides how the answer is given (`y/N`, or the typed fingerprint prefix for a replace)."""
+    """One question for the person at the terminal. The app layer decides what is asked and what is said around it;
+    the command line decides how the answer is given (`y/N`, or the typed fingerprint prefix: `kind.typed_answer`)."""
 
     kind: PromptKind
     text: str
     # SHA-256 of the key that would be stored, in `SHA256:<base64>` form.
     new_fingerprint: str
+    # Lines that precede the question: what is unverified and what a wrong answer hands over.
+    warning: tuple[str, ...] = ()
+    # The non-interactive way to give the answer, said when no terminal can ask.
+    unattended: str
 
 
 Confirm = Callable[[Prompt], bool]
@@ -109,6 +127,9 @@ class TrustSubject:
     allow_public_address: bool
     config_pin: bytes | None
     controller_fingerprint: str | None
+    mac: Mac
+    # The scan authenticates with a password (`password` or `controller` mode), so whoever holds the stored key gets it.
+    sends_password: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +158,29 @@ class Refused:
 
 
 TrustDecision = StoreNew | Replace | AlreadyStored | Refused
+
+
+def _unverified_warning(subject: TrustSubject, *, replace: bool) -> tuple[str, ...]:
+    """The lines before a question on no basis. Name, MAC and address come from the controller: they say which device
+    is meant and nothing about the key."""
+    lines = [
+        f"access point {subject.name}, MAC {subject.mac}, address {subject.address}",
+        "neither a pin nor the controller verifies this key",
+        "if you accept it, the scan results come from whoever holds this key",
+    ]
+    if subject.sends_password:
+        lines.append("the scan also logs in to them with the password for the site's access points")
+    if replace:
+        lines.append("a reset or a re-adoption explains a changed key; without one of them, answer no")
+    return tuple(lines)
+
+
+def _unattended(kind: PromptKind, basis: TrustBasis, subject: TrustSubject) -> str:
+    if basis is not TrustBasis.UNVERIFIED:
+        return f"to {kind.action} it without asking, add to the command: --yes"
+    if kind is PromptKind.REPLACE:
+        return "a changed key on no basis needs a terminal to be replaced"
+    return f"to store it without asking, add to the command: --ap={shlex.quote(subject.name)} --accept-unverified"
 
 
 def default_keyscan(address: Address, port: int, key_type: str | None) -> Sequence[HostKeyCandidate]:
@@ -236,14 +280,17 @@ def apply_decision(
                         kind=PromptKind.NEW,
                         text=f"{label}: store host key {fingerprint} (matches the {basis})?",
                         new_fingerprint=fingerprint,
+                        unattended=_unattended(PromptKind.NEW, basis, subject),
                     )
                 )
             else:
                 accepted = policy.accept_unverified or policy.confirm(
                     Prompt(
-                        kind=PromptKind.NEW,
-                        text=f"{label}: nothing to verify {fingerprint} against — store it on first use anyway?",
+                        kind=PromptKind.NEW_UNVERIFIED,
+                        text=f"{label}: store host key {fingerprint} on first use?",
                         new_fingerprint=fingerprint,
+                        warning=_unverified_warning(subject, replace=False),
+                        unattended=_unattended(PromptKind.NEW_UNVERIFIED, basis, subject),
                     )
                 )
             if not accepted:
@@ -254,14 +301,17 @@ def apply_decision(
             fingerprint = chosen.sha256.text
             detail = f"{old_fingerprint} -> {fingerprint}"
             verified = basis is not TrustBasis.UNVERIFIED
+            basis_note = f" ({basis})" if verified else ""
             accepted = (verified and policy.assume_yes) or policy.confirm(
                 Prompt(
                     kind=PromptKind.REPLACE,
                     text=(
-                        f"{label}: the stored host key {old_fingerprint} is not the key the access point offers "
-                        f"({basis}): {fingerprint} — replace it?"
+                        f"{label}: the stored host key {old_fingerprint} is not the key the access point offers"
+                        f"{basis_note}: {fingerprint} — replace it?"
                     ),
                     new_fingerprint=fingerprint,
+                    warning=() if verified else _unverified_warning(subject, replace=True),
+                    unattended=_unattended(PromptKind.REPLACE, basis, subject),
                 )
             )
             if not accepted:
@@ -296,6 +346,8 @@ def subject_for(site_id: str, site: SiteConfig, origin: str, ap: AccessPoint, po
         allow_public_address=ssh.allow_public_ap_addresses if ssh is not None else False,
         config_pin=ssh.host_keys.get(ap.mac) if ssh is not None else None,
         controller_fingerprint=ap.ssh_host_key_fingerprint,
+        mac=ap.mac,
+        sends_password=ssh is not None and ssh.auth is not SshAuth.KEY,
     )
 
 
@@ -344,6 +396,8 @@ def subject_for_target(target: ScanTarget, ap: AccessPoint, site: SiteConfig) ->
         allow_public_address=target.allow_public_address,
         config_pin=ssh.host_keys.get(target.ap_mac) if ssh is not None else None,
         controller_fingerprint=ap.ssh_host_key_fingerprint,
+        mac=target.ap_mac,
+        sends_password=ssh is not None and ssh.auth is not SshAuth.KEY,
     )
 
 
