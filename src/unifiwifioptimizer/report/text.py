@@ -44,7 +44,14 @@ from unifiwifioptimizer.domain.report import (
     WlanEvaluation,
     WlanRoamingSummary,
 )
-from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind, failure_words
+from unifiwifioptimizer.domain.scan import (
+    FAILURE_ADVICE,
+    NO_TRUST_CONTEXT,
+    ScanFailureKind,
+    TrustStepContext,
+    failure_step,
+    failure_words,
+)
 from unifiwifioptimizer.report.safe_text import REPORT_MARKS, hides_nothing, safe_line_start, safe_text
 from unifiwifioptimizer.report.ui_paths import in_ui_order, ui_hint, ui_path
 from unifiwifioptimizer.rf.constants import (
@@ -710,24 +717,24 @@ def _groups(report: SiteReport) -> list[str]:
     return lines
 
 
-def _failure_steps(report: SiteReport) -> list[str]:
+def _failure_steps(report: SiteReport, steps: TrustStepContext) -> list[str]:
     """What to do about each kind of failed scan, once per kind for the site, in declaration order."""
     present = {kind for kinds in report.scan.failures_by_ap.values() for kind in kinds}
     return [
-        f"{FAILURE_ADVICE[kind].words}: {FAILURE_ADVICE[kind].next_step.format(site=report.site_id)}"
+        f"{FAILURE_ADVICE[kind].words}: {failure_step(kind, report.site_id, steps)}"
         for kind in ScanFailureKind
         if kind in present
     ]
 
 
-def _scan(report: SiteReport) -> list[str]:
+def _scan(report: SiteReport, steps: TrustStepContext) -> list[str]:
     scan = report.scan
     lines: list[str] = []
     for ap_name, kinds in scan.failures_by_ap.items():
         if kinds:
             ok = scan.successes_by_ap.get(ap_name, 0)
             lines.append(f"  ! {name(ap_name)}: {len(kinds)} failed pass(es), {ok} successful ({failure_words(kinds)})")
-    lines += [f"  · {step}" for step in _failure_steps(report)]
+    lines += [f"  · {step}" for step in _failure_steps(report, steps)]
     for unknown in scan.unknown_names:
         lines.append(f"  ✗ {name(unknown)}: configured under neighbors but not on the controller")
     if lines:
@@ -932,7 +939,7 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
     return lines
 
 
-def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[str]:
+def _summary_evidence(report: SiteReport, label: Callable[[str], str], steps: TrustStepContext) -> list[str]:
     lines: list[str] = []
     if report.scan.state is ScanState.SKIPPED:
         lines.append("Neighbour scans skipped; RF recommendations are unavailable.")
@@ -954,7 +961,7 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str]) -> list[s
     for ap_name, failures in report.scan.failures_by_ap.items():
         if failures:
             lines.append(f"Scan failed on {label(ap_name)}: {len(failures)} pass(es) ({failure_words(failures)}).")
-    lines += _failure_steps(report)
+    lines += _failure_steps(report, steps)
     for ap_name in report.scan.unknown_names:
         lines.append(f"Configured neighbour {label(ap_name)} is absent from the controller.")
     if report.partial_reasons:
@@ -1170,7 +1177,9 @@ def _overview_footer(report: SiteReport) -> list[str]:
     return lines
 
 
-def render_overview(report: SiteReport, width: int | None = WIDTH) -> str:
+def render_overview(
+    report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext = NO_TRUST_CONTEXT
+) -> str:
     """The default text report: the WLANs and the access points laid out like the controller UI, then what the
     scan found and how complete the data is. `--details` prints the complete report instead."""
     label = _Labels(report)
@@ -1185,14 +1194,14 @@ def render_overview(report: SiteReport, width: int | None = WIDTH) -> str:
     findings = _summary_findings(report, label)
     if findings:
         lines += ["  Notes:", *(f"    {finding}" for finding in findings), ""]
-    lines += ["  Data quality:", *(f"    {item}" for item in _summary_evidence(report, label)), ""]
+    lines += ["  Data quality:", *(f"    {item}" for item in _summary_evidence(report, label, steps)), ""]
     lines += _overview_footer(report)
     if width is None:
         return "\n".join(lines) + "\n"
     return "\n".join(_fold(line, width) for line in lines) + "\n"
 
 
-def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
+def render_report(report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext = NO_TRUST_CONTEXT) -> str:
     """The text report; `width` folds longer lines (None keeps every line whole)."""
     lines: list[str] = [""]
     lines += _header(
@@ -1209,7 +1218,7 @@ def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
     for ap in report.aps:
         lines += _ap(ap)
     lines += _groups(report)
-    lines += _scan(report)
+    lines += _scan(report, steps)
     lines += _channel_plan(report)
     if report.unparsable:
         for device in report.unparsable:
@@ -1227,17 +1236,31 @@ def render_report(report: SiteReport, width: int | None = WIDTH) -> str:
 
 
 _VALUE_COLUMN = re.compile(r"  +(?=\S)")
+_COMMAND_SPAN = re.compile(r"`(?:trust-host-keys|unifiwifioptimizer) [^`]*`")
 
 
 def _glue_marks(line: str) -> tuple[str, list[str]]:
     """Folding must never break before a report mark: a name like `x ✗ Minimum RSSI` would otherwise open a
     continuation line exactly like a check line. Every blank run whose first visible character (blanks,
     invisible leaders and combining marks skipped, as in `safe_line_start`) is a mark becomes NUL for the
-    wrap — NUL never survives `safe_text` — and `_unglue` restores the original blanks afterwards."""
+    wrap — NUL never survives `safe_text` — and `_unglue` restores the original blanks afterwards. A command the
+    report prints for a person to paste (a span in backticks that starts with the program or `trust-host-keys`) is
+    never folded: a line break inside a quoted path would name another file."""
     glued: list[str] = []
     blanks: list[str] = []
+    command_blanks = {
+        position
+        for span in _COMMAND_SPAN.finditer(line)
+        for position in range(span.start(), span.end())
+        if line[position].isspace()
+    }
     index = 0
     while index < len(line):
+        if index in command_blanks:
+            blanks.append(line[index])
+            glued.append("\x00")
+            index += 1
+            continue
         if not line[index].isspace():
             glued.append(line[index])
             index += 1

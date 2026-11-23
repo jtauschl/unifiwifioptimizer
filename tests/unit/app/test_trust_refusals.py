@@ -78,8 +78,7 @@ EXPECTED_STEPS = {
     K.UNUSABLE_KEYS: "report it with the access point's firmware version",
     K.SEVERAL_STORED_LINES: (
         "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
-        "`trust-host-keys --site default` (with the same `--known-hosts` when the file named above is not the "
-        "default), which handles the key as one not yet stored"
+        "`trust-host-keys --site default`, which handles the key as one not yet stored"
     ),
     K.STORE_CHANGED: (
         "the store changed while this access point was being handled (another run of the tool, or an edit by hand); "
@@ -98,7 +97,7 @@ EXPECTED_STEPS = {
 def test_every_kind_has_a_step_and_the_only_placeholder_is_the_site() -> None:
     assert set(TRUST_ADVICE) == set(K) == set(EXPECTED_STEPS)
     for kind, step in TRUST_ADVICE.items():
-        assert set(re.findall(r"\{(\w+)\}", step)) <= {"site"}, kind
+        assert set(re.findall(r"\{(\w+)\}", step)) <= {"site", "options"}, kind
         assert trust_step(kind, "default") == EXPECTED_STEPS[kind], kind
 
 
@@ -329,3 +328,37 @@ def test_the_step_names_the_site_of_the_subject_on_every_producer() -> None:
         dataclasses.replace(subject(), site_id="branch"), Refusing([held(cand(1))]), Scans([], [cand(2)]), answer=True
     )
     assert "`trust-host-keys --site branch`" in written.next_step
+
+
+def test_the_step_that_names_the_command_repeats_the_options_of_the_invocation() -> None:
+    options = " --known-hosts='/Volumes/Temp HD/kh'"
+    assert trust_step(K.SEVERAL_STORED_LINES, "default", options) == (
+        "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
+        "`trust-host-keys --site default --known-hosts='/Volumes/Temp HD/kh'`, which handles the key as one not yet "
+        "stored"
+    )
+    for kind in K:
+        if kind is not K.SEVERAL_STORED_LINES:
+            assert trust_step(kind, "default", options) == EXPECTED_STEPS[kind], kind
+
+
+def test_the_options_reach_the_result_of_a_store_that_has_several_lines_through_the_policy() -> None:
+    policy = TrustPolicy(
+        assume_yes=False, accept_unverified=False, confirm=lambda p: False, command_options=" --known-hosts=/kh"
+    )
+    store = Memory([held(cand(1)), held(cand(2))])
+    result = apply_decision(subject(), inspect_access_point(subject(), store, Scans([], [cand(1)])), store, policy)
+    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step
+
+
+def test_the_options_reach_the_step_of_a_store_that_refuses_the_write() -> None:
+    class Refusing(Memory):
+        def replace(self, entry: KnownHostEntry, expected_old: KnownHostEntry) -> None:
+            raise HostKeyTrustError(K.SEVERAL_STORED_LINES, "2 entries are stored for alias A in /f")
+
+    policy = TrustPolicy(
+        assume_yes=False, accept_unverified=False, confirm=lambda p: True, command_options=" --known-hosts=/kh"
+    )
+    store = Refusing([held(cand(1))])
+    result = apply_decision(subject(), inspect_access_point(subject(), store, Scans([], [cand(2)])), store, policy)
+    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step

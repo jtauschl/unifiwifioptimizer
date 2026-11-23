@@ -122,6 +122,8 @@ class TrustPolicy:
     assume_yes: bool
     accept_unverified: bool
     confirm: Confirm
+    # Options of the invocation (`--known-hosts`, quoted) that a step naming `trust-host-keys` repeats.
+    command_options: str = ""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -210,8 +212,10 @@ def _same_key(entry: KnownHostEntry, candidate: HostKeyCandidate) -> bool:
     return entry.key_type == candidate.key_type and entry.key_base64 == candidate.key_base64
 
 
-def trust_step(kind: TrustRefusalKind, site_id: str) -> str:
-    return TRUST_ADVICE[kind].format(site=site_id)
+def trust_step(kind: TrustRefusalKind, site_id: str, command_options: str = "") -> str:
+    """The step of a kind; `command_options` are the options of this invocation that `trust-host-keys` needs to act
+    on the same store, already quoted."""
+    return TRUST_ADVICE[kind].format(site=site_id, options=command_options)
 
 
 def _expectation_refusal(
@@ -339,7 +343,7 @@ def apply_decision(
                 outcome=TrustOutcome.FAILED,
                 basis=basis,
                 detail=reason,
-                next_step=trust_step(kind, subject.site_id),
+                next_step=trust_step(kind, subject.site_id, policy.command_options),
             )
         case AlreadyStored(fingerprint, basis):
             return TrustResult(ap_name=name, outcome=TrustOutcome.ALREADY_STORED, basis=basis, detail=fingerprint)
@@ -366,7 +370,7 @@ def apply_decision(
                 )
             if not accepted:
                 return TrustResult(ap_name=name, outcome=TrustOutcome.DECLINED, basis=basis, detail=fingerprint)
-            return _write(subject, basis, fingerprint, lambda: writer.add(chosen.entry(subject.alias)))
+            return _write(subject, policy, basis, fingerprint, lambda: writer.add(chosen.entry(subject.alias)))
         case Replace(old, chosen, basis):
             old_fingerprint = _stored_candidate(old).sha256.text
             fingerprint = chosen.sha256.text
@@ -388,12 +392,18 @@ def apply_decision(
             if not accepted:
                 return TrustResult(ap_name=name, outcome=TrustOutcome.DECLINED, basis=basis, detail=detail)
             return _write(
-                subject, basis, detail, lambda: writer.replace(chosen.entry(subject.alias), old), TrustOutcome.REPLACED
+                subject,
+                policy,
+                basis,
+                detail,
+                lambda: writer.replace(chosen.entry(subject.alias), old),
+                TrustOutcome.REPLACED,
             )
 
 
 def _write(
     subject: TrustSubject,
+    policy: TrustPolicy,
     basis: TrustBasis,
     detail: str,
     action: Callable[[], None],
@@ -407,7 +417,7 @@ def _write(
             outcome=TrustOutcome.FAILED,
             basis=basis,
             detail=str(exc),
-            next_step=trust_step(exc.kind, subject.site_id),
+            next_step=trust_step(exc.kind, subject.site_id, policy.command_options),
         )
     return TrustResult(ap_name=subject.name, outcome=outcome, basis=basis, detail=detail)
 
@@ -440,6 +450,7 @@ def trust_host_keys(
     confirm: Confirm,
     report: Callable[[TrustResult], None],
     scan: Keyscan = default_keyscan,
+    command_options: str = "",
 ) -> TrustReport:
     """Every result is reported as it happens, so an interruption later in the loop leaves the record of what was
     already stored; the returned report holds the same results."""
@@ -461,7 +472,12 @@ def trust_host_keys(
             "points with `--ap`",
         )
     origin = controller_origin(loaded.config.controller)
-    policy = TrustPolicy(assume_yes=assume_yes, accept_unverified=accept_unverified, confirm=confirm)
+    policy = TrustPolicy(
+        assume_yes=assume_yes,
+        accept_unverified=accept_unverified,
+        confirm=confirm,
+        command_options=command_options,
+    )
     results: list[TrustResult] = []
     for name in names:
         ap = by_name.get(name)

@@ -30,10 +30,13 @@ from unifiwifioptimizer.domain.errors import (
 from unifiwifioptimizer.domain.scan import (
     FAILURE_ADVICE,
     HOST_KEY_KINDS,
+    NO_TRUST_CONTEXT,
     ScanFailure,
     ScanFailureKind,
     SiteScan,
+    TrustStepContext,
     ap_said,
+    failure_step,
     failure_words,
 )
 from unifiwifioptimizer.report.json import render_json
@@ -42,7 +45,10 @@ from unifiwifioptimizer.report.text import LINE_MAX, render_overview, render_rep
 
 # The sentences, written out once more on purpose: swapping two table entries must fail a test.
 EXPECTED: dict[ScanFailureKind, tuple[str, str]] = {
-    ScanFailureKind.HOST_KEY_UNKNOWN: ("host key not stored", "`trust-host-keys --site default`"),
+    ScanFailureKind.HOST_KEY_UNKNOWN: (
+        "host key not stored",
+        "`trust-host-keys --site default`, or run again in a terminal",
+    ),
     ScanFailureKind.HOST_KEY_MISMATCH: (
         "changed host key",
         "find out why the key changed (reset, re-adoption), then `trust-host-keys --site default`",
@@ -88,9 +94,9 @@ def test_every_kind_has_words_and_a_next_step_and_the_only_placeholder_is_the_si
     assert set(FAILURE_ADVICE) == set(ScanFailureKind) == set(EXPECTED)
     for kind, advice in FAILURE_ADVICE.items():
         assert advice.words and advice.next_step
-        assert set(re.findall(r"\{(\w+)\}", advice.next_step)) <= {"site"}, kind
+        assert set(re.findall(r"\{(\w+)\}", advice.next_step)) <= {"site", "options"}, kind
         assert advice.show_detail is (kind in DETAIL_KINDS), kind
-        assert (advice.words, advice.next_step.format(site="default")) == EXPECTED[kind], kind
+        assert (advice.words, advice.step("default")) == EXPECTED[kind], kind
 
 
 def test_several_kinds_are_named_in_declaration_order_once_each() -> None:
@@ -142,7 +148,7 @@ def test_a_long_site_id_folds_the_step_without_losing_a_word() -> None:
     site = "s" * 64
     for kind in (ScanFailureKind.AUTHENTICATION, ScanFailureKind.ADDRESS_REFUSED, ScanFailureKind.HOST_KEY_MISMATCH):
         report = replace(analyze_site(failing(golden_input(), kind)), site_id=site)
-        words, step = EXPECTED[kind][0], FAILURE_ADVICE[kind].next_step.format(site=site)
+        words, step = EXPECTED[kind][0], FAILURE_ADVICE[kind].step(site)
         for text in (render_overview(report), render_report(report)):
             assert f"{words}: {step}" in " ".join(text.split()), kind
 
@@ -289,3 +295,78 @@ def test_a_long_cause_is_cut_and_a_hostile_one_loses_its_escape_sequences() -> N
     long_line, hostile_line = out.getvalue().splitlines()
     assert long_line.endswith(": " + safe_text("y" * 1000, max_chars=MAX_CAUSE_CHARS)) and len(long_line) < 400
     assert hostile_line.endswith(": ab") and "\x1b" not in out.getvalue()
+
+
+# --- the host-key step depends on the run: whether the gate checked the keys, and the options of the run -----------
+
+OPTION = " --known-hosts='/Volumes/Temp HD/kh'"
+GATE = (
+    "the host-key lines above say why a key was refused and what to do; a declined key is asked again on the next run"
+)
+
+
+@pytest.mark.parametrize(
+    ("kind", "gate_ran", "options", "expected"),
+    [
+        (
+            ScanFailureKind.HOST_KEY_UNKNOWN, False, "",
+            "`trust-host-keys --site s`, or run again in a terminal",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_UNKNOWN, False, OPTION,
+            "`trust-host-keys --site s --known-hosts='/Volumes/Temp HD/kh'`, or run again in a terminal",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_UNKNOWN, True, "",
+            f"{GATE} in a terminal, or stored with `trust-host-keys --site s`",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_UNKNOWN, True, OPTION,
+            f"{GATE} in a terminal, or stored with `trust-host-keys --site s --known-hosts='/Volumes/Temp HD/kh'`",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_MISMATCH, False, "",
+            "find out why the key changed (reset, re-adoption), then `trust-host-keys --site s`",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_MISMATCH, False, OPTION,
+            "find out why the key changed (reset, re-adoption), then "
+            "`trust-host-keys --site s --known-hosts='/Volumes/Temp HD/kh'`",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_MISMATCH, True, "",
+            f"find out why the key changed (reset, re-adoption); {GATE} in a terminal, or replaced with "
+            "`trust-host-keys --site s`",
+        ),
+        (
+            ScanFailureKind.HOST_KEY_MISMATCH, True, OPTION,
+            f"find out why the key changed (reset, re-adoption); {GATE} in a terminal, or replaced with "
+            "`trust-host-keys --site s --known-hosts='/Volumes/Temp HD/kh'`",
+        ),
+    ],
+)  # fmt: skip
+def test_the_host_key_step_follows_the_gate_and_repeats_the_options_of_the_run(
+    kind: ScanFailureKind, gate_ran: bool, options: str, expected: str
+) -> None:
+    assert failure_step(kind, "s", TrustStepContext(gate_ran=gate_ran, command_options=options)) == expected
+
+
+def test_every_other_kind_has_the_table_step_whatever_the_run_was() -> None:
+    for kind in set(ScanFailureKind) - HOST_KEY_KINDS:
+        for context in (NO_TRUST_CONTEXT, TrustStepContext(gate_ran=True, command_options=OPTION)):
+            assert failure_step(kind, "default", context) == EXPECTED[kind][1], kind
+
+
+@pytest.mark.parametrize("kind", sorted(HOST_KEY_KINDS))
+@pytest.mark.parametrize("gate_ran", [False, True])
+def test_the_report_prints_the_step_of_the_run_once_in_the_overview_and_in_the_details(
+    kind: ScanFailureKind, gate_ran: bool
+) -> None:
+    context = TrustStepContext(gate_ran=gate_ran, command_options=OPTION)
+    report = analyze_site(failing(golden_input(), kind))
+    line = f"{FAILURE_ADVICE[kind].words}: {failure_step(kind, 'default', context)}"
+    for text in (render_overview(report, width=None, steps=context), render_report(report, width=None, steps=context)):
+        assert text.count(line) == 1, (kind, gate_ran)
+    default = render_overview(report, width=None)
+    assert default.count(f"{FAILURE_ADVICE[kind].words}: {failure_step(kind, 'default')}") == 1
+    assert "--known-hosts" not in default

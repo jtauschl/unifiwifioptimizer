@@ -110,16 +110,20 @@ class FailureAdvice:
     next_step: str
     show_detail: bool
 
+    def step(self, site_id: str, options: str = "") -> str:
+        """The step for a site; `options` are the options of the run that a printed `trust-host-keys` repeats."""
+        return self.next_step.format(site=site_id, options=options)
 
-TRUST_COMMAND = "`trust-host-keys --site {site}`"
+
+TRUST_COMMAND = "trust-host-keys --site {site}{options}"
 CHANGED_KEY_CAUSE = "find out why the key changed (reset, re-adoption)"
 
 _FAILURE_ADVICE: dict[ScanFailureKind, FailureAdvice] = {
     ScanFailureKind.HOST_KEY_UNKNOWN: FailureAdvice(
-        words="host key not stored", next_step=TRUST_COMMAND, show_detail=False
+        words="host key not stored", next_step=f"`{TRUST_COMMAND}`, or run again in a terminal", show_detail=False
     ),
     ScanFailureKind.HOST_KEY_MISMATCH: FailureAdvice(
-        words="changed host key", next_step=f"{CHANGED_KEY_CAUSE}, then {TRUST_COMMAND}", show_detail=False
+        words="changed host key", next_step=f"{CHANGED_KEY_CAUSE}, then `{TRUST_COMMAND}`", show_detail=False
     ),
     ScanFailureKind.AUTHENTICATION: FailureAdvice(
         words="SSH login refused",
@@ -165,6 +169,39 @@ _FAILURE_ADVICE: dict[ScanFailureKind, FailureAdvice] = {
     ),
 }
 FAILURE_ADVICE: Mapping[ScanFailureKind, FailureAdvice] = MappingProxyType(_FAILURE_ADVICE)
+
+
+@dataclass(frozen=True, slots=True)
+class TrustStepContext:
+    """What a printed host-key step needs to know about the run: whether the host-key gate checked the keys before the
+    scan, and the options of the run that `trust-host-keys` needs to act on the same store (already quoted)."""
+
+    gate_ran: bool = False
+    command_options: str = ""
+
+
+# A run without the gate (`--no-scan`, a report that is not on a terminal) has nothing to point to.
+NO_TRUST_CONTEXT = TrustStepContext()
+
+
+def trust_command(site_id: str, options: str = "") -> str:
+    return f"`{TRUST_COMMAND.format(site=site_id, options=options)}`"
+
+
+def failure_step(kind: ScanFailureKind, site_id: str, context: TrustStepContext = NO_TRUST_CONTEXT) -> str:
+    """The next step for a failed scan, for every reader of it. A host-key step depends on the run: after the gate
+    checked the keys, a refused key is explained by the gate's own lines (the command would refuse it again) and a
+    declined one is asked again; the command serves the declined key."""
+    advice = FAILURE_ADVICE[kind]
+    if kind not in HOST_KEY_KINDS or not context.gate_ran:
+        return advice.step(site_id, context.command_options)
+    done, cause = (
+        ("replaced", f"{CHANGED_KEY_CAUSE}; ") if kind is ScanFailureKind.HOST_KEY_MISMATCH else ("stored", "")
+    )
+    return (
+        f"{cause}the host-key lines above say why a key was refused and what to do; a declined key is asked again on "
+        f"the next run in a terminal, or {done} with {trust_command(site_id, context.command_options)}"
+    )
 
 
 def failure_words(kinds: Iterable[ScanFailureKind]) -> str:

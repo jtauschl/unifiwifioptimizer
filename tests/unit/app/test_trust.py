@@ -488,3 +488,21 @@ def test_the_step_of_a_name_that_is_not_on_the_controller_names_the_site_it_was_
     )  # fmt: skip
     gone = next(r for r in report.results if r.ap_name == "Gone")
     assert "`unifiwifioptimizer site site-2` lists the names" in gone.next_step
+
+
+def test_the_trust_command_passes_the_options_of_the_invocation_to_the_steps_it_prints() -> None:
+    ap = next(ap for ap in access_points() if not ap.ssh_host_key_fingerprint)
+    alias = host_key_alias("https://unifi.example:443", "default", ap.mac)
+    store = MemoryStore()
+    store.rows = [
+        KnownHostEntry(alias, "ssh-ed25519", key_for(1).key_base64),
+        KnownHostEntry(alias, "ssh-rsa", key_for(2).key_base64),
+    ]
+    report = trust(
+        FixtureApi(), loaded({"ssh": {}, "neighbors": {ap.name: []}}), store, "default", [ap.name],
+        assume_yes=False, accept_unverified=False, confirm=lambda q: False, command_options=" --known-hosts=/kh",
+        scan=lambda address, port, key_type: [key_for(3)],
+    )  # fmt: skip
+    (result,) = report.results
+    assert result.outcome is TrustOutcome.FAILED
+    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step

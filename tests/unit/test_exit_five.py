@@ -1,6 +1,7 @@
 """Exit code 5 says why and what to do, per kind present, in the words of the failure table."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -25,14 +26,14 @@ def outcome(failures: dict[ScanFailureKind, int], *, site: str = "default", veri
     )
 
 
-def lines(*outcomes: SiteOutcome, gate_ran: bool = False) -> list[str]:
-    return cli.host_key_exit_lines(RunResult(reports=(), outcomes=outcomes, host_key_gate_ran=gate_ran))
+def lines(*outcomes: SiteOutcome, gate_ran: bool = False, options: str = "") -> list[str]:
+    return cli.host_key_exit_lines(RunResult(reports=(), outcomes=outcomes, host_key_gate_ran=gate_ran), options)
 
 
 def test_unknown_keys_name_the_step_and_the_terminal_alternative_when_the_gate_did_not_run() -> None:
     assert lines(outcome({UNKNOWN: 4})) == [
         "unifiwifioptimizer: exit 5: site default: 4 access points with host key not stored "
-        "(`trust-host-keys --site default`, or run again with the report on a terminal)"
+        "(`trust-host-keys --site default`, or run again in a terminal)"
     ]
 
 
@@ -91,3 +92,75 @@ def test_a_run_that_ends_in_exit_5_prints_the_line_on_stderr_and_keeps_stdout_on
     captured = capsys.readouterr()
     assert json.loads(captured.out)["schema_version"] == 1
     assert "exit 5: site default: 1 access point with host key not stored" in captured.err
+
+
+@pytest.mark.parametrize("gate_ran", [False, True])
+def test_every_command_in_the_line_repeats_the_options_of_the_run(gate_ran: bool) -> None:
+    (line,) = lines(outcome({CHANGED: 1, UNKNOWN: 1}), gate_ran=gate_ran, options=" --known-hosts=/kh")
+    assert line.count("`trust-host-keys --site default --known-hosts=/kh`") == 2
+    assert line.count("trust-host-keys") == 2
+
+
+@pytest.mark.parametrize("flags", [[], ["--details"]], ids=["overview", "details"])
+def test_an_exit_6_run_that_checked_the_keys_prints_the_gate_step_in_the_report_not_the_bare_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flags: list[str]
+) -> None:
+    from dataclasses import replace
+
+    from tests.unit.analysis.builders import golden_input
+    from tests.unit.test_failure_advice import failing
+    from unifiwifioptimizer.analysis.site_analyzer import analyze_site
+
+    report = analyze_site(failing(golden_input(), CHANGED))
+    result = RunResult(
+        reports=(report,), outcomes=(replace(outcome({CHANGED: 1}), verifiable_ap_count=3),), host_key_gate_ran=True
+    )
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)
+    assert cli.main(["run", *flags, "--known-hosts", "/Volumes/Temp HD/UWO/known hosts"]) == ExitCode.PARTIAL
+    out = capsys.readouterr().out
+    # The raw output: the command stays on one line, so that pasting it names the same file.
+    command = "`trust-host-keys --site default --known-hosts='/Volumes/Temp HD/UWO/known hosts'`"
+    assert any(command in line for line in out.splitlines())
+    assert "the host-key lines above say why a key was refused and what to do" in " ".join(out.split())
+
+
+@pytest.mark.parametrize("path", ["/tmp/a\x1b[2Jb", "/tmp/a\tb", "/" + "d" * 1100], ids=["escape", "tab", "too-long"])
+def test_a_store_path_that_cannot_be_printed_as_typed_is_named_in_words(path: str) -> None:
+    import argparse
+
+    options = cli._command_options(argparse.Namespace(known_hosts=Path(path)))
+    assert options == " --known-hosts=<the file of this run>"
+    assert cli._command_options(argparse.Namespace(known_hosts=None)) == ""
+
+
+def test_the_exit_5_line_of_a_run_names_the_store_it_was_given(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = RunResult(reports=(), outcomes=(outcome({UNKNOWN: 1}),), host_key_gate_ran=False)
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)
+    assert cli.main(["run", "--json", "--known-hosts", "/x y/kh"]) == ExitCode.HOST_KEY
+    assert "`trust-host-keys --site default --known-hosts='/x y/kh'`" in capsys.readouterr().err
+
+
+def test_a_store_path_with_an_escape_sequence_cannot_reach_the_terminal_through_the_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from dataclasses import replace
+
+    from tests.unit.analysis.builders import golden_input
+    from tests.unit.test_failure_advice import failing
+    from unifiwifioptimizer.analysis.site_analyzer import analyze_site
+
+    report = analyze_site(failing(golden_input(), CHANGED))
+    result = RunResult(
+        reports=(report,), outcomes=(replace(outcome({CHANGED: 1}), verifiable_ap_count=3),), host_key_gate_ran=True
+    )
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)
+    assert cli.main(["run", "--known-hosts", "/tmp/a\x1b[2Jb"]) == ExitCode.PARTIAL
+    assert "\x1b" not in capsys.readouterr().out

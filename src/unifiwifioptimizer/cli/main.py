@@ -7,6 +7,7 @@ tool did not foresee is 1.
 
 import argparse
 import os
+import shlex
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -47,7 +48,7 @@ from unifiwifioptimizer.domain.errors import (
     UwoError,
 )
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
-from unifiwifioptimizer.domain.scan import CHANGED_KEY_CAUSE, FAILURE_ADVICE, TRUST_COMMAND, ScanFailureKind
+from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind, TrustStepContext, failure_step
 from unifiwifioptimizer.report.color import colourise, wants_colour
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
@@ -55,6 +56,8 @@ from unifiwifioptimizer.report.skeleton import render_skeleton
 from unifiwifioptimizer.report.text import render_overview, render_report, render_site, render_sites
 
 PROG = "unifiwifioptimizer"
+# A path is a user value: long enough for a real one, bounded for a terminal.
+MAX_OPTION_CHARS = 1024
 
 SUBCOMMAND_HELP: dict[str, str] = {
     "run": "analyse every configured site and print recommendations",
@@ -259,6 +262,7 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
         client, loaded, writer, args.site, args.ap,
         assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=terminal_confirm,
         report=lambda result: print(_result_line(result), flush=True),
+        command_options=_command_options(args),
     )  # fmt: skip
     failed = sum(1 for result in report.results if result.outcome is TrustOutcome.FAILED)
     if failed:
@@ -281,7 +285,12 @@ def _result_line(result: TrustResult) -> str:
 def _host_key_gate(args: argparse.Namespace, environ: Mapping[str, str]) -> Callable[[Sequence[TrustSubject]], None]:
     """The questions a scanning `run` asks before its first scan; the answers come from the terminal only."""
     writer = KnownHostsWriter(_known_hosts_path(args, environ))
-    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=terminal_confirm)
+    policy = TrustPolicy(
+        assume_yes=False,
+        accept_unverified=False,
+        confirm=terminal_confirm,
+        command_options=_command_options(args),
+    )
 
     def gate(subjects: Sequence[TrustSubject]) -> None:
         print(f"{PROG}: checking host keys...", file=sys.stderr)
@@ -339,29 +348,20 @@ def _run(args: argparse.Namespace) -> ExitCode:
         print(render_json(result.reports), end="")
     else:
         paint = colourise if wants_colour(sys.stdout, environ) else str
+        steps = TrustStepContext(gate_ran=result.host_key_gate_ran, command_options=_command_options(args))
         for report in result.reports:
-            print(paint(render_report(report) if args.details else render_overview(report)), end="")
+            text = render_report(report, steps=steps) if args.details else render_overview(report, steps=steps)
+            print(paint(text), end="")
     code = exit_code_for_run(result)
     if code is ExitCode.HOST_KEY:
-        for line in host_key_exit_lines(result):
+        for line in host_key_exit_lines(result, _command_options(args)):
             print(line, file=sys.stderr)
     return code
 
 
-def _after_the_gate(kind: ScanFailureKind, site_id: str) -> str:
-    """The gate already checked the keys: a key it refused is explained by its own lines, a declined one is asked
-    again, and the command serves the declined one."""
-    done, cause = (
-        ("replaced", f"{CHANGED_KEY_CAUSE}; ") if kind is ScanFailureKind.HOST_KEY_MISMATCH else ("stored", "")
-    )
-    return (
-        f"{cause}the host-key lines above say why a key was refused and what to do; a declined key is asked again on "
-        f"the next run in a terminal, or {done} with {TRUST_COMMAND.format(site=site_id)}"
-    )
-
-
-def host_key_exit_lines(result: RunResult) -> list[str]:
+def host_key_exit_lines(result: RunResult, command_options: str = "") -> list[str]:
     """Exit 5, said in words: per site that had no verifiable access point, the host-key failures with their steps."""
+    context = TrustStepContext(gate_ran=result.host_key_gate_ran, command_options=command_options)
     lines: list[str] = []
     for outcome in result.outcomes:
         if not outcome.no_verifiable_ap:
@@ -371,18 +371,26 @@ def host_key_exit_lines(result: RunResult) -> list[str]:
             count = outcome.host_key_failures.get(kind)
             if not count:
                 continue
-            advice = FAILURE_ADVICE[kind]
-            step = advice.next_step.format(site=outcome.site_id)
-            if result.host_key_gate_ran:
-                step = _after_the_gate(kind, outcome.site_id)
-            elif kind is ScanFailureKind.HOST_KEY_UNKNOWN:
-                step = f"{step}, or run again with the report on a terminal"
+            step = failure_step(kind, outcome.site_id, context)
             noun = "access point" if count == 1 else "access points"
             lead = f"{count} {noun} with" if not parts else f"{count} with"
-            parts.append(f"{lead} {advice.words} ({step})")
+            parts.append(f"{lead} {FAILURE_ADVICE[kind].words} ({step})")
         text = f"{PROG}: exit {int(ExitCode.HOST_KEY)}: site {outcome.site_id}: {', '.join(parts)}"
         lines.append(safe_text(text, max_chars=MAX_ERROR_CHARS))
     return lines
+
+
+def _command_options(args: argparse.Namespace) -> str:
+    """The options of this run that `trust-host-keys` needs to act on the same store, as they would be typed."""
+    if args.known_hosts is None:
+        return ""
+    text = str(args.known_hosts)
+    quoted = shlex.quote(text)
+    # Same rule as the creation hint of the configuration: a path the terminal would not show as typed, or too long to
+    # print whole, gets no literal to copy, because the text that reaches the terminal is sanitised and capped.
+    if not text.isprintable() or len(quoted) > MAX_OPTION_CHARS:
+        return " --known-hosts=<the file of this run>"
+    return f" --known-hosts={quoted}"
 
 
 def _can_ask_host_keys(args: argparse.Namespace) -> bool:

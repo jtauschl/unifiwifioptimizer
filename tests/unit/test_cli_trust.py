@@ -384,3 +384,39 @@ def test_the_closing_line_passes_the_site_id_through_safe_text(
     )
     assert cli.main(["trust-host-keys", "--site", "default", "--known-hosts", "/state/kh"]) == ExitCode.HOST_KEY
     assert "\x1b" not in capsys.readouterr().err
+
+
+def test_the_trust_command_and_the_gate_repeat_the_store_in_the_step_they_print(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    import argparse
+
+    from tests.unit.app.test_trust import FixtureApi as TrustApi
+    from tests.unit.app.test_trust import access_points, key_for
+    from tests.unit.app.test_trust import loaded as trust_loaded
+    from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostEntry
+    from unifiwifioptimizer.app import trust as trust_module
+    from unifiwifioptimizer.domain.hostkeys import host_key_alias
+
+    ap = next(ap for ap in access_points() if not ap.ssh_host_key_fingerprint)
+    store_path = tmp_path / "known hosts"
+    alias = host_key_alias("https://unifi.example:443", "default", ap.mac)
+    store_path.write_text(
+        "".join(f"{KnownHostEntry(alias, 'ssh-ed25519', key_for(seed).key_base64).line}\n" for seed in (1, 2))
+    )
+    store_path.chmod(0o600)
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None: trust_loaded({"ssh": {}, "neighbors": {ap.name: []}}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (TrustApi(), None))
+    monkeypatch.setattr(trust_module, "keyscan", lambda address, port, key_type=None: [key_for(3)])
+    expected = f"`trust-host-keys --site default --known-hosts='{store_path}'`"
+
+    assert cli.main(["trust-host-keys", "--site", "default", "--known-hosts", str(store_path)]) == ExitCode.HOST_KEY
+    assert expected in capsys.readouterr().out
+
+    gate = cli._host_key_gate(argparse.Namespace(known_hosts=store_path), {})
+    import dataclasses
+
+    from tests.unit.app.test_trust_decision import subject
+
+    gate([dataclasses.replace(subject(), name=ap.name, alias=alias, mac=ap.mac, address=ap.ip)])
+    assert expected in capsys.readouterr().err

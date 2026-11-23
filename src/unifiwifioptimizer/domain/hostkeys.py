@@ -140,8 +140,7 @@ TRUST_ADVICE: Mapping[TrustRefusalKind, str] = MappingProxyType(
         TrustRefusalKind.UNUSABLE_KEYS: _REPORT_WITH_FIRMWARE,
         TrustRefusalKind.SEVERAL_STORED_LINES: (
             "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
-            "`trust-host-keys --site {site}` (with the same `--known-hosts` when the file named above is not the "
-            "default), which handles the key as one not yet stored"
+            "`trust-host-keys --site {site}{options}`, which handles the key as one not yet stored"
         ),
         TrustRefusalKind.STORE_CHANGED: (
             "the store changed while this access point was being handled (another run of the tool, or an edit by "
