@@ -498,7 +498,7 @@ def test_a_rotated_key_is_replaced_on_a_verified_basis_and_the_next_scan_passes(
         if any(c.key_type == "ssh-ed25519" for c in offered)
         else offered[0]
     )
-    decision = plan_trust(store.entries_for(alias), offered, expected_fingerprint(None, current.sha256))
+    decision = plan_trust(store.entries_for(alias), offered, expected_fingerprint(None, current.sha256), store.path)
     assert isinstance(decision, Replace) and decision.old == stale
     refused = apply_decision(
         trust_subject(fresh_ap, port), decision, store,

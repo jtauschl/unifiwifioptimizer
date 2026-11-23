@@ -4,7 +4,7 @@ import base64
 import dataclasses
 from collections.abc import Sequence
 from ipaddress import ip_address
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import pytest
 
@@ -33,7 +33,7 @@ from unifiwifioptimizer.app.trust import (
     plan_trust,
 )
 from unifiwifioptimizer.domain.errors import HostKeyTrustError
-from unifiwifioptimizer.domain.hostkeys import key_fingerprints
+from unifiwifioptimizer.domain.hostkeys import TrustRefusalKind, key_fingerprints
 
 ALIAS = "uwo-" + "0" * 32
 ED = "ssh-ed25519"
@@ -52,6 +52,7 @@ def held(c: HostKeyCandidate) -> KnownHostEntry:
 
 
 NO_EXPECTATION = expected_fingerprint(None, None)
+STORE = PurePath("/state/known_hosts")
 
 
 def controller_says(c: HostKeyCandidate) -> Expectation:
@@ -81,60 +82,68 @@ class Memory(KnownHostsWriter):
         self.rows = [entry if e.alias == entry.alias else e for e in self.rows]
 
 
+def plan(
+    stored: Sequence[KnownHostEntry], offered: Sequence[HostKeyCandidate], expectation: Expectation
+) -> TrustDecision:
+    return plan_trust(stored, offered, expectation, STORE)
+
+
 # --- plan_trust: one test per rule of the rank ---------------------------------------------------------------
 
 
 def test_rule_1_several_stored_lines_are_refused() -> None:
-    decision = plan_trust([held(cand(1)), held(cand(2))], [cand(1)], NO_EXPECTATION)
+    decision = plan([held(cand(1)), held(cand(2))], [cand(1)], NO_EXPECTATION)
     assert isinstance(decision, Refused) and "several entries" in decision.reason
 
 
 def test_rule_2_nothing_offered_is_refused() -> None:
-    assert plan_trust([], [], NO_EXPECTATION) == Refused("no host key offered", TrustBasis.UNVERIFIED)
+    assert plan([], [], NO_EXPECTATION) == Refused(
+        TrustRefusalKind.NO_KEY_OFFERED, "no host key offered", TrustBasis.UNVERIFIED
+    )
 
 
 @pytest.mark.security("T8")
 def test_rule_3_a_contradicting_expectation_is_refused_even_when_the_stored_key_still_works() -> None:
     stored, other = cand(1), cand(2)
-    decision = plan_trust([held(stored)], [stored], controller_says(other))
+    decision = plan([held(stored)], [stored], controller_says(other))
     assert isinstance(decision, Refused) and "matches the controller fingerprint" in decision.reason
-    assert isinstance(plan_trust([], [stored], pin_says(other)), Refused)
+    assert isinstance(plan([], [stored], pin_says(other)), Refused)
 
 
 def test_rule_4_a_stored_key_that_is_still_offered_needs_nothing_even_when_the_choice_would_be_ambiguous() -> None:
     stored = cand(1)
     two_of_one_type = [stored, cand(2)]
-    assert plan_trust([held(stored)], two_of_one_type, NO_EXPECTATION) == AlreadyStored(
+    assert plan([held(stored)], two_of_one_type, NO_EXPECTATION) == AlreadyStored(
         stored.sha256.text, TrustBasis.UNVERIFIED
     )
-    assert plan_trust([held(stored)], [stored], controller_says(stored)) == AlreadyStored(
+    assert plan([held(stored)], [stored], controller_says(stored)) == AlreadyStored(
         stored.sha256.text, TrustBasis.CONTROLLER
     )
 
 
 def test_rule_5_nothing_stored_stores_the_chosen_key() -> None:
     new = cand(3)
-    assert plan_trust([], [cand(9), new], controller_says(new)) == StoreNew(new, TrustBasis.CONTROLLER)
-    assert plan_trust([], [new], NO_EXPECTATION) == StoreNew(new, TrustBasis.UNVERIFIED)
+    assert plan([], [cand(9), new], controller_says(new)) == StoreNew(new, TrustBasis.CONTROLLER)
+    assert plan([], [new], NO_EXPECTATION) == StoreNew(new, TrustBasis.UNVERIFIED)
 
 
 def test_rule_5_an_ambiguous_first_use_choice_is_refused() -> None:
-    assert isinstance(plan_trust([], [cand(1), cand(2)], NO_EXPECTATION), Refused)
+    assert isinstance(plan([], [cand(1), cand(2)], NO_EXPECTATION), Refused)
 
 
 @pytest.mark.security("T8")
 def test_rule_6_a_stored_key_that_is_not_offered_is_replaced_by_the_chosen_one() -> None:
     old, new = cand(1), cand(2)
-    assert plan_trust([held(old)], [new], controller_says(new)) == Replace(held(old), new, TrustBasis.CONTROLLER)
-    assert plan_trust([held(old)], [new], NO_EXPECTATION) == Replace(held(old), new, TrustBasis.UNVERIFIED)
+    assert plan([held(old)], [new], controller_says(new)) == Replace(held(old), new, TrustBasis.CONTROLLER)
+    assert plan([held(old)], [new], NO_EXPECTATION) == Replace(held(old), new, TrustBasis.UNVERIFIED)
 
 
 def test_rule_6_a_stored_key_still_offered_but_not_the_one_the_controller_names_is_replaced() -> None:
     stored, named = cand(1, ED), cand(2, ECDSA)
-    decision = plan_trust([held(stored)], [stored, named], controller_says(named))
+    decision = plan([held(stored)], [stored, named], controller_says(named))
     assert decision == Replace(held(stored), named, TrustBasis.CONTROLLER)
     # The next run converges: the stored key is the one the controller names.
-    assert isinstance(plan_trust([held(named)], [stored, named], controller_says(named)), AlreadyStored)
+    assert isinstance(plan([held(named)], [stored, named], controller_says(named)), AlreadyStored)
 
 
 # --- apply_decision: policy x answer ---------------------------------------------------------------------------
@@ -231,7 +240,7 @@ def test_a_replace_reports_old_and_new_fingerprint_and_a_refusal_is_a_failure() 
     )  # fmt: skip
     assert result.detail == f"{OLD.sha256.text} -> {NEW.sha256.text}"
     refused = apply_decision(
-        subject(), Refused("nope", TrustBasis.CONTROLLER), store,
+        subject(), Refused(TrustRefusalKind.KEY_MISMATCH_CONTROLLER, "nope", TrustBasis.CONTROLLER), store,
         TrustPolicy(assume_yes=True, accept_unverified=True, confirm=lambda p: True),
     )  # fmt: skip
     assert refused.outcome is TrustOutcome.FAILED and refused.detail == "nope"
@@ -240,7 +249,7 @@ def test_a_replace_reports_old_and_new_fingerprint_and_a_refusal_is_a_failure() 
 def test_a_store_that_refuses_the_write_is_a_failure_not_a_crash() -> None:
     class Stale(Memory):
         def replace(self, entry: KnownHostEntry, expected_old: KnownHostEntry) -> None:
-            raise HostKeyTrustError("the stored key changed since it was shown")
+            raise HostKeyTrustError(TrustRefusalKind.STORE_CHANGED, "the stored key changed since it was shown")
 
     result = apply_decision(
         subject(), Replace(OLD.entry(ALIAS), NEW, TrustBasis.CONTROLLER), Stale([OLD.entry(ALIAS)]),
@@ -297,7 +306,7 @@ def test_a_timeout_of_the_quick_check_is_a_refusal_not_a_fallback() -> None:
 
     def scan(address: object, port: int, key_type: str | None) -> Sequence[HostKeyCandidate]:
         calls.append(key_type)
-        raise HostKeyTrustError("ssh-keyscan did not finish within 30 s")
+        raise HostKeyTrustError(TrustRefusalKind.KEYSCAN_TIMEOUT, "ssh-keyscan did not finish within 30 s")
 
     decision = inspect_access_point(subject(), Memory([held(cand(1))]), scan)
     assert isinstance(decision, Refused) and calls == [ED]

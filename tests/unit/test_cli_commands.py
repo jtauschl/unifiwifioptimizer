@@ -38,6 +38,7 @@ from unifiwifioptimizer.domain.errors import (
     ToolEnvironmentError,
     UwoError,
 )
+from unifiwifioptimizer.domain.hostkeys import TrustRefusalKind
 from unifiwifioptimizer.domain.models import (
     ApGroup,
     ClientSighting,
@@ -183,7 +184,7 @@ EXIT_CODE_BY_ERROR: dict[type[UwoError], tuple[UwoError, ExitCode]] = {
         ExitCode.TLS,
     ),
     errors.ToolEnvironmentError: (ToolEnvironmentError("no docker"), ExitCode.ENVIRONMENT),
-    errors.HostKeyTrustError: (HostKeyTrustError("no match"), ExitCode.HOST_KEY),
+    errors.HostKeyTrustError: (HostKeyTrustError(TrustRefusalKind.UNUSABLE_KEYS, "no match"), ExitCode.HOST_KEY),
     errors.SchemaError: (SchemaError("$.data", "expected a list"), ExitCode.UNEXPECTED_ERROR),
     errors.ControllerError: (ControllerError("/x", "status 500"), ExitCode.UNEXPECTED_ERROR),
     errors.ResponseTooLargeError: (ResponseTooLargeError("/x", "too large"), ExitCode.UNEXPECTED_ERROR),

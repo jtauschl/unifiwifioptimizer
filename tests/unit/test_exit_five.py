@@ -39,7 +39,8 @@ def test_unknown_keys_name_the_step_and_the_terminal_alternative_when_the_gate_d
 def test_after_the_gate_ran_the_step_does_not_send_the_person_in_a_circle() -> None:
     assert lines(outcome({UNKNOWN: 1}), gate_ran=True) == [
         "unifiwifioptimizer: exit 5: site default: 1 access point with host key not stored "
-        "(the host-key lines above say why; then `trust-host-keys --site default`)"
+        "(the host-key lines above say why and what to do; a declined key is asked again on the next run "
+        "in a terminal, or stored with `trust-host-keys --site default`)"
     ]
 
 

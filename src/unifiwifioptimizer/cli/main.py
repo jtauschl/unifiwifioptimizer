@@ -21,7 +21,14 @@ from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.adapters.unifi.tls import TlsPolicy, observe_fingerprint
 from unifiwifioptimizer.app import use_cases
 from unifiwifioptimizer.app.run import RunResult, RunVerdict, run_analysis
-from unifiwifioptimizer.app.trust import TrustPolicy, TrustResult, TrustSubject, check_host_keys, trust_host_keys
+from unifiwifioptimizer.app.trust import (
+    TrustOutcome,
+    TrustPolicy,
+    TrustResult,
+    TrustSubject,
+    check_host_keys,
+    trust_host_keys,
+)
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
 from unifiwifioptimizer.cli.progress import StderrProgress
@@ -251,16 +258,24 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
     report = trust_host_keys(
         client, loaded, writer, args.site, args.ap,
         assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=terminal_confirm,
+        report=lambda result: print(_result_line(result), flush=True),
     )  # fmt: skip
-    for result in report.results:
-        print(_result_line(result))
+    failed = sum(1 for result in report.results if result.outcome is TrustOutcome.FAILED)
+    if failed:
+        noun = "access point" if failed == 1 else "access points"
+        print(
+            f"{PROG}: exit {int(ExitCode.HOST_KEY)}: site {safe_text(report.site_id)}: {failed} {noun} failed; the "
+            "result lines name each reason and its next step",
+            file=sys.stderr,
+        )
     return ExitCode.HOST_KEY if report.failed else ExitCode.OK
 
 
 def _result_line(result: TrustResult) -> str:
     basis = f" ({result.basis})" if result.basis is not None else ""
     detail = f" {result.detail}" if result.detail else ""
-    return safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}", max_chars=MAX_ERROR_CHARS)
+    step = f"; {result.next_step}" if result.next_step else ""
+    return safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}{step}", max_chars=MAX_ERROR_CHARS)
 
 
 def _host_key_gate(args: argparse.Namespace, environ: Mapping[str, str]) -> Callable[[Sequence[TrustSubject]], None]:
@@ -348,7 +363,8 @@ def host_key_exit_lines(result: RunResult) -> list[str]:
             step = advice.next_step.format(site=outcome.site_id)
             if kind is ScanFailureKind.HOST_KEY_UNKNOWN:
                 step = (
-                    f"the host-key lines above say why; then {step}"
+                    f"the host-key lines above say why and what to do; a declined key is asked again on the next run "
+                    f"in a terminal, or stored with {step}"
                     if result.host_key_gate_ran
                     else f"{step}, or run again with the report on a terminal"
                 )

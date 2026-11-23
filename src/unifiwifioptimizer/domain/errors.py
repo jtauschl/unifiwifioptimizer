@@ -5,6 +5,7 @@ for the operator and never embeds secrets or raw external strings.
 """
 
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
+from unifiwifioptimizer.domain.hostkeys import TrustRefusalKind
 
 
 class UwoError(Exception):
@@ -141,4 +142,9 @@ class AddressRefusedError(ScanError):
 
 
 class HostKeyTrustError(UwoError):
-    """`trust-host-keys` cannot decide which key to trust (no match, ambiguity, conflicting sources)."""
+    """The trust step cannot handle an access point (no match, ambiguity, conflicting sources, a store that changed).
+    `kind` names the refusal; `domain/hostkeys.py` `TRUST_ADVICE` gives its next step."""
+
+    def __init__(self, kind: TrustRefusalKind, message: str) -> None:
+        super().__init__(message)
+        self.kind = kind

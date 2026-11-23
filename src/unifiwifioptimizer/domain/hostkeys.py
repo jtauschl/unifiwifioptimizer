@@ -7,8 +7,12 @@ hostname-based entry would let a controller-supplied address pick which key is t
 import hashlib
 import re
 from base64 import b64decode, b64encode
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
+
+from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind
 
 ALIAS_PREFIX = "uwo-"
 ALIAS_DIGEST_CHARS = 32
@@ -71,3 +75,84 @@ def key_fingerprints(key_base64: str) -> tuple[HostKeyFingerprint, HostKeyFinger
         HostKeyFingerprint(FingerprintAlgorithm.SHA256, hashlib.sha256(blob).digest()),
         HostKeyFingerprint(FingerprintAlgorithm.MD5, hashlib.md5(blob, usedforsecurity=False).digest()),
     )
+
+
+class TrustRefusalKind(StrEnum):
+    """Why the trust step refused an access point, named by what the person does next."""
+
+    ADDRESS_NOT_USED = "address_not_used"
+    FINGERPRINT_FORM = "fingerprint_form"
+    NO_KEY_OFFERED = "no_key_offered"
+    KEYSCAN_TIMEOUT = "keyscan_timeout"
+    KEYSCAN_TOO_MANY = "keyscan_too_many"
+    KEY_MISMATCH_PIN = "key_mismatch_pin"
+    KEY_MISMATCH_CONTROLLER = "key_mismatch_controller"
+    STORED_KEY_REJECTED_PIN = "stored_key_rejected_pin"
+    STORED_KEY_REJECTED_CONTROLLER = "stored_key_rejected_controller"
+    SOURCES_DISAGREE = "sources_disagree"
+    UNUSABLE_KEYS = "unusable_keys"
+    SEVERAL_STORED_LINES = "several_stored_lines"
+    STORE_CHANGED = "store_changed"
+    NOT_ON_CONTROLLER_NAMED = "not_on_controller_named"
+    NOT_ON_CONTROLLER_CONFIGURED = "not_on_controller_configured"
+
+
+_REPORT_WITH_FIRMWARE = "report it with the access point's firmware version"
+_COMPARE_ELSEWHERE = "from a source other than this tool"
+
+# The next step per kind; `{site}` is the controller's site id. A step that the scan side has too is read from
+# `FAILURE_ADVICE`, not copied.
+TRUST_ADVICE: Mapping[TrustRefusalKind, str] = MappingProxyType(
+    {
+        TrustRefusalKind.ADDRESS_NOT_USED: FAILURE_ADVICE[ScanFailureKind.ADDRESS_REFUSED].next_step,
+        TrustRefusalKind.FINGERPRINT_FORM: (
+            "report it with the controller version; this access point cannot be trusted or re-trusted until the "
+            "controller reports a SHA-256 or an MD5 fingerprint, or none (a pin does not override it); a key already "
+            "stored keeps working"
+        ),
+        TrustRefusalKind.NO_KEY_OFFERED: FAILURE_ADVICE[ScanFailureKind.TRANSPORT].next_step,
+        TrustRefusalKind.KEYSCAN_TIMEOUT: FAILURE_ADVICE[ScanFailureKind.TIMEOUT].next_step,
+        TrustRefusalKind.KEYSCAN_TOO_MANY: _REPORT_WITH_FIRMWARE,
+        TrustRefusalKind.KEY_MISMATCH_PIN: (
+            "the pin is wrong (a typo, another access point's fingerprint) or the access point was reset or "
+            "re-adopted; if none of these holds, someone else may answer at this address: store nothing; correct "
+            f"`sites.{{site}}.ssh.host_keys` only with a fingerprint {_COMPARE_ELSEWHERE}"
+        ),
+        TrustRefusalKind.KEY_MISMATCH_CONTROLLER: (
+            "the access point was reset or re-adopted, or the controller's value is stale; this key is stored only "
+            "once the controller reports it; if none of these holds, someone else may answer at this address: store "
+            "nothing"
+        ),
+        TrustRefusalKind.STORED_KEY_REJECTED_PIN: (
+            "the stored key still answers and the scan keeps using it; the pin in `sites.{site}.ssh.host_keys` names "
+            "another key: check that value (a typo, another access point's fingerprint) before you change anything"
+        ),
+        TrustRefusalKind.STORED_KEY_REJECTED_CONTROLLER: (
+            "the stored key still answers and the scan keeps using it; the fingerprint the controller reports names "
+            "another key: check that value (stale, another device) before you change anything"
+        ),
+        TrustRefusalKind.SOURCES_DISAGREE: (
+            f"compare both values with the access point's key {_COMPARE_ELSEWHERE}; correct "
+            "`sites.{site}.ssh.host_keys` when the pin is wrong, otherwise find out why the controller reports "
+            "another key (reset, re-adoption); the two may also name different key types of the same access point: "
+            "then pin the key the controller reports"
+        ),
+        TrustRefusalKind.UNUSABLE_KEYS: _REPORT_WITH_FIRMWARE,
+        TrustRefusalKind.SEVERAL_STORED_LINES: (
+            "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
+            "`trust-host-keys --site {site}` (with the same `--known-hosts` when the file named above is not the "
+            "default), which handles the key as one not yet stored"
+        ),
+        TrustRefusalKind.STORE_CHANGED: (
+            "the store changed while this access point was being handled (another run of the tool, or an edit by "
+            "hand); run again"
+        ),
+        TrustRefusalKind.NOT_ON_CONTROLLER_NAMED: (
+            "check the spelling; `unifiwifioptimizer site {site}` lists the names (quote a name with blanks)"
+        ),
+        TrustRefusalKind.NOT_ON_CONTROLLER_CONFIGURED: (
+            "the name under `sites.{site}.neighbors` is not on the controller; `unifiwifioptimizer site {site}` lists "
+            "the names"
+        ),
+    }
+)

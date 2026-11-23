@@ -11,6 +11,7 @@ import pytest
 from tests.integration.local.race import swap_outcomes
 from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostEntry, KnownHostsWriter
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
+from unifiwifioptimizer.domain.hostkeys import TrustRefusalKind
 
 pytestmark = pytest.mark.integration
 
@@ -280,8 +281,9 @@ def test_replace_is_idempotent_and_refuses_a_key_other_than_the_one_that_was_sho
     before = store.path.read_bytes()
     store.replace(new, old)
     assert store.path.read_bytes() == before
-    with pytest.raises(HostKeyTrustError, match="changed since it was shown"):
+    with pytest.raises(HostKeyTrustError, match="changed since it was shown") as changed:
         store.replace(KnownHostEntry(ALIAS_A, "ssh-ed25519", THIRD_BLOB), old)
+    assert changed.value.kind is TrustRefusalKind.STORE_CHANGED
     assert store.path.read_bytes() == before
 
 
@@ -291,17 +293,20 @@ def test_replace_refuses_an_absent_alias_and_an_alias_with_two_lines(tmp_path: P
     store = KnownHostsWriter(path)
     entry = KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB)
     new = KnownHostEntry(ALIAS_A, "ssh-ed25519", OTHER_BLOB)
-    with pytest.raises(HostKeyTrustError, match="0 entries are stored"):
+    with pytest.raises(HostKeyTrustError, match="no key is stored for alias") as absent:
         store.replace(new, entry)
+    assert absent.value.kind is TrustRefusalKind.STORE_CHANGED
     assert not path.exists() or path.read_bytes() == b""
     path.write_text(f"{entry.line}\n{ALIAS_A} ssh-rsa {THIRD_BLOB}\n")
     path.chmod(0o600)
     before = path.read_bytes()
-    with pytest.raises(HostKeyTrustError, match="2 entries are stored"):
+    with pytest.raises(HostKeyTrustError, match=f"2 entries are stored for alias {ALIAS_A} in {path}") as several:
         store.replace(new, entry)
+    assert several.value.kind is TrustRefusalKind.SEVERAL_STORED_LINES
     assert path.read_bytes() == before
-    with pytest.raises(HostKeyTrustError, match="different host key is already stored"):
+    with pytest.raises(HostKeyTrustError, match="different host key is already stored") as conflict:
         store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", THIRD_BLOB))
+    assert conflict.value.kind is TrustRefusalKind.STORE_CHANGED
 
 
 @pytest.mark.security("T14")

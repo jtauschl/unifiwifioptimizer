@@ -24,7 +24,12 @@ from typing import Protocol
 
 from unifiwifioptimizer.adapters.ssh.spawn_env import base_child_env
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError, ToolEnvironmentError
-from unifiwifioptimizer.domain.hostkeys import FingerprintAlgorithm, HostKeyFingerprint, key_fingerprints
+from unifiwifioptimizer.domain.hostkeys import (
+    FingerprintAlgorithm,
+    HostKeyFingerprint,
+    TrustRefusalKind,
+    key_fingerprints,
+)
 
 APP_DIR = "unifiwifioptimizer"
 KNOWN_HOSTS_NAME = "known_hosts"
@@ -212,7 +217,9 @@ class KnownHostsWriter(KnownHostsStore):
                 return (*existing, entry)
             if all(e == entry for e in held):
                 return None
-            raise HostKeyTrustError(f"a different host key is already stored for alias {entry.alias}")
+            raise HostKeyTrustError(
+                TrustRefusalKind.STORE_CHANGED, f"a different host key is already stored for alias {entry.alias}"
+            )
 
         self._rewrite(append)
 
@@ -225,13 +232,19 @@ class KnownHostsWriter(KnownHostsStore):
             held = [e for e in existing if e.alias == entry.alias]
             if held == [entry]:
                 return None
-            if len(held) != 1:
+            if not held:
                 raise HostKeyTrustError(
-                    f"{len(held)} entries are stored for alias {entry.alias}; remove the extra lines from "
-                    f"{self._path} by hand"
+                    TrustRefusalKind.STORE_CHANGED, f"no key is stored for alias {entry.alias} any more"
+                )
+            if len(held) > 1:
+                raise HostKeyTrustError(
+                    TrustRefusalKind.SEVERAL_STORED_LINES,
+                    f"{len(held)} entries are stored for alias {entry.alias} in {self._path}",
                 )
             if held[0] != expected_old:
-                raise HostKeyTrustError(f"the stored key for alias {entry.alias} changed since it was shown")
+                raise HostKeyTrustError(
+                    TrustRefusalKind.STORE_CHANGED, f"the stored key for alias {entry.alias} changed since it was shown"
+                )
             return tuple(entry if e.alias == entry.alias else e for e in existing)
 
         self._rewrite(swap)
@@ -328,7 +341,9 @@ def _run_keyscan(argv: Sequence[str]) -> str:
     except FileNotFoundError:
         raise ToolEnvironmentError("ssh-keyscan not found on PATH (part of OpenSSH)") from None
     except subprocess.TimeoutExpired:
-        raise HostKeyTrustError(f"ssh-keyscan did not finish within {KEYSCAN_TOTAL_TIMEOUT_S} s") from None
+        raise HostKeyTrustError(
+            TrustRefusalKind.KEYSCAN_TIMEOUT, f"ssh-keyscan did not finish within {KEYSCAN_TOTAL_TIMEOUT_S} s"
+        ) from None
     return completed.stdout.decode("utf-8", errors="replace")
 
 
@@ -367,7 +382,9 @@ def keyscan(
             continue
         candidates.append(HostKeyCandidate(key_type, key_base64, sha256, md5))
         if len(candidates) > MAX_KEYSCAN_KEYS:
-            raise HostKeyTrustError(f"{address}: more than {MAX_KEYSCAN_KEYS} host keys offered")
+            raise HostKeyTrustError(
+                TrustRefusalKind.KEYSCAN_TOO_MANY, f"{address}: more than {MAX_KEYSCAN_KEYS} host keys offered"
+            )
     return tuple(candidates)
 
 
@@ -400,8 +417,9 @@ def expected_fingerprint(config_pin: bytes | None, controller_fingerprint: HostK
         if controller_fingerprint.algorithm is FingerprintAlgorithm.SHA256:
             if controller_fingerprint.digest != config_pin:
                 raise HostKeyTrustError(
-                    "the configured host-key pin and the fingerprint the controller reports differ; "
-                    "resolve that before trusting the access point"
+                    TrustRefusalKind.SOURCES_DISAGREE,
+                    f"the configured host-key pin {HostKeyFingerprint(FingerprintAlgorithm.SHA256, config_pin).text} "
+                    f"and the fingerprint the controller reports {controller_fingerprint.text} differ",
                 )
             return Expectation((pin,), TrustBasis.CONFIG_PIN)
         return Expectation((pin, controller_fingerprint), TrustBasis.CONFIG_PIN)
@@ -418,24 +436,29 @@ def select_candidate(candidates: Sequence[HostKeyCandidate], expectation: Expect
         matching = [c for c in candidates if c.matches(primary)]
         if len(matching) != 1:
             raise HostKeyTrustError(
-                f"{len(matching)} of {len(candidates)} offered host keys match the {expectation.basis} {primary.text}"
+                TrustRefusalKind.UNUSABLE_KEYS,
+                f"{len(matching)} of {len(candidates)} offered host keys match the {expectation.basis} {primary.text}",
             )
         chosen = matching[0]
         for other in expectation.fingerprints[1:]:
             if not chosen.matches(other):
                 raise HostKeyTrustError(
-                    f"the key matching the {expectation.basis} does not match the controller's {other.text}; "
-                    "resolve that before trusting the access point"
+                    TrustRefusalKind.SOURCES_DISAGREE,
+                    f"the key matching the {expectation.basis} {primary.text} does not match the controller's "
+                    f"{other.text}",
                 )
         return chosen
     if not candidates:
-        raise HostKeyTrustError("no host key offered")
+        raise HostKeyTrustError(TrustRefusalKind.NO_KEY_OFFERED, "no host key offered")
     by_type = {c.key_type: c for c in candidates}
     if len(by_type) != len(candidates):
-        raise HostKeyTrustError("the access point offered several keys of one type; nothing to decide by")
+        raise HostKeyTrustError(
+            TrustRefusalKind.UNUSABLE_KEYS, "the access point offered several keys of one type; nothing to decide by"
+        )
     for key_type in TOFU_KEY_TYPE_PREFERENCE:
         if key_type in by_type:
             return by_type[key_type]
     raise HostKeyTrustError(
-        f"no offered key type is one the tool would trust on first use ({', '.join(sorted(by_type))})"
+        TrustRefusalKind.UNUSABLE_KEYS,
+        f"no offered key type is one the tool would trust on first use ({', '.join(sorted(by_type))})",
     )

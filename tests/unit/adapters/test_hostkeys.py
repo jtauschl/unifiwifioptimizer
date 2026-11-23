@@ -21,7 +21,12 @@ from unifiwifioptimizer.adapters.ssh.hostkeys import (
     select_candidate,
 )
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
-from unifiwifioptimizer.domain.hostkeys import FingerprintAlgorithm, HostKeyFingerprint, key_fingerprints
+from unifiwifioptimizer.domain.hostkeys import (
+    FingerprintAlgorithm,
+    HostKeyFingerprint,
+    TrustRefusalKind,
+    key_fingerprints,
+)
 
 ALIAS = "uwo-" + "ab" * 16
 
@@ -75,8 +80,12 @@ def test_expected_fingerprint_precedence_config_then_controller_then_tofu() -> N
     assert expected_fingerprint(None, controller) == Expectation((controller,), TrustBasis.CONTROLLER)
     assert expected_fingerprint(None, None) == Expectation((), TrustBasis.UNVERIFIED)
     other = HostKeyFingerprint(FingerprintAlgorithm.SHA256, bytes(32))
-    with pytest.raises(HostKeyTrustError, match="pin and the fingerprint the controller reports differ"):
+    with pytest.raises(HostKeyTrustError) as conflict:
         expected_fingerprint(pin, other)
+    assert conflict.value.kind is TrustRefusalKind.SOURCES_DISAGREE
+    assert str(conflict.value) == (
+        f"the configured host-key pin {controller.text} and the fingerprint the controller reports {other.text} differ"
+    )
     # A controller MD5 cannot be compared with a SHA-256 pin here; both travel on to the key.
     md5 = HostKeyFingerprint(FingerprintAlgorithm.MD5, bytes(16))
     assert expected_fingerprint(pin, md5) == Expectation((controller, md5), TrustBasis.CONFIG_PIN)
@@ -89,12 +98,17 @@ def test_select_candidate_wants_exactly_one_match_that_also_satisfies_the_contro
     assert select_candidate([first, second], Expectation((second.md5,), TrustBasis.CONTROLLER)) is second
     with pytest.raises(HostKeyTrustError, match="0 of 2 offered host keys match the controller fingerprint SHA256:"):
         select_candidate([first, second], Expectation((candidate(3).sha256,), TrustBasis.CONTROLLER))
-    with pytest.raises(HostKeyTrustError, match="2 of 2 offered host keys match"):
+    with pytest.raises(HostKeyTrustError, match="2 of 2 offered host keys match") as many:
         select_candidate([first, first], Expectation((first.sha256,), TrustBasis.CONFIG_PIN))
+    assert many.value.kind is TrustRefusalKind.UNUSABLE_KEYS
     # Pin and controller MD5 of the same key: fine; of different keys: a conflict, never a guess.
     assert select_candidate([first, second], Expectation((first.sha256, first.md5), TrustBasis.CONFIG_PIN)) is first
-    with pytest.raises(HostKeyTrustError, match="does not match the controller's MD5:"):
+    with pytest.raises(HostKeyTrustError, match="does not match the controller's MD5:") as disagree:
         select_candidate([first, second], Expectation((first.sha256, second.md5), TrustBasis.CONFIG_PIN))
+    assert disagree.value.kind is TrustRefusalKind.SOURCES_DISAGREE
+    assert str(disagree.value) == (
+        f"the key matching the configuration pin {first.sha256.text} does not match the controller's {second.md5.text}"
+    )
 
 
 def test_trust_on_first_use_picks_the_key_openssh_negotiates_first() -> None:
@@ -103,12 +117,15 @@ def test_trust_on_first_use_picks_the_key_openssh_negotiates_first() -> None:
     assert select_candidate([rsa, ecdsa, ed25519], unverified) is ed25519
     assert select_candidate([rsa, ecdsa], unverified) is ecdsa
     assert select_candidate([rsa], unverified) is rsa
-    with pytest.raises(HostKeyTrustError, match="no host key offered"):
+    with pytest.raises(HostKeyTrustError, match="no host key offered") as none:
         select_candidate([], unverified)
-    with pytest.raises(HostKeyTrustError, match="several keys of one type"):
+    assert none.value.kind is TrustRefusalKind.NO_KEY_OFFERED
+    with pytest.raises(HostKeyTrustError, match="several keys of one type") as same_type:
         select_candidate([candidate(1), candidate(2)], unverified)
-    with pytest.raises(HostKeyTrustError, match="no offered key type is one the tool would trust"):
+    assert same_type.value.kind is TrustRefusalKind.UNUSABLE_KEYS
+    with pytest.raises(HostKeyTrustError, match="no offered key type is one the tool would trust") as no_type:
         select_candidate([candidate(1, "ssh-dss")], unverified)
+    assert no_type.value.kind is TrustRefusalKind.UNUSABLE_KEYS
 
 
 @pytest.mark.security("T9", "T19")
@@ -129,8 +146,9 @@ def test_keyscan_runner_failures_become_domain_errors(monkeypatch: pytest.Monkey
         raise subprocess.TimeoutExpired(cmd="ssh-keyscan", timeout=30)
 
     monkeypatch.setattr(subprocess, "run", slow)
-    with pytest.raises(HostKeyTrustError, match="ssh-keyscan did not finish within 30 s"):
+    with pytest.raises(HostKeyTrustError, match="ssh-keyscan did not finish within 30 s") as timed_out:
         module._run_keyscan(["ssh-keyscan"])
+    assert timed_out.value.kind is TrustRefusalKind.KEYSCAN_TIMEOUT
 
     seen: dict[str, object] = {}
 
@@ -173,6 +191,7 @@ def test_keyscan_parses_every_offered_key_and_fingerprints_it_locally() -> None:
 
 def test_keyscan_caps_the_number_of_offered_keys() -> None:
     lines = "\n".join(f"h ssh-rsa {key(i % 250 + 1)[0]}" for i in range(MAX_KEYSCAN_KEYS + 1))
-    with pytest.raises(HostKeyTrustError, match=f"more than {MAX_KEYSCAN_KEYS} host keys"):
+    with pytest.raises(HostKeyTrustError, match=f"more than {MAX_KEYSCAN_KEYS} host keys") as too_many:
         keyscan(ip_address("192.168.1.20"), run=lambda argv: lines)
+    assert too_many.value.kind is TrustRefusalKind.KEYSCAN_TOO_MANY
     assert keyscan(ip_address("192.168.1.20"), run=lambda argv: "") == ()

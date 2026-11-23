@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
+from pathlib import PurePath
 
 from unifiwifioptimizer.adapters.ssh.hostkeys import (
     Expectation,
@@ -33,9 +34,15 @@ from unifiwifioptimizer.app.use_cases import resolve_site
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.schema import SiteConfig, SshAuth
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
-from unifiwifioptimizer.domain.hostkeys import host_key_alias, key_fingerprints, normalize_fingerprint
+from unifiwifioptimizer.domain.hostkeys import (
+    TRUST_ADVICE,
+    TrustRefusalKind,
+    host_key_alias,
+    key_fingerprints,
+    normalize_fingerprint,
+)
 from unifiwifioptimizer.domain.models import AccessPoint, Mac
-from unifiwifioptimizer.domain.scan import ScanTarget
+from unifiwifioptimizer.domain.scan import ScanTarget, ap_said
 from unifiwifioptimizer.ports.controller import ControllerApi
 
 Address = IPv4Address | IPv6Address
@@ -96,6 +103,8 @@ class TrustResult:
     # The stored or offered key's SHA-256 in `SHA256:<base64>` form ("old -> new" for a replace), or the
     # reason for a failure.
     detail: str
+    # What to do about a failure or a name that is not on the controller, final text; empty otherwise.
+    next_step: str = ""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -153,6 +162,7 @@ class AlreadyStored:
 
 @dataclass(frozen=True, slots=True)
 class Refused:
+    kind: TrustRefusalKind
     reason: str
     basis: TrustBasis | None = None
 
@@ -200,8 +210,55 @@ def _same_key(entry: KnownHostEntry, candidate: HostKeyCandidate) -> bool:
     return entry.key_type == candidate.key_type and entry.key_base64 == candidate.key_base64
 
 
-def plan_trust(
+def trust_step(kind: TrustRefusalKind, site_id: str) -> str:
+    return TRUST_ADVICE[kind].format(site=site_id)
+
+
+def _expectation_refusal(
     stored: Sequence[KnownHostEntry], offered: Sequence[HostKeyCandidate], expectation: Expectation
+) -> Refused:
+    """Rule 3, told apart by what the person does next. Two fingerprints that no single key satisfies are two sources
+    that disagree; a stored key that is still offered keeps the scan working and the expectation is what to check;
+    otherwise the access point presents a key that neither source names."""
+    basis = expectation.basis
+    is_pin = basis is TrustBasis.CONFIG_PIN
+    reason = f"none of the {len(offered)} offered host keys matches the {basis}"
+    if len(expectation.fingerprints) == 2:
+        primary, other = expectation.fingerprints
+        matching_primary = next((c for c in offered if c.matches(primary)), None)
+        matching_other = next((c for c in offered if c.matches(other)), None)
+        if matching_primary is not None:
+            elsewhere = (
+                f"; the controller's {other.text} matches the offered {matching_other.key_type} "
+                f"{matching_other.sha256.text}"
+                if matching_other is not None
+                else ""
+            )
+            return Refused(
+                TrustRefusalKind.SOURCES_DISAGREE,
+                f"the key matching the {basis} {primary.text} does not match the controller's {other.text}{elsewhere}",
+                basis,
+            )
+        if matching_other is not None:
+            return Refused(
+                TrustRefusalKind.SOURCES_DISAGREE,
+                f"no offered key matches the {basis} {primary.text}; the controller's {other.text} matches the "
+                f"offered {matching_other.sha256.text}",
+                basis,
+            )
+        reason += f" or the controller's {other.text}"
+    if stored and any(_same_key(stored[0], c) for c in offered):
+        kind = TrustRefusalKind.STORED_KEY_REJECTED_PIN if is_pin else TrustRefusalKind.STORED_KEY_REJECTED_CONTROLLER
+    else:
+        kind = TrustRefusalKind.KEY_MISMATCH_PIN if is_pin else TrustRefusalKind.KEY_MISMATCH_CONTROLLER
+    return Refused(kind, reason, basis)
+
+
+def plan_trust(
+    stored: Sequence[KnownHostEntry],
+    offered: Sequence[HostKeyCandidate],
+    expectation: Expectation,
+    store: PurePath,
 ) -> TrustDecision:
     """The decision for one access point, first matching rule wins:
 
@@ -217,11 +274,15 @@ def plan_trust(
     """
     basis = expectation.basis
     if len(stored) > 1:
-        return Refused("several entries are stored for this access point; remove the extra lines by hand", basis)
+        return Refused(
+            TrustRefusalKind.SEVERAL_STORED_LINES,
+            f"several entries are stored for this access point (alias {stored[0].alias}) in {store}",
+            basis,
+        )
     if not offered:
-        return Refused("no host key offered", basis)
+        return Refused(TrustRefusalKind.NO_KEY_OFFERED, "no host key offered", basis)
     if expectation.fingerprints and not any(_satisfies(c, expectation) for c in offered):
-        return Refused(f"none of the {len(offered)} offered host keys matches the {basis}", basis)
+        return _expectation_refusal(stored, offered, expectation)
     if stored:
         held = stored[0]
         if _satisfies(_stored_candidate(held), expectation) and any(_same_key(held, c) for c in offered):
@@ -229,7 +290,7 @@ def plan_trust(
     try:
         chosen = select_candidate(offered, expectation)
     except HostKeyTrustError as exc:
-        return Refused(str(exc), basis)
+        return Refused(exc.kind, str(exc), basis)
     if not stored:
         return StoreNew(chosen, basis)
     return Replace(stored[0], chosen, basis)
@@ -240,7 +301,7 @@ def inspect_access_point(subject: TrustSubject, writer: KnownHostsWriter, scan: 
     key's type when that key is trusted already, the full scan otherwise) and `plan_trust`."""
     if not is_allowed_address(subject.address, subject.allow_public_address):
         # The same rule as the scan: a controller-supplied address must not make the tool probe the internet.
-        return Refused(f"address {subject.address} is not used for SSH")
+        return Refused(TrustRefusalKind.ADDRESS_NOT_USED, f"address {subject.address} is not used for SSH")
     try:
         controller = (
             normalize_fingerprint(subject.controller_fingerprint)
@@ -248,7 +309,11 @@ def inspect_access_point(subject: TrustSubject, writer: KnownHostsWriter, scan: 
             else None
         )
     except ValueError:
-        return Refused("the controller reports a host-key fingerprint in an unknown form")
+        return Refused(
+            TrustRefusalKind.FINGERPRINT_FORM,
+            "the controller reports a host-key fingerprint in an unknown form: "
+            f"{ap_said(subject.controller_fingerprint or '')}",
+        )
     try:
         expectation = expected_fingerprint(subject.config_pin, controller)
         stored = writer.entries_for(subject.alias)
@@ -258,8 +323,8 @@ def inspect_access_point(subject: TrustSubject, writer: KnownHostsWriter, scan: 
                 return AlreadyStored(_stored_candidate(stored[0]).sha256.text, expectation.basis)
         offered = scan(subject.address, subject.port, None)
     except HostKeyTrustError as exc:
-        return Refused(str(exc))
-    return plan_trust(stored, offered, expectation)
+        return Refused(exc.kind, str(exc))
+    return plan_trust(stored, offered, expectation, writer.path)
 
 
 def apply_decision(
@@ -268,8 +333,14 @@ def apply_decision(
     name = subject.name
     label = f"{subject.site_id}: {name}"
     match decision:
-        case Refused(reason, basis):
-            return TrustResult(ap_name=name, outcome=TrustOutcome.FAILED, basis=basis, detail=reason)
+        case Refused(kind, reason, basis):
+            return TrustResult(
+                ap_name=name,
+                outcome=TrustOutcome.FAILED,
+                basis=basis,
+                detail=reason,
+                next_step=trust_step(kind, subject.site_id),
+            )
         case AlreadyStored(fingerprint, basis):
             return TrustResult(ap_name=name, outcome=TrustOutcome.ALREADY_STORED, basis=basis, detail=fingerprint)
         case StoreNew(chosen, basis):
@@ -295,7 +366,7 @@ def apply_decision(
                 )
             if not accepted:
                 return TrustResult(ap_name=name, outcome=TrustOutcome.DECLINED, basis=basis, detail=fingerprint)
-            return _write(name, basis, fingerprint, lambda: writer.add(chosen.entry(subject.alias)))
+            return _write(subject, basis, fingerprint, lambda: writer.add(chosen.entry(subject.alias)))
         case Replace(old, chosen, basis):
             old_fingerprint = _stored_candidate(old).sha256.text
             fingerprint = chosen.sha256.text
@@ -317,12 +388,12 @@ def apply_decision(
             if not accepted:
                 return TrustResult(ap_name=name, outcome=TrustOutcome.DECLINED, basis=basis, detail=detail)
             return _write(
-                name, basis, detail, lambda: writer.replace(chosen.entry(subject.alias), old), TrustOutcome.REPLACED
+                subject, basis, detail, lambda: writer.replace(chosen.entry(subject.alias), old), TrustOutcome.REPLACED
             )
 
 
 def _write(
-    name: str,
+    subject: TrustSubject,
     basis: TrustBasis,
     detail: str,
     action: Callable[[], None],
@@ -331,8 +402,14 @@ def _write(
     try:
         action()
     except HostKeyTrustError as exc:
-        return TrustResult(ap_name=name, outcome=TrustOutcome.FAILED, basis=basis, detail=str(exc))
-    return TrustResult(ap_name=name, outcome=outcome, basis=basis, detail=detail)
+        return TrustResult(
+            ap_name=subject.name,
+            outcome=TrustOutcome.FAILED,
+            basis=basis,
+            detail=str(exc),
+            next_step=trust_step(exc.kind, subject.site_id),
+        )
+    return TrustResult(ap_name=subject.name, outcome=outcome, basis=basis, detail=detail)
 
 
 def subject_for(site_id: str, site: SiteConfig, origin: str, ap: AccessPoint, port: int = SSH_PORT) -> TrustSubject:
@@ -361,27 +438,47 @@ def trust_host_keys(
     assume_yes: bool,
     accept_unverified: bool,
     confirm: Confirm,
+    report: Callable[[TrustResult], None],
     scan: Keyscan = default_keyscan,
 ) -> TrustReport:
+    """Every result is reported as it happens, so an interruption later in the loop leaves the record of what was
+    already stored; the returned report holds the same results."""
     site = resolve_site(api, selector)
     site_config = loaded.config.sites.get(site.id)
     if site_config is None or site_config.ssh is None:
-        raise ConfigError(f"sites.{site.id}.ssh", "no ssh section for this site; nothing to trust")
+        raise ConfigError(
+            f"sites.{site.id}.ssh",
+            f"no ssh section for this site; add `sites.{site.id}.ssh` "
+            f"(`unifiwifioptimizer config {site.id}` prints a skeleton)",
+        )
     devices = api.devices(site.id)
     by_name = {ap.name: ap for ap in devices.access_points}
     names = tuple(dict.fromkeys(only)) if only else scan_members(site_config)
     if not names:
-        raise ConfigError(f"sites.{site.id}.neighbors", "no access points take part in a neighbour pair")
+        raise ConfigError(
+            f"sites.{site.id}.neighbors",
+            f"no access points take part in a neighbour pair; configure `sites.{site.id}.neighbors` or name access "
+            "points with `--ap`",
+        )
     origin = controller_origin(loaded.config.controller)
     policy = TrustPolicy(assume_yes=assume_yes, accept_unverified=accept_unverified, confirm=confirm)
     results: list[TrustResult] = []
     for name in names:
         ap = by_name.get(name)
         if ap is None:
-            results.append(TrustResult(ap_name=name, outcome=TrustOutcome.NOT_ON_CONTROLLER, basis=None, detail=""))
-            continue
-        subject = subject_for(site.id, site_config, origin, ap)
-        results.append(apply_decision(subject, inspect_access_point(subject, writer, scan), writer, policy))
+            kind = TrustRefusalKind.NOT_ON_CONTROLLER_NAMED if only else TrustRefusalKind.NOT_ON_CONTROLLER_CONFIGURED
+            result = TrustResult(
+                ap_name=name,
+                outcome=TrustOutcome.NOT_ON_CONTROLLER,
+                basis=None,
+                detail="",
+                next_step=trust_step(kind, site.id),
+            )
+        else:
+            subject = subject_for(site.id, site_config, origin, ap)
+            result = apply_decision(subject, inspect_access_point(subject, writer, scan), writer, policy)
+        report(result)
+        results.append(result)
     return TrustReport(site_id=site.id, results=tuple(results))
 
 
