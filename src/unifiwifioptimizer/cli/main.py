@@ -47,7 +47,7 @@ from unifiwifioptimizer.domain.errors import (
     UwoError,
 )
 from unifiwifioptimizer.domain.fingerprints import format_fingerprint
-from unifiwifioptimizer.domain.scan import FAILURE_ADVICE, ScanFailureKind
+from unifiwifioptimizer.domain.scan import CHANGED_KEY_CAUSE, FAILURE_ADVICE, TRUST_COMMAND, ScanFailureKind
 from unifiwifioptimizer.report.color import colourise, wants_colour
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
@@ -348,6 +348,18 @@ def _run(args: argparse.Namespace) -> ExitCode:
     return code
 
 
+def _after_the_gate(kind: ScanFailureKind, site_id: str) -> str:
+    """The gate already checked the keys: a key it refused is explained by its own lines, a declined one is asked
+    again, and the command serves the declined one."""
+    done, cause = (
+        ("replaced", f"{CHANGED_KEY_CAUSE}; ") if kind is ScanFailureKind.HOST_KEY_MISMATCH else ("stored", "")
+    )
+    return (
+        f"{cause}the host-key lines above say why a key was refused and what to do; a declined key is asked again on "
+        f"the next run in a terminal, or {done} with {TRUST_COMMAND.format(site=site_id)}"
+    )
+
+
 def host_key_exit_lines(result: RunResult) -> list[str]:
     """Exit 5, said in words: per site that had no verifiable access point, the host-key failures with their steps."""
     lines: list[str] = []
@@ -361,13 +373,10 @@ def host_key_exit_lines(result: RunResult) -> list[str]:
                 continue
             advice = FAILURE_ADVICE[kind]
             step = advice.next_step.format(site=outcome.site_id)
-            if kind is ScanFailureKind.HOST_KEY_UNKNOWN:
-                step = (
-                    f"the host-key lines above say why and what to do; a declined key is asked again on the next run "
-                    f"in a terminal, or stored with {step}"
-                    if result.host_key_gate_ran
-                    else f"{step}, or run again with the report on a terminal"
-                )
+            if result.host_key_gate_ran:
+                step = _after_the_gate(kind, outcome.site_id)
+            elif kind is ScanFailureKind.HOST_KEY_UNKNOWN:
+                step = f"{step}, or run again with the report on a terminal"
             noun = "access point" if count == 1 else "access points"
             lead = f"{count} {noun} with" if not parts else f"{count} with"
             parts.append(f"{lead} {advice.words} ({step})")

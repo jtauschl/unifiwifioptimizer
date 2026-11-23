@@ -37,24 +37,36 @@ def test_unknown_keys_name_the_step_and_the_terminal_alternative_when_the_gate_d
 
 
 def test_after_the_gate_ran_the_step_does_not_send_the_person_in_a_circle() -> None:
-    assert lines(outcome({UNKNOWN: 1}), gate_ran=True) == [
-        "unifiwifioptimizer: exit 5: site default: 1 access point with host key not stored "
-        "(the host-key lines above say why and what to do; a declined key is asked again on the next run "
-        "in a terminal, or stored with `trust-host-keys --site default`)"
+    assert lines(outcome({UNKNOWN: 1}, site="office"), gate_ran=True) == [
+        "unifiwifioptimizer: exit 5: site office: 1 access point with host key not stored "
+        "(the host-key lines above say why a key was refused and what to do; a declined key is asked again on the "
+        "next run in a terminal, or stored with `trust-host-keys --site office`)"
     ]
 
 
-def test_a_changed_key_says_to_find_out_why_before_the_replace_and_never_names_a_terminal() -> None:
+def test_a_changed_key_says_to_find_out_why_before_the_replace_when_the_gate_did_not_run() -> None:
     assert lines(outcome({CHANGED: 1})) == [
         "unifiwifioptimizer: exit 5: site default: 1 access point with changed host key "
         "(find out why the key changed (reset, re-adoption), then `trust-host-keys --site default`)"
     ]
 
 
-def test_both_kinds_come_in_declaration_order_each_with_its_own_step() -> None:
-    (line,) = lines(outcome({CHANGED: 1, UNKNOWN: 2}), gate_ran=True)
-    assert line.startswith("unifiwifioptimizer: exit 5: site default: 2 access points with host key not stored (")
-    assert ", 1 with changed host key (find out why the key changed" in line
+def test_after_the_gate_ran_a_changed_key_keeps_the_cause_hint_and_points_to_the_gate_lines() -> None:
+    assert lines(outcome({CHANGED: 1}, site="office"), gate_ran=True) == [
+        "unifiwifioptimizer: exit 5: site office: 1 access point with changed host key "
+        "(find out why the key changed (reset, re-adoption); the host-key lines above say why a key was refused and "
+        "what to do; a declined key is asked again on the next run in a terminal, or replaced with "
+        "`trust-host-keys --site office`)"
+    ]
+
+
+def test_both_kinds_come_in_declaration_order_each_with_its_own_step_naming_the_site() -> None:
+    (line,) = lines(outcome({CHANGED: 1, UNKNOWN: 2}, site="b"), gate_ran=True)
+    assert line.startswith("unifiwifioptimizer: exit 5: site b: 2 access points with host key not stored (")
+    assert ", 1 with changed host key (find out why the key changed (reset, re-adoption); the host-key lines" in line
+    assert line.count("or stored with `trust-host-keys --site b`") == 1
+    assert line.count("or replaced with `trust-host-keys --site b`") == 1
+    assert "--site default" not in line
     assert line.index("host key not stored") < line.index("changed host key")
 
 

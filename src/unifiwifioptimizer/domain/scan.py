@@ -111,14 +111,15 @@ class FailureAdvice:
     show_detail: bool
 
 
+TRUST_COMMAND = "`trust-host-keys --site {site}`"
+CHANGED_KEY_CAUSE = "find out why the key changed (reset, re-adoption)"
+
 _FAILURE_ADVICE: dict[ScanFailureKind, FailureAdvice] = {
     ScanFailureKind.HOST_KEY_UNKNOWN: FailureAdvice(
-        words="host key not stored", next_step="`trust-host-keys --site {site}`", show_detail=False
+        words="host key not stored", next_step=TRUST_COMMAND, show_detail=False
     ),
     ScanFailureKind.HOST_KEY_MISMATCH: FailureAdvice(
-        words="changed host key",
-        next_step="find out why the key changed (reset, re-adoption), then `trust-host-keys --site {site}`",
-        show_detail=False,
+        words="changed host key", next_step=f"{CHANGED_KEY_CAUSE}, then {TRUST_COMMAND}", show_detail=False
     ),
     ScanFailureKind.AUTHENTICATION: FailureAdvice(
         words="SSH login refused",
