@@ -255,11 +255,19 @@ cmd_lock_check() {
   step "lock-check — build-constraints.txt matches build-constraints.in and pyproject.toml"
   uv run --locked --no-sync python scripts/check_build_constraints.py pyproject.toml build-constraints.in ||
     fail "build-constraints.in does not match [build-system].requires"
-  local recompiled
+  local pins recompiled
+  new_temp_file pins
   new_temp_file recompiled
-  uv pip compile build-constraints.in --generate-hashes --universal --python-version 3.11 --no-header --quiet -o "$recompiled" ||
+  # The committed versions constrain the recompilation, so the verdict changes only with build-constraints.in,
+  # pyproject.toml or a hash, never with a newer upstream release; the hashes are regenerated for exactly those versions,
+  # so a tampered hash differs. The "# via" annotations (which would name the constraints file) are left out of the
+  # comparison. Not fully hermetic: uv still reads the index, so a wheel uploaded later for a pinned version, or a
+  # yanked pin, can change the result.
+  sed -n 's/^\([A-Za-z0-9_.-]*==[^ ]*\).*/\1/p' build-constraints.txt >"$pins" || fail "could not read the pins of build-constraints.txt"
+  uv pip compile build-constraints.in --constraint "$pins" --generate-hashes --universal --python-version 3.11 --no-header --quiet -o "$recompiled" ||
     fail "could not recompile build-constraints.in"
-  diff -u build-constraints.txt "$recompiled" || fail "build-constraints.txt is stale (recompile with ./dev lock-refresh)"
+  diff -u <(grep -v '^[[:space:]]*#' build-constraints.txt) <(grep -v '^[[:space:]]*#' "$recompiled") ||
+    fail "build-constraints.txt is stale (recompile with ./dev lock-refresh)"
   ok "lock-check — lockfile and build constraints are current"
 }
 
