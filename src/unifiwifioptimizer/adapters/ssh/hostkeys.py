@@ -135,6 +135,8 @@ class KnownHostsStore:
     directory on the first write."""
 
     def __init__(self, path: Path) -> None:
+        if path.name in {"", ".."}:
+            raise ConfigError("known_hosts", f"{path} names no file; give the path of the store file")
         self._path = path
 
     @property
@@ -162,6 +164,23 @@ class KnownHostsStore:
 
     def entries_for(self, alias: str) -> tuple[KnownHostEntry, ...]:
         return tuple(e for e in self.entries() if e.alias == alias)
+
+    def refuse_a_target_that_is_no_file(self) -> None:
+        """An existing store path that is not a regular file (a directory, a link, a pipe) is refused. Asked before a
+        command contacts anything, and by the writer before it creates its lock, so that a refused path leaves nothing
+        behind."""
+        self._refuse_a_target_that_is_no_file(dir_fd=None)
+
+    def _refuse_a_target_that_is_no_file(self, *, dir_fd: int | None) -> None:
+        try:
+            if dir_fd is None:
+                st = os.lstat(self._path)
+            else:
+                st = os.stat(self._path.name, dir_fd=dir_fd, follow_symlinks=False)
+        except OSError:
+            return  # absent, or a state the read names itself
+        if not stat.S_ISREG(st.st_mode):
+            raise ConfigError("known_hosts", f"{self._path} is not a regular file")
 
     def _open_directory(self) -> int:
         try:
@@ -256,6 +275,7 @@ class KnownHostsWriter(KnownHostsStore):
             raise ConfigError("known_hosts", f"cannot create directory {self._path.parent} ({exc.strerror})") from None
         dir_fd = self._open_directory()
         try:
+            self._refuse_a_target_that_is_no_file(dir_fd=dir_fd)
             lock_fd = self._open_lock(dir_fd)
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX)

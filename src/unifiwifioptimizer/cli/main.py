@@ -167,7 +167,13 @@ def _add_known_hosts_option(sub: argparse.ArgumentParser) -> None:
 
 
 def _known_hosts_path(args: argparse.Namespace, environ: Mapping[str, str]) -> Path:
-    return args.known_hosts if args.known_hosts is not None else default_store_path(environ)
+    """The store of this run. A path the person named is checked here, at the boundary: it names a file or is refused
+    before anything is contacted."""
+    if args.known_hosts is None:
+        return default_store_path(environ)
+    path: Path = args.known_hosts
+    KnownHostsStore(path).refuse_a_target_that_is_no_file()
+    return path
 
 
 def _commands(args: argparse.Namespace) -> PrintedCommands:
@@ -353,6 +359,7 @@ def _run(args: argparse.Namespace) -> ExitCode:
     client, dump = _client(loaded, args, commands)
     # One environment for the version check and the scans, so `ssh -V` judges the `ssh` the scan will run.
     environ = dict(os.environ)
+    _known_hosts_path(args, environ)
     progress = StderrProgress()
     try:
         result = run_analysis(

@@ -432,3 +432,32 @@ def test_the_trust_command_and_the_gate_repeat_the_store_in_the_step_they_print(
 
     gate([dataclasses.replace(subject(), name=ap.name, alias=alias, mac=ap.mac, address=ap.ip)])
     assert expected in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("store", [".", "..", "/", "sub/..", "directory"])
+@pytest.mark.parametrize(
+    "argv",
+    [["trust-host-keys", "--site", "default"], ["run"], ["run", "--no-scan"], ["run", "--json"]],
+    ids=["trust", "run", "run-no-scan", "run-json"],
+)
+def test_a_store_path_that_is_no_file_stops_the_command_before_anything_is_done(
+    argv: list[str],
+    store: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    def never(*args: object, **kwargs: object) -> None:
+        raise AssertionError("work started with a store path that is no file")
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "directory").mkdir()
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "trust_host_keys", never)
+    monkeypatch.setattr(cli, "run_analysis", never)
+    monkeypatch.setattr(cli, "load_profiles", lambda override, location: type("P", (), {"profiles": None})())
+    assert cli.main([*argv, "--known-hosts", store]) == ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert (f"{Path(store)} names no file" if store != "directory" else "directory is not a regular file") in err
+    assert [p.name for p in tmp_path.iterdir()] == ["directory"]

@@ -1,6 +1,7 @@
 """The known_hosts store on a real file system: creation, permissions, symlinks, conflicts, atomic replace."""
 
 import os
+import re
 import stat
 import threading
 from collections.abc import Callable
@@ -190,7 +191,7 @@ def test_a_symlinked_lock_file_or_store_file_refuses_the_write(tmp_path: Path) -
     assert decoy.read_text() == "" and not (directory / "known_hosts").exists()
     (directory / "known_hosts.lock").unlink()
     (directory / "known_hosts").symlink_to(decoy)
-    with pytest.raises(ConfigError, match="cannot open"):
+    with pytest.raises(ConfigError, match="is not a regular file"):
         store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
     assert decoy.read_text() == ""
 
@@ -343,3 +344,43 @@ def test_concurrent_replaces_of_one_alias_leave_exactly_one_entry_with_one_winne
     assert outcomes.count("replaced") == 1 and outcomes.count("refused") == len(candidates) - 1
     assert [e.alias for e in store.entries()] == [ALIAS_A, ALIAS_B]
     assert store.entry(ALIAS_A) in candidates
+
+
+@pytest.mark.parametrize("path", [".", "..", "/", "state/..", ""])
+@pytest.mark.security("T14")
+def test_a_path_that_names_no_file_is_refused_when_the_store_is_made(path: str) -> None:
+    with pytest.raises(ConfigError, match=f"{re.escape(str(Path(path)))} names no file"):
+        KnownHostsWriter(Path(path))
+
+
+@pytest.mark.parametrize("kind", ["directory", "symlink", "dangling symlink", "fifo"])
+@pytest.mark.security("T14")
+def test_a_store_that_is_no_regular_file_is_refused_before_the_lock_is_created(kind: str, tmp_path: Path) -> None:
+    directory = tmp_path / "state"
+    directory.mkdir(mode=0o700)
+    target = directory / "known_hosts"
+    if kind == "directory":
+        target.mkdir(mode=0o700)
+    elif kind == "symlink":
+        (directory / "elsewhere").write_text("")
+        target.symlink_to(directory / "elsewhere")
+    elif kind == "dangling symlink":
+        target.symlink_to(directory / "nowhere")
+    else:
+        os.mkfifo(target, 0o600)
+    before = sorted(p.name for p in directory.iterdir())
+    store = KnownHostsWriter(target)
+    with pytest.raises(ConfigError, match=f"{target} is not a regular file"):
+        store.add(KnownHostEntry(ALIAS_A, "ssh-ed25519", ED25519_BLOB))
+    with pytest.raises(ConfigError, match=f"{target} is not a regular file"):
+        store.refuse_a_target_that_is_no_file()
+    assert sorted(p.name for p in directory.iterdir()) == before
+
+
+@pytest.mark.security("T14")
+def test_a_store_path_that_does_not_exist_yet_or_is_a_regular_file_passes_the_early_check(tmp_path: Path) -> None:
+    KnownHostsWriter(tmp_path / "state" / "known_hosts").refuse_a_target_that_is_no_file()
+    existing = tmp_path / "known_hosts"
+    existing.write_text("")
+    existing.chmod(0o600)
+    KnownHostsWriter(existing).refuse_a_target_that_is_no_file()
