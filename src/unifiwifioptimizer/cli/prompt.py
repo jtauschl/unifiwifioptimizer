@@ -5,11 +5,11 @@ non-interactive way to answer."""
 import sys
 
 from unifiwifioptimizer.app.trust import Prompt
+from unifiwifioptimizer.domain.commands import PROGRAM
 from unifiwifioptimizer.report.safe_text import safe_text
 
 MAX_PROMPT_CHARS = 2048
 FINGERPRINT_PREFIX_CHARS = 8
-_PROGRAM = "unifiwifioptimizer"
 
 
 def can_ask() -> bool:
@@ -24,10 +24,10 @@ def terminal_confirm(prompt: Prompt) -> bool:
     text = safe_text(prompt.text, max_chars=MAX_PROMPT_CHARS)
     warning = [safe_text(line, max_chars=MAX_PROMPT_CHARS) for line in prompt.warning]
     if not can_ask():
-        print(f"{_PROGRAM}: {text} — no terminal to ask; declined", file=sys.stderr)
+        print(f"{PROGRAM}: {text} — no terminal to ask; declined", file=sys.stderr)
         for line in warning:
-            print(f"{_PROGRAM}: {line}", file=sys.stderr)
-        print(f"{_PROGRAM}: {safe_text(prompt.unattended, max_chars=MAX_PROMPT_CHARS)}", file=sys.stderr)
+            print(f"{PROGRAM}: {line}", file=sys.stderr)
+        print(f"{PROGRAM}: {safe_text(prompt.unattended, max_chars=MAX_PROMPT_CHARS)}", file=sys.stderr)
         return False
     for line in warning:
         sys.stderr.write(f"{line}\n")

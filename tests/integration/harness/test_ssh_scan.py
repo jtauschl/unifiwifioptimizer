@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.integration.harness.conftest import SCAN_PASSWORD, SCAN_USER, Harness
+from tests.unit.printed import PLAIN
 from unifiwifioptimizer.adapters.ssh.hostkeys import KnownHostsStore, KnownHostsWriter, expected_fingerprint, keyscan
 from unifiwifioptimizer.adapters.ssh.iw_parser import parse_scan_output
 from unifiwifioptimizer.adapters.ssh.openssh import CALL_TIMEOUT_S, OpenSshScanner, build_invocation, load_script
@@ -502,14 +503,14 @@ def test_a_rotated_key_is_replaced_on_a_verified_basis_and_the_next_scan_passes(
     assert isinstance(decision, Replace) and decision.old == stale
     refused = apply_decision(
         trust_subject(fresh_ap, port), decision, store,
-        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda prompt: False),
+        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda prompt: False, commands=PLAIN),
     )  # fmt: skip
     assert refused.outcome is TrustOutcome.DECLINED and store.entries() == (stale,)
     with pytest.raises(HostKeyMismatchError):
         scanner(store).scan(target(fresh_ap, port))
     result = apply_decision(
         trust_subject(fresh_ap, port), decision, store,
-        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda prompt: False),
+        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda prompt: False, commands=PLAIN),
     )  # fmt: skip
     assert result.outcome is TrustOutcome.REPLACED and store.entries() == (current.entry(alias),)
     scanned = scanner(store).scan(target(fresh_ap, port))

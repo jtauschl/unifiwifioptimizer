@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from tests.unit.printed import PLAIN_STEPS
 from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.domain.analysis import (
@@ -61,17 +62,17 @@ REPORT = analyze_site(golden_input())
 
 def test_the_text_report_matches_the_golden_file() -> None:
     expected = (GOLDEN_DIR / "run_default.txt").read_text(encoding="utf-8")
-    assert render_report(REPORT) == expected
+    assert render_report(REPORT, steps=PLAIN_STEPS) == expected
 
 
 def test_the_default_overview_matches_the_golden_file() -> None:
     expected = (GOLDEN_DIR / "run_overview.txt").read_text(encoding="utf-8")
-    assert render_overview(REPORT) == expected
+    assert render_overview(REPORT, steps=PLAIN_STEPS) == expected
 
 
 def test_the_extended_overview_matches_the_golden_file() -> None:
     expected = (GOLDEN_DIR / "run_overview_extended.txt").read_text(encoding="utf-8")
-    assert render_overview(analyze_site(replace(golden_input(), extended=True))) == expected
+    assert render_overview(analyze_site(replace(golden_input(), extended=True)), steps=PLAIN_STEPS) == expected
 
 
 def _section(text: str, start: str, end: str) -> list[str]:
@@ -79,7 +80,7 @@ def _section(text: str, start: str, end: str) -> list[str]:
 
 
 def test_overview_lists_the_wlans_before_the_access_points_and_the_radio_rows_in_ui_order() -> None:
-    text = render_overview(REPORT, width=None)
+    text = render_overview(REPORT, width=None, steps=PLAIN_STEPS)
     assert text.index("WLAN       SSID-1") < text.index("AP         AP-1") < text.index("Data quality:")
     rows = [
         line.split()[1] if line.split()[0] in "·✓✗-" else line.strip() for line in _section(text, "  5 GHz\n", "\n\n")
@@ -89,14 +90,16 @@ def test_overview_lists_the_wlans_before_the_access_points_and_the_radio_rows_in
 
 
 def test_overview_names_the_ui_path_only_where_the_setting_is_hard_to_find() -> None:
-    text = render_overview(REPORT, width=None)
+    text = render_overview(REPORT, width=None, steps=PLAIN_STEPS)
     assert "→ WLAN edit → Advanced → Behavior Controls → Auto 802.11 DTIM Period" in text
     assert "Minimum Data Rate → 5 GHz slider" not in text and "→ AP settings" not in text
     assert (
         "Multicast to Unicast" in text
         and "→ WLAN edit → Advanced → Hi-Capacity Tuning → Multicast to Unicast" not in text
     )
-    assert "→ WLAN edit" in render_report(REPORT) and "→ AP settings" in render_report(REPORT)
+    assert "→ WLAN edit" in render_report(REPORT, steps=PLAIN_STEPS) and "→ AP settings" in render_report(
+        REPORT, steps=PLAIN_STEPS
+    )
 
 
 def test_the_hinted_settings_are_known_ui_paths_and_the_radio_rows_are_not_among_them() -> None:
@@ -124,10 +127,12 @@ def test_overview_says_no_changes_without_hiding_diagnostic_findings() -> None:
         for evaluation in REPORT.compliance.evaluations
     )
     report = replace(REPORT, aps=aps, compliance=replace(REPORT.compliance, evaluations=evaluations))
-    text = render_overview(report)
+    text = render_overview(report, steps=PLAIN_STEPS)
     assert "Notes:" in text and "coverage/roaming gaps:" in text
     assert "No changes recommended in the available data; see Data quality." in text
-    assert "No setting changes recommended; RF findings above still need review." in render_report(report)
+    assert "No setting changes recommended; RF findings above still need review." in render_report(
+        report, steps=PLAIN_STEPS
+    )
 
 
 def test_overview_does_not_call_a_partial_result_clean() -> None:
@@ -142,7 +147,7 @@ def test_overview_does_not_call_a_partial_result_clean() -> None:
         compliance=replace(REPORT.compliance, findings=(), evaluations=evaluations),
     )
     assert report.partial
-    text = render_overview(report)
+    text = render_overview(report, steps=PLAIN_STEPS)
     assert "Partial result (band empty); the exit code says so." in text
     assert "Notes:" not in text
 
@@ -153,7 +158,7 @@ def test_overview_names_scan_failures_and_missing_configured_aps() -> None:
         failures_by_ap={"AP-2": (ScanFailureKind.TIMEOUT, ScanFailureKind.TIMEOUT)},
         unknown_names=("AP-missing",),
     )
-    text = render_overview(replace(REPORT, scan=scan))
+    text = render_overview(replace(REPORT, scan=scan), steps=PLAIN_STEPS)
     assert "Scan failed on AP-2: 2 pass(es) (scan timed out)." in text
     assert "Configured neighbour AP-missing is absent from the controller." in text
 
@@ -195,7 +200,7 @@ def test_overview_keeps_5ghz_advice_actionable_after_a_24ghz_tx_change() -> None
         rec.deferred_by for ap in marked.aps for b in ap.bands if b.band is Band.GHZ_5 for rec in b.recommendations
     )
     assert not any(check.deferred_by for check in marked.checks)
-    text = render_overview(marked)
+    text = render_overview(marked, steps=PLAIN_STEPS)
     # What waits is the 2.4 GHz Minimum RSSI below its own band's power change, one wait line each.
     waiting = [rec for ap in marked.aps for b in ap.bands for rec in b.recommendations if rec.deferred_by]
     assert waiting and all(rec.band is Band.GHZ_2 for rec in waiting)
@@ -250,7 +255,7 @@ def test_overview_labels_the_candidate_plan_pins_auto_radios_and_defers_power_on
         ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80),
         ChannelAssignment(ap="AP-2", current=60, proposed=60, width_mhz=80),
     )
-    text = render_overview(_with_plan(plan), width=None)
+    text = render_overview(_with_plan(plan), width=None, steps=PLAIN_STEPS)
     assert _section(text, "  Channel plan\n", "\n\n") == [
         "    5 GHz (exact search): own AP overlaps 1 → 0, signal proxy 10 → 0",
         "    Apply the complete assignment for 5 GHz, then re-run before setting transmit power, Minimum RSSI or "
@@ -272,7 +277,7 @@ def test_overview_pins_an_auto_radio_that_keeps_its_channel_and_names_remaining_
         ChannelAssignment(ap="AP-2", current=60, proposed=100, width_mhz=80),
         after=2,
     )
-    text = render_overview(_with_plan(plan), width=None)
+    text = render_overview(_with_plan(plan), width=None, steps=PLAIN_STEPS)
     assert "    ✗ Channel                            44 (auto); set fixed 44 to keep the site-wide plan" in _ap_rows(
         text, "AP-1", "5 GHz"
     )
@@ -288,13 +293,13 @@ def test_overview_tells_access_points_apart_when_their_shortened_names_collide()
         replace(ap, name=long_name, mac=f"02:00:00:00:{index:02x}:{index:02x}")
         for index, (ap, long_name) in enumerate(zip(REPORT.aps[:2], (long_a, long_b), strict=True), start=1)
     )
-    text = render_overview(replace(REPORT, aps=(*renamed, *REPORT.aps[2:])), width=None)
+    text = render_overview(replace(REPORT, aps=(*renamed, *REPORT.aps[2:])), width=None, steps=PLAIN_STEPS)
     assert "Building-A-Floor-2-Corr… [01:01]" in text and "Building-A-Floor-2-Corr… [02:02]" in text
     assert "  AP         AP-3 (UAL6)" in text and "AP-3 [" not in text
 
 
 def test_overview_marks_severity_and_says_what_could_not_be_evaluated() -> None:
-    text = render_overview(REPORT, width=None)
+    text = render_overview(REPORT, width=None, steps=PLAIN_STEPS)
     assert "* 5 GHz coverage/roaming gaps: AP-1 / AP-2, AP-2 / AP-3, AP-3 / AP-4; verify with clients." in text
     assert "WLAN checks that could not be evaluated: Handoff Suggestions (802.11v)." in text
     assert "Partial result (band empty); the exit code says so." in text
@@ -302,14 +307,14 @@ def test_overview_marks_severity_and_says_what_could_not_be_evaluated() -> None:
 
 def test_overview_shows_an_offline_access_point_as_offline() -> None:
     offline = replace(REPORT.aps[0], state=DeviceState.DISCONNECTED, bands=())
-    table = render_overview(replace(REPORT, aps=(offline, *REPORT.aps[1:])), width=None)
+    table = render_overview(replace(REPORT, aps=(offline, *REPORT.aps[1:])), width=None, steps=PLAIN_STEPS)
     assert "    offline — no radio statistics" in _ap_block(table, "AP-1")
 
 
 def test_the_footer_counts_only_advice_that_can_be_applied_now() -> None:
     plan = _plan(ChannelAssignment(ap="AP-1", current=44, proposed=100, width_mhz=80))
     moved = _with_plan(plan)
-    text = render_report(moved, width=None)
+    text = render_report(moved, width=None, steps=PLAIN_STEPS)
     waiting = [r for r in moved.recommendations if r.is_change and r.deferred_by is not None]
     # Golden site: four power changes, one of them on the moved 5 GHz band; the channel move waits for nothing.
     assert [r.subject for r in waiting] == ["AP-1"] and waiting[0].setting == "tx_power"
@@ -339,7 +344,7 @@ def test_configured_upper_client_tx_is_labelled_per_ap_in_text_and_json() -> Non
     assert bands["AP-3"]["5g"]["assumed_client_tx_dbm"] == 20
     assert bands["AP-3"]["2g"]["assumed_client_tx_dbm"] == 18
     assert all(detail["assumed_client_tx_dbm"] in (18, 20) for wlan in encoded["roaming"] for detail in wlan["per_ap"])
-    text = render_report(report, width=None)
+    text = render_report(report, width=None, steps=PLAIN_STEPS)
     assert "Assumed client TX:" in text and "5 GHz blocks within ch 100-140 20 dBm" in text
     assert "assumed client TX 18 dBm" in text and "assumed client TX 20 dBm" in text
     assert "`rf.client_tx_dbm_5g_upper` by channel" in text
@@ -354,14 +359,14 @@ def test_external_names_are_sanitised_per_token_not_truncated_as_a_line() -> Non
     neighbours = {k: frozenset(hostile if p == "AP-2" else p for p in v) for k, v in inp.neighbours.items()}
     neighbours = {(hostile if k == "AP-2" else k): v for k, v in neighbours.items()}
     report = analyze_site(replace(inp, snapshot=renamed, neighbours=neighbours))
-    text = render_report(report, width=None)  # whole lines: this test reads a line's composition
+    text = render_report(report, width=None, steps=PLAIN_STEPS)  # whole lines: this test reads a line's composition
     # The override becomes U+FFFD, the escape sequence is stripped, and the name is cut per token only.
     safe = "AP-" + chr(0xFFFD) + "2xxxx"
     assert RLO not in text and "\x1b" not in text and safe in text
     # A composed line keeps its tail: the receiver-offset line of AP-1 ends with the sanitised peer in brackets.
     offset_lines = [line for line in text.splitlines() if "disagree by" in line]
     assert any(f"[{safe}" in line and line.endswith("]") for line in offset_lines)
-    summary = render_overview(report, width=None)
+    summary = render_overview(report, width=None, steps=PLAIN_STEPS)
     assert RLO not in summary and "\x1b" not in summary and safe in summary
 
 
@@ -382,8 +387,8 @@ def test_no_secret_plaintext_reaches_either_output() -> None:
         ssh_enabled=True, ssh_password_auth_enabled=True, ssh_user="admin", ssh_password=Secret("s3cr3t-pl41n")
     )
     report = analyze_site(replace(inp, snapshot=replace(inp.snapshot, mgmt=mgmt)))
-    assert "s3cr3t-pl41n" not in render_report(report)
-    assert "s3cr3t-pl41n" not in render_overview(report)
+    assert "s3cr3t-pl41n" not in render_report(report, steps=PLAIN_STEPS)
+    assert "s3cr3t-pl41n" not in render_overview(report, steps=PLAIN_STEPS)
     assert "s3cr3t-pl41n" not in render_json([report])
 
 
@@ -393,7 +398,7 @@ def test_one_json_document_for_several_sites() -> None:
 
 
 def test_the_pending_tx_note_appears_on_a_roaming_check_when_a_5_ghz_change_is_pending() -> None:
-    text = render_report(REPORT)
+    text = render_report(REPORT, steps=PLAIN_STEPS)
     # Four power changes on the site, one of them in 5 GHz: only that one moves the threshold.
     assert REPORT.pending_tx_changes == 4
     assert text.count("Note: 1 pending 5 GHz transmit-power change(s) on the access points of this WLAN") == 1
@@ -401,7 +406,7 @@ def test_the_pending_tx_note_appears_on_a_roaming_check_when_a_5_ghz_change_is_p
 
 def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
     # The incomplete roaming verdict is printed, and the note follows it.
-    text = render_report(REPORT, width=None)
+    text = render_report(REPORT, width=None, steps=PLAIN_STEPS)
     assert (
         "Handoff Suggestions (802.11v)" in text
         and "threshold not derived: AP-3: no reading of neighbour AP-4 (not sighted)" in text
@@ -412,7 +417,9 @@ def test_tx_pending_note_appears_when_incomplete_and_pending() -> None:
 def test_tx_pending_note_absent_when_no_pending() -> None:
     # Without a pending 5 GHz change the note does not appear.
     report = analyze_site(golden_input(skip_scan=True))
-    assert report.pending_tx_changes == 0 and "pending 5 GHz transmit-power change" not in render_report(report)
+    assert report.pending_tx_changes == 0 and "pending 5 GHz transmit-power change" not in render_report(
+        report, steps=PLAIN_STEPS
+    )
 
 
 def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
@@ -443,7 +450,9 @@ def test_print_rec_tx_zero_sightings_flags_real_change() -> None:
         r for r in report.recommendations if r.subject == "AP-3" and r.band is Band.GHZ_5 and r.setting == "tx_power"
     )
     assert rec.kind is RecommendationKind.CHANGE and rec.recommended == 23
-    assert f"✗ {'Transmit Power':<24} 23 dBm (EIRP 26 dBm; raise by 8 dB from 15 dBm)" in render_report(report)
+    assert f"✗ {'Transmit Power':<24} 23 dBm (EIRP 26 dBm; raise by 8 dB from 15 dBm)" in render_report(
+        report, steps=PLAIN_STEPS
+    )
 
 
 def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
@@ -452,7 +461,7 @@ def test_print_rec_tx_zero_sightings_no_flag_when_already_at_max() -> None:
         r for r in REPORT.recommendations if r.subject == "AP-3" and r.band is Band.GHZ_5 and r.setting == "tx_power"
     )
     assert rec.kind is RecommendationKind.HELD and rec.is_change is False
-    text = render_report(REPORT)
+    text = render_report(REPORT, steps=PLAIN_STEPS)
     assert f"- {'Transmit Power':<24} 23 dBm, no change: at the effective maximum, neighbour unsighted" in text
     assert "no reading supports a hand-off" in text
 
@@ -477,7 +486,7 @@ def test_site_level_findings_offline_unparsable_and_failed_scans_carry_their_nam
             neighbours={**inp.neighbours, "AP-4": frozenset({"Ghost", "Phantom"})},
         )
     )
-    text = render_report(report)
+    text = render_report(report, steps=PLAIN_STEPS)
     assert "  ✗ Phantom: configured under neighbors but not on the controller; check the name" in text
     assert "  * Ghost: not usable: $.data[9].ip: missing" in text
     assert "  offline (no radio statistics)" in text and "  * offline (no radio statistics)" in text
@@ -487,7 +496,7 @@ def test_site_level_findings_offline_unparsable_and_failed_scans_carry_their_nam
 
 
 def test_the_roaming_cap_line_keeps_client_and_uplink_values_apart_and_the_ui_paths_follow_changes() -> None:
-    text = render_report(REPORT, width=None)  # whole lines: this test reads a line's composition
+    text = render_report(REPORT, width=None, steps=PLAIN_STEPS)  # whole lines: this test reads a line's composition
     floor = next(d for r in REPORT.roaming for d in r.per_ap if d.cap.value == "capped_by_floor")
     assert (
         f"would give {floor.raw_cap_dbm} dBm at the client, below the floor {REPORT.rf.roam_floor_dbm} dBm; "
@@ -503,22 +512,22 @@ def test_the_roaming_cap_line_keeps_client_and_uplink_values_apart_and_the_ui_pa
 
 
 def test_clients_and_missing_pairs_are_rendered() -> None:
-    text = render_report(analyze_site(golden_input(clients=True)))
+    text = render_report(analyze_site(golden_input(clients=True)), steps=PLAIN_STEPS)
     assert "  · clients: " in text and "below the recommended Minimum RSSI" in text
     assert "  ! 5 GHz: AP-3 and AP-4: no reading in either direction" in text
 
 
 def test_the_footer_names_the_partial_reasons_and_the_counts() -> None:
-    text = render_report(REPORT)
+    text = render_report(REPORT, steps=PLAIN_STEPS)
     assert REPORT.partial_reasons == (PartialReason.BAND_EMPTY,)
     assert "Partial result (band empty)" in text and "pending setting change(s) (4 transmit power)" in text
-    clean = render_report(analyze_site(golden_input(skip_scan=True)))
+    clean = render_report(analyze_site(golden_input(skip_scan=True)), steps=PLAIN_STEPS)
     assert "Partial result" not in clean
 
 
 def test_long_lines_fold_at_the_width_with_a_hanging_indent_and_whole_lines_on_request() -> None:
-    folded = render_report(REPORT).splitlines()
-    whole = render_report(REPORT, width=None).splitlines()
+    folded = render_report(REPORT, steps=PLAIN_STEPS).splitlines()
+    whole = render_report(REPORT, width=None, steps=PLAIN_STEPS).splitlines()
     assert max(len(line) for line in folded) <= 100 < max(len(line) for line in whole)
     assert len(folded) > len(whole)
     # A continuation sits past its item's mark, so the bullet column stays free for the next item.
@@ -542,7 +551,7 @@ def test_controller_field_problems_stay_one_per_line_after_folding() -> None:
     problems = tuple(
         FieldProblem(path=f"stat/device[{n}].radio_table[0].tx_power", message="not an integer " * 6) for n in range(3)
     )
-    text = render_report(replace(REPORT, field_problems=problems))
+    text = render_report(replace(REPORT, field_problems=problems), steps=PLAIN_STEPS)
     lines = text.splitlines()
     note = lines.index("  Note: 3 controller field(s) could not be used:")
     assert all(lines[note + 1 + 2 * n].startswith(f"    stat/device[{n}].") for n in range(3))
@@ -558,7 +567,7 @@ def test_both_roaming_cap_kinds_render_as_plain_detail_lines() -> None:
         wlan="SSID-1", status=WlanRoamingStatus.OK, threshold_dbm=-80, derived_dbm=None, reasons=(),
         limiting=("AP-9",), broadcasting=("AP-9",), per_ap=(detail,), tx_change_pending=False,
     )  # fmt: skip
-    text = render_report(replace(REPORT, roaming=(summary,)), width=None)
+    text = render_report(replace(REPORT, roaming=(summary,)), width=None, steps=PLAIN_STEPS)
     assert (
         "        AP-9: lowered to -80 dBm on the uplink; weakest neighbour AP-8 at -70 dBm is below the corridor"
         in text
@@ -604,7 +613,9 @@ def test_a_hostile_name_in_a_list_cannot_open_a_folded_line_like_a_check() -> No
     renamed = with_ap(snap, replace(ap_named(snap, "AP-2"), name=hostile))
     neighbours = {k: frozenset(hostile if p == "AP-2" else p for p in v) for k, v in inp.neighbours.items()}
     neighbours = {(hostile if k == "AP-2" else k): v for k, v in neighbours.items()}
-    whole = render_report(analyze_site(replace(inp, snapshot=renamed, neighbours=neighbours)), width=None)
+    whole = render_report(
+        analyze_site(replace(inp, snapshot=renamed, neighbours=neighbours)), width=None, steps=PLAIN_STEPS
+    )
     assert hostile in whole
     for width in (60, 80, 100):
         for line in whole.splitlines():
@@ -622,14 +633,14 @@ def test_a_threshold_raised_to_the_controller_limit_says_what_was_derived() -> N
         wlan="SSID-1", status=WlanRoamingStatus.OK, threshold_dbm=-80, derived_dbm=-83, reasons=(),
         limiting=("AP-9",), broadcasting=("AP-9",), per_ap=(), tx_change_pending=False,
     )  # fmt: skip
-    text = render_report(replace(REPORT, roaming=(summary,)), width=None)
+    text = render_report(replace(REPORT, roaming=(summary,)), width=None, steps=PLAIN_STEPS)
     assert (
         "        derived -83 dBm is outside the range the controller accepts (-80..-60 dBm); "
         "the target stops at -80 dBm"
     ) in text
     plain = replace(summary, derived_dbm=None)
     assert "outside the range the controller accepts" not in render_report(
-        replace(REPORT, roaming=(plain,)), width=None
+        replace(REPORT, roaming=(plain,)), width=None, steps=PLAIN_STEPS
     )
 
 
@@ -667,7 +678,7 @@ def test_the_json_report_carries_the_same_deferrals_and_counts_as_the_text() -> 
         **{(ap, "2g", "min_rssi"): "tx_change" for ap in ("AP-2", "AP-3", "AP-4")},
     }
     assert site["derived"]["pending_tx_changes"] == 3 and site["derived"]["waiting_items"] == 1
-    assert "3 pending setting change(s) (3 transmit power)" in render_report(moved, width=None)
+    assert "3 pending setting change(s) (3 transmit power)" in render_report(moved, width=None, steps=PLAIN_STEPS)
 
 
 def test_the_detailed_text_marks_deferred_advice_as_provisional_and_offers_no_ui_path_for_it() -> None:
@@ -686,7 +697,7 @@ def test_the_detailed_text_marks_deferred_advice_as_provisional_and_offers_no_ui
     deferred = [r for r in moved.recommendations if r.deferred_by is not None]
     deferred_checks = [c for c in moved.checks if c.deferred_by is not None]
     assert deferred and deferred_checks
-    lines = render_report(moved, width=None).splitlines()
+    lines = render_report(moved, width=None, steps=PLAIN_STEPS).splitlines()
     marks = [i for i, line in enumerate(lines) if "provisional: re-run after the channel changes" in line]
     assert len(marks) == len([r for r in deferred if r.deferred_by is Deferral.CHANNEL_PLAN]) + len(
         [c for c in deferred_checks if c.deferred_by is Deferral.CHANNEL_PLAN]
@@ -695,7 +706,7 @@ def test_the_detailed_text_marks_deferred_advice_as_provisional_and_offers_no_ui
 
 
 def test_the_transmit_power_row_shows_the_set_value_first_and_the_effective_power_behind_it() -> None:
-    text = render_overview(REPORT, width=None)
+    text = render_overview(REPORT, width=None, steps=PLAIN_STEPS)
     assert (
         "✓ Transmit Power                     Auto (effective 17 dBm, EIRP 20 dBm)"
         in _ap_rows(text, "AP-1", "2.4 GHz")[2]
@@ -719,7 +730,9 @@ def test_overview_states_the_channel_reuse_shortfall_with_the_channel_list_as_it
         band=Band.GHZ_5,
         peers=("AP-1", "AP-2"),
     )
-    text = render_overview(replace(REPORT, site_findings=(*REPORT.site_findings, finding)), width=None)
+    text = render_overview(
+        replace(REPORT, site_findings=(*REPORT.site_findings, finding)), width=None, steps=PLAIN_STEPS
+    )
     assert (
         "    ! 5 GHz: 4 access points that hear each other (AP-1, AP-2) cannot all get distinct channels: the "
         "controller's Channel AI list offers 2 80 MHz blocks, 3 would be needed; add channels to the Channel AI "
@@ -730,7 +743,9 @@ def test_overview_states_the_channel_reuse_shortfall_with_the_channel_list_as_it
 def test_the_wlan_title_names_the_network_and_its_vlan_and_says_untagged_without_one() -> None:
     def titles(network: str | None, vlan: int | None) -> list[str]:
         evaluations = tuple(replace(e, network=network, vlan=vlan) for e in REPORT.compliance.evaluations)
-        text = render_overview(replace(REPORT, compliance=replace(REPORT.compliance, evaluations=evaluations)))
+        text = render_overview(
+            replace(REPORT, compliance=replace(REPORT.compliance, evaluations=evaluations)), steps=PLAIN_STEPS
+        )
         return [line for line in text.splitlines() if line.startswith("  WLAN       SSID-1")]
 
     assert titles("Network-9", 40) == ["  WLAN       SSID-1  (profile Standard)  → network Network-9, VLAN 40"]
@@ -748,12 +763,12 @@ def _extended_with(method: ChannelPlanMethod, budget: int = 1_234) -> SiteReport
 
 
 def test_the_extended_text_names_the_budget_and_says_when_the_optimum_is_not_proven() -> None:
-    exact = render_report(_extended_with(ChannelPlanMethod.EXACT))
-    not_proven = render_report(_extended_with(ChannelPlanMethod.HEURISTIC))
+    exact = render_report(_extended_with(ChannelPlanMethod.EXACT), steps=PLAIN_STEPS)
+    not_proven = render_report(_extended_with(ChannelPlanMethod.HEURISTIC), steps=PLAIN_STEPS)
     assert "Search budget: 1234 candidates per group of coupled radios (rf.plan_search_budget)" in not_proven
     assert "(exact search)" in exact and "optimality not proven" not in exact
     assert "heuristic search, optimality not proven (budget 1234)" in not_proven
-    overview = render_overview(_extended_with(ChannelPlanMethod.HEURISTIC))
+    overview = render_overview(_extended_with(ChannelPlanMethod.HEURISTIC), steps=PLAIN_STEPS)
     assert "heuristic search, optimality not proven (budget 1234)" in overview
 
 
@@ -789,7 +804,9 @@ def _tx_line(text: str) -> str:
 def test_the_text_report_says_where_the_effective_maximum_comes_from(
     source: MaxSource, reason: MaxReason | None, basis: str
 ) -> None:
-    text = render_report(_with_tx(effective_max_source=source, effective_max_reason=reason), width=None)
+    text = render_report(
+        _with_tx(effective_max_source=source, effective_max_reason=reason), width=None, steps=PLAIN_STEPS
+    )
     assert _tx_line(text).endswith(basis)
 
 
@@ -805,6 +822,7 @@ def test_a_custom_radio_above_a_stale_lower_configured_power_is_not_called_regul
             effective_max_reason=None,
         ),
         width=None,
+        steps=PLAIN_STEPS,
     )
     line = _tx_line(text)
     assert "(configured 18 dBm)" in line and "regulatory cap" not in line
@@ -819,6 +837,7 @@ def test_a_custom_radio_above_a_stale_lower_configured_power_is_not_called_regul
             effective_max_reason=None,
         ),
         width=None,
+        steps=PLAIN_STEPS,
     )
     assert "(configured 24 dBm, regulatory cap)" in _tx_line(capped)
 
@@ -842,6 +861,7 @@ def test_a_high_radio_is_not_called_regulatory_cap() -> None:
             effective_max_reason=None,
         ),
         width=None,
+        steps=PLAIN_STEPS,
     )
     line = _tx_line(text)
     assert "TX 17 dBm (high, configured 6 dBm is stale); max 17 dBm)" in line and "regulatory cap" not in line

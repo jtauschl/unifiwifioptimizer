@@ -16,6 +16,7 @@ from tests.unit.analysis.builders import (
     with_stats,
     without_stats,
 )
+from tests.unit.printed import PLAIN_STEPS
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
 from unifiwifioptimizer.domain.analysis import BandTxOutcome
@@ -29,7 +30,7 @@ MIN_RSSI = "Minimum RSSI"
 
 
 def overview_lines(inp: SiteAnalysisInput) -> list[str]:
-    return render_overview(analyze_site(inp), width=None).splitlines()
+    return render_overview(analyze_site(inp), width=None, steps=PLAIN_STEPS).splitlines()
 
 
 def band_rows(inp: SiteAnalysisInput, ap: str, band: Band) -> dict[str, str]:
@@ -207,7 +208,9 @@ def test_a_site_without_neighbour_pairs_says_that_no_scan_ran_and_never_a_clean_
     assert "    No scan ran: RF recommendations need neighbour pairs (docs/WALKTHROUGH.md section 3)." in text
     assert "0/0" not in text and "AP beacon readings" not in text
     assert "  No changes recommended in the available data; see Data quality." in text
-    assert "Scan passes:                       no scan configured" in render_report(analyze_site(inp), width=None)
+    assert "Scan passes:                       no scan configured" in render_report(
+        analyze_site(inp), width=None, steps=PLAIN_STEPS
+    )
 
 
 def test_a_scanning_site_that_scanned_nobody_names_why_instead_of_a_pass_ratio() -> None:
@@ -257,13 +260,13 @@ def test_a_radio_that_reports_no_channel_says_so_instead_of_auto() -> None:
     assert next(line for line in section if line.startswith("    · Channel  ")) == (
         "    · Channel                            unavailable"
     )
-    details = render_report(analyze_site(inp), width=None)
+    details = render_report(analyze_site(inp), width=None, steps=PLAIN_STEPS)
     assert "  2.4 GHz  (channel unavailable, width n/a, TX n/a (configured 11 dBm))" in details
 
 
 def setup_rows(inp: SiteAnalysisInput) -> list[str]:
     """The `Transmit Power` and `Minimum RSSI` rows of the AP setup view (`--details` with `--extended`)."""
-    lines = render_report(analyze_site(replace(inp, extended=True)), width=None).splitlines()
+    lines = render_report(analyze_site(replace(inp, extended=True)), width=None, steps=PLAIN_STEPS).splitlines()
     start = next(i for i, line in enumerate(lines) if "AP setup" in line)
     return [line.strip() for line in lines[start:] if line.strip().startswith((TX, MIN_RSSI))]
 
@@ -315,7 +318,7 @@ def test_a_band_row_without_a_recommendation_alone_qualifies_the_verdict() -> No
     inp = replace(without_neighbour_pairs(golden_input()), wlan_profiles={})
     report = analyze_site(inp)
     scanned = replace(report, scan=replace(report.scan, state=ScanState.SCANNED, scanned=("AP-1",)))
-    text = render_overview(scanned, width=None).splitlines()
+    text = render_overview(scanned, width=None, steps=PLAIN_STEPS).splitlines()
     assert footer(text) == "  No changes recommended in the available data; see Data quality."
 
 
@@ -323,7 +326,7 @@ def test_the_verdict_is_qualified_under_no_scan_and_in_the_details_footer_too() 
     skipped = replace(golden_input(skip_scan=True), wlan_profiles={})
     assert footer(overview_lines(skipped)) == "  No changes recommended in the available data; see Data quality."
     details = render_report(
-        analyze_site(replace(without_neighbour_pairs(golden_input()), wlan_profiles={})), width=None
+        analyze_site(replace(without_neighbour_pairs(golden_input()), wlan_profiles={})), width=None, steps=PLAIN_STEPS
     )
     assert "  No changes recommended in the available data.\n" in details
 
@@ -367,5 +370,5 @@ def test_a_check_incomplete_for_another_cause_does_not_swallow_the_targets_reaso
     older = replace(inp, snapshot=replace(inp.snapshot, wlans=wlans))
     overview = "\n".join(overview_lines(older))
     assert "older API without roaming_assistant_na_*" in overview and "more: --details" not in overview
-    details = render_report(analyze_site(older), width=None)
+    details = render_report(analyze_site(older), width=None, steps=PLAIN_STEPS)
     assert "AP-3: no reading of neighbour AP-4 (not sighted)" in details

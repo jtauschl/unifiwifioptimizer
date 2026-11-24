@@ -8,6 +8,7 @@ from pathlib import Path, PurePath
 
 import pytest
 
+from tests.unit.printed import PLAIN
 from unifiwifioptimizer.adapters.ssh.hostkeys import (
     Expectation,
     HostKeyCandidate,
@@ -171,7 +172,7 @@ def run_policy(
         asked.append(prompt)
         return answer
 
-    policy = TrustPolicy(assume_yes=yes, accept_unverified=unverified, confirm=confirm)
+    policy = TrustPolicy(assume_yes=yes, accept_unverified=unverified, confirm=confirm, commands=PLAIN)
     return apply_decision(subject(), decision, store, policy).outcome, asked
 
 
@@ -236,12 +237,12 @@ def test_a_replace_reports_old_and_new_fingerprint_and_a_refusal_is_a_failure() 
     store = Memory([OLD.entry(ALIAS)])
     result = apply_decision(
         subject(), Replace(OLD.entry(ALIAS), NEW, TrustBasis.CONTROLLER), store,
-        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda p: False),
+        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda p: False, commands=PLAIN),
     )  # fmt: skip
     assert result.detail == f"{OLD.sha256.text} -> {NEW.sha256.text}"
     refused = apply_decision(
         subject(), Refused(TrustRefusalKind.KEY_MISMATCH_CONTROLLER, "nope", TrustBasis.CONTROLLER), store,
-        TrustPolicy(assume_yes=True, accept_unverified=True, confirm=lambda p: True),
+        TrustPolicy(assume_yes=True, accept_unverified=True, confirm=lambda p: True, commands=PLAIN),
     )  # fmt: skip
     assert refused.outcome is TrustOutcome.FAILED and refused.detail == "nope"
 
@@ -253,7 +254,7 @@ def test_a_store_that_refuses_the_write_is_a_failure_not_a_crash() -> None:
 
     result = apply_decision(
         subject(), Replace(OLD.entry(ALIAS), NEW, TrustBasis.CONTROLLER), Stale([OLD.entry(ALIAS)]),
-        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda p: False),
+        TrustPolicy(assume_yes=True, accept_unverified=False, confirm=lambda p: False, commands=PLAIN),
     )  # fmt: skip
     assert result.outcome is TrustOutcome.FAILED and "changed since it was shown" in result.detail
 
@@ -331,7 +332,8 @@ def test_the_run_gate_reports_every_result_except_already_stored() -> None:
         return [stored] if key_type == ED else [fresh]
 
     check_host_keys(
-        [subject(), second], store, TrustPolicy(assume_yes=False, accept_unverified=False, confirm=confirm),
+        [subject(), second], store,
+        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=confirm, commands=PLAIN),
         lambda result: reported.append(f"{result.ap_name}:{result.outcome}"), scan,
     )  # fmt: skip
     assert reported == ["AP-2:stored"] and len(answers) == 1 and answers[0].kind is PromptKind.NEW_UNVERIFIED
@@ -341,7 +343,8 @@ def test_a_decline_in_the_run_gate_changes_nothing() -> None:
     store = Memory()
     reported: list[str] = []
     check_host_keys(
-        [subject()], store, TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda p: False),
+        [subject()], store,
+        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda p: False, commands=PLAIN),
         lambda result: reported.append(str(result.outcome)), Scans([], [cand(1)]),
     )  # fmt: skip
     assert reported == ["declined"] and store.rows == [] and store.writes == []
@@ -366,7 +369,7 @@ def asked_prompt(decision: TrustDecision, subj: TrustSubject | None = None) -> P
         asked.append(prompt)
         return False
 
-    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=decline)
+    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=decline, commands=PLAIN)
     apply_decision(subj or subject(), decision, Memory([OLD.entry(ALIAS)]), policy)
     (prompt,) = asked
     return prompt

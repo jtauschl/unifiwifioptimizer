@@ -16,6 +16,7 @@ serialized code, or names computed at run time.
 """
 
 import ast
+import re
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -604,6 +605,114 @@ def check_star_imports(tree: ast.Module, relpath: str) -> list[str]:
     ]
 
 
+# The value that carries the options of the run into every printed command. A default would let a producer drop it
+# without a type error; the CLI builder is the only place that makes one.
+RUN_VALUES = frozenset({"PrintedCommands", "TrustStepContext"})
+COMMANDS_MODULE = "domain/commands.py"
+SUBCOMMANDS = ("run", "sites", "site", "config", "init", "controller-fingerprint", "trust-host-keys")
+COMMAND_TEXT = re.compile(rf"unifiwifioptimizer |`(?:{'|'.join(SUBCOMMANDS)}) ")
+
+
+def annotation_names_a_run_value(annotation: ast.expr | None) -> bool:
+    return annotation is not None and any(
+        (isinstance(node, ast.Name) and node.id in RUN_VALUES)
+        or (isinstance(node, ast.Attribute) and node.attr in RUN_VALUES)
+        or (isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in RUN_VALUES)
+        for node in ast.walk(annotation)
+    )
+
+
+def check_run_values_have_no_default(tree: ast.Module, relpath: str) -> list[str]:
+    """A parameter or a dataclass field that holds `PrintedCommands` or `TrustStepContext` is required: with a default,
+    a producer that forgets it prints a command that is wrong for the run, and no type check says so. A literal gate:
+    an alias of the class or a type built at run time is not seen."""
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            args = node.args
+            positional = [*args.posonlyargs, *args.args]
+            with_default = list(zip(reversed(positional), reversed(args.defaults), strict=False))
+            with_default += [(a, d) for a, d in zip(args.kwonlyargs, args.kw_defaults, strict=True) if d is not None]
+            found.extend(
+                f"parameter {arg.arg} has a default"
+                for arg, _ in with_default
+                if annotation_names_a_run_value(arg.annotation)
+            )
+        elif (
+            isinstance(node, ast.AnnAssign) and node.value is not None and annotation_names_a_run_value(node.annotation)
+        ):
+            found.append("field or variable with a default")
+    return found
+
+
+RUN_VALUE_MAKERS = {"PrintedCommands": "cli/printed.py", "TrustStepContext": "cli/main.py"}
+
+
+def check_run_values_have_one_maker(tree: ast.Module, relpath: str) -> list[str]:
+    """`PrintedCommands(...)` is called only where the CLI builds the commands of a run, and
+    `TrustStepContext(...)` only where it builds the context of a report: a module constant or a literal at a
+    producer would be a ready-made plain value that every type check and the no-default gate let through. A
+    literal gate: an alias or `getattr` is not seen."""
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            callee = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+            if callee in RUN_VALUE_MAKERS and relpath != RUN_VALUE_MAKERS[callee]:
+                found.append(f"calls {callee}, which only {RUN_VALUE_MAKERS[callee]} may")
+    return found
+
+
+def docstring_nodes(tree: ast.Module) -> set[int]:
+    owners = [
+        tree,
+        *(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)),
+    ]
+    return {
+        id(owner.body[0].value)
+        for owner in owners
+        if owner.body
+        and isinstance(owner.body[0], ast.Expr)
+        and isinstance(owner.body[0].value, ast.Constant)
+        and isinstance(owner.body[0].value.value, str)
+    }
+
+
+def check_command_text_has_one_home(tree: ast.Module, relpath: str) -> list[str]:
+    """A string that holds the program name followed by a blank, or a backtick and a subcommand followed by a blank,
+    is a printed command; the text of one exists only in `domain/commands.py`, where the options of the run are placed.
+    A literal gate: a command assembled from pieces at run time is not seen."""
+    if relpath == COMMANDS_MODULE:
+        return []
+    skip = docstring_nodes(tree)
+    found = [
+        f"holds command text {node.value!r}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in skip
+        and COMMAND_TEXT.search(node.value)
+    ]
+    # The most natural way round the literal: a backtick, then the program name as a value, then more than the closing
+    # backtick (a blank and the arguments, or an option value).
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            for before, value, after in zip(node.values, node.values[1:], [*node.values[2:], None], strict=False):
+                closes = (
+                    isinstance(after, ast.Constant) and isinstance(after.value, str) and after.value.startswith("`")
+                )
+                if (
+                    isinstance(before, ast.Constant)
+                    and isinstance(before.value, str)
+                    and before.value.endswith("`")
+                    and isinstance(value, ast.FormattedValue)
+                    and isinstance(value.value, ast.Name)
+                    and value.value.id in {"PROGRAM", "PROG"}
+                    and not closes
+                ):
+                    found.append("builds a command from the program name")
+    return found
+
+
 CHECKERS: dict[str, Checker] = {
     "core-imports": check_core_imports,
     "dynamic-imports": check_dynamic_imports,
@@ -616,6 +725,9 @@ CHECKERS: dict[str, Checker] = {
     "ssl-location": check_ssl_location,
     "store-writer-location": check_store_writer_location,
     "tls-bypass-confinement": check_tls_bypass_confinement,
+    "run-values-have-no-default": check_run_values_have_no_default,
+    "run-values-have-one-maker": check_run_values_have_one_maker,
+    "command-text-has-one-home": check_command_text_has_one_home,
 }
 
 
@@ -945,6 +1057,29 @@ BAD_SNIPPETS += [
         "app/run.py",
         "import importlib\nK = importlib.import_module('unifiwifioptimizer.adapters.ssh.hostkeys').KnownHostsWriter\n",
     ),
+    ("run-values-have-no-default", "app/x.py", "def f(commands: PrintedCommands = PLAIN) -> None: ...\n"),
+    ("run-values-have-no-default", "app/x.py", "def f(*, commands: PrintedCommands | None = None) -> None: ...\n"),
+    ("run-values-have-no-default", "report/x.py", "def f(*, steps: TrustStepContext = NO) -> None: ...\n"),
+    ("run-values-have-no-default", "report/x.py", "def f(steps: 'TrustStepContext' = NO) -> None: ...\n"),
+    ("run-values-have-no-default", "report/x.py", "def g(a, b: mod.TrustStepContext = NO): ...\n"),
+    (
+        "run-values-have-no-default",
+        "app/x.py",
+        "from dataclasses import dataclass\n@dataclass\nclass P:\n    commands: PrintedCommands = PLAIN\n",
+    ),
+    ("command-text-has-one-home", "app/x.py", "text = 'run `unifiwifioptimizer config <site-id>` to get a skeleton'\n"),
+    ("command-text-has-one-home", "domain/x.py", "step = '`trust-host-keys --site {site}`, or run again'\n"),
+    ("command-text-has-one-home", "report/x.py", "step = f'then `site {x}` lists the names'\n"),
+    ("command-text-has-one-home", "cli/x.py", "print(f'{p}: run `config {x}` to start')\n"),
+    ("run-values-have-one-maker", "app/x.py", "p = PrintedCommands(config_option='', store_option='')\n"),
+    ("run-values-have-one-maker", "cli/main.py", "p = PrintedCommands(config_option='', store_option='')\n"),
+    ("run-values-have-one-maker", "report/x.py", "s = TrustStepContext(gate_ran=False, commands=c)\n"),
+    ("run-values-have-one-maker", "cli/printed.py", "s = TrustStepContext(gate_ran=False, commands=c)\n"),
+    ("run-values-have-one-maker", "app/x.py", "s = mod.PrintedCommands(config_option='', store_option='')\n"),
+    ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROGRAM} config {site}` first'\n"),
+    ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROG} site {site}` first'\n"),
+    ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROGRAM}{opt} site {site}` first'\n"),
+    ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROGRAM}`'\nx = f'`{PROGRAM}{opt}'\n"),
 ]
 
 
@@ -1109,9 +1244,37 @@ GOOD_SNIPPETS += [
         "app/run.py",
         "from unifiwifioptimizer.adapters.ssh import hostkeys\nhostkeys.default_store_path(e)\n",
     ),
+    ("run-values-have-no-default", "app/x.py", "def f(commands: PrintedCommands, *, other: int = 1) -> None: ...\n"),
+    (
+        "run-values-have-no-default",
+        "app/x.py",
+        "from dataclasses import dataclass\n@dataclass\nclass P:\n    commands: PrintedCommands\n    n: int = 1\n",
+    ),
+    ("command-text-has-one-home", "domain/commands.py", "x = '`unifiwifioptimizer site d`'\n"),
+    ("command-text-has-one-home", "app/x.py", 'def f():\n    """Run `trust-host-keys --site d` to store keys."""\n'),
+    (
+        "command-text-has-one-home",
+        "cli/x.py",
+        "msg = 'unifiwifioptimizer: error: x'\nhelp = 'print a configuration skeleton'\n",
+    ),
+    (
+        "command-text-has-one-home",
+        "cli/x.py",
+        "s = f'`{PROGRAM}` {name} lists'\nt = 'the `init` subcommand creates it'\n",
+    ),
+    ("run-values-have-one-maker", "cli/printed.py", "p = PrintedCommands(config_option='', store_option='')\n"),
+    ("run-values-have-one-maker", "cli/main.py", "s = TrustStepContext(gate_ran=False, commands=c)\n"),
+    ("run-values-have-one-maker", "app/x.py", "def f(commands: PrintedCommands) -> None:\n    commands.site('d')\n"),
+    ("command-text-has-one-home", "cli/x.py", "msg = f'{PROGRAM}: error {x}'\nv = f'{PROGRAM} {__version__}'\n"),
 ]
 
 
 @pytest.mark.parametrize(("checker_name", "relpath", "snippet"), GOOD_SNIPPETS)
 def test_checker_accepts_known_good_snippet(checker_name: str, relpath: str, snippet: str) -> None:
     assert CHECKERS[checker_name](ast.parse(snippet), relpath) == []
+
+
+def test_the_command_text_gate_names_exactly_the_subcommands_of_the_parser() -> None:
+    from unifiwifioptimizer.cli.main import SUBCOMMAND_HELP
+
+    assert set(SUBCOMMANDS) == set(SUBCOMMAND_HELP)

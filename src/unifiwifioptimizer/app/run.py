@@ -20,6 +20,7 @@ from unifiwifioptimizer.app.use_cases import resolve_site
 from unifiwifioptimizer.config.load import LoadedConfig, require_scan_passwords
 from unifiwifioptimizer.config.schema import SiteConfig
 from unifiwifioptimizer.domain.analysis import PartialReason
+from unifiwifioptimizer.domain.commands import PrintedCommands
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.domain.models import Site, SiteSnapshot
 from unifiwifioptimizer.domain.profile import ProfileSet
@@ -82,11 +83,11 @@ class RunResult:
         return RunVerdict.OK
 
 
-def select_sites(loaded: LoadedConfig, selectors: Sequence[str] | None) -> list[SiteConfig]:
+def select_sites(loaded: LoadedConfig, selectors: Sequence[str] | None, commands: PrintedCommands) -> list[SiteConfig]:
     """The configured sites to run, every selector matched against the configured site ids."""
     configured = loaded.config.sites
     if not configured:
-        raise ConfigError("sites", "no site configured; run `config <site>` to get a skeleton")
+        raise ConfigError("sites", f"no site configured; run {commands.config('<site-id>')} to get a skeleton")
     if not selectors:
         return list(configured.values())
     chosen: list[SiteConfig] = []
@@ -117,6 +118,7 @@ def run_analysis(
     sleep: Sleep,
     progress: Progress,
     *,
+    commands: PrintedCommands,
     sites: Sequence[str] | None = None,
     with_clients: bool = False,
     skip_scan: bool = False,
@@ -124,7 +126,7 @@ def run_analysis(
     environment_check: EnvironmentCheck | None = None,
     host_key_gate: HostKeyGate | None = None,
 ) -> RunResult:
-    selected = select_sites(loaded, sites)
+    selected = select_sites(loaded, sites, commands)
     scanning_sites = [s for s in selected if s.scans and not skip_scan]
     if scanning_sites:
         if environment_check is not None:

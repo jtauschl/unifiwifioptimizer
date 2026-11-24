@@ -21,6 +21,7 @@ from tests.unit.app.test_trust_decision import (
     plan,
     subject,
 )
+from tests.unit.printed import PLAIN, given
 from unifiwifioptimizer.adapters.ssh.hostkeys import HostKeyCandidate, KnownHostEntry, expected_fingerprint
 from unifiwifioptimizer.app.trust import (
     Refused,
@@ -78,7 +79,7 @@ EXPECTED_STEPS = {
     K.UNUSABLE_KEYS: "report it with the access point's firmware version",
     K.SEVERAL_STORED_LINES: (
         "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
-        "`trust-host-keys --site default`, which handles the key as one not yet stored"
+        "`unifiwifioptimizer trust-host-keys --site default`, which handles the key as one not yet stored"
     ),
     K.STORE_CHANGED: (
         "the store changed while this access point was being handled (another run of the tool, or an edit by hand); "
@@ -94,11 +95,11 @@ EXPECTED_STEPS = {
 }
 
 
-def test_every_kind_has_a_step_and_the_only_placeholder_is_the_site() -> None:
+def test_every_kind_has_a_step_and_the_placeholders_are_the_site_and_the_printed_commands() -> None:
     assert set(TRUST_ADVICE) == set(K) == set(EXPECTED_STEPS)
     for kind, step in TRUST_ADVICE.items():
-        assert set(re.findall(r"\{(\w+)\}", step)) <= {"site", "options"}, kind
-        assert trust_step(kind, "default") == EXPECTED_STEPS[kind], kind
+        assert set(re.findall(r"\{(\w+)\}", step)) <= {"site", "trust", "site_command"}, kind
+        assert trust_step(kind, "default", PLAIN) == EXPECTED_STEPS[kind], kind
 
 
 def test_a_step_the_scan_side_has_too_is_the_same_text() -> None:
@@ -189,7 +190,7 @@ def test_a_case_that_passes_today_still_passes() -> None:
 
 
 def result_of(decision_subject: object, store: Memory, scan: object, *, answer: bool = False) -> TrustResult:
-    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda p: answer)
+    policy = TrustPolicy(assume_yes=False, accept_unverified=False, confirm=lambda p: answer, commands=PLAIN)
     inspected = inspect_access_point(decision_subject, store, scan)  # type: ignore[arg-type]
     return apply_decision(decision_subject, inspected, store, policy)  # type: ignore[arg-type]
 
@@ -327,28 +328,37 @@ def test_the_step_names_the_site_of_the_subject_on_every_producer() -> None:
     written = result_of(
         dataclasses.replace(subject(), site_id="branch"), Refusing([held(cand(1))]), Scans([], [cand(2)]), answer=True
     )
-    assert "`trust-host-keys --site branch`" in written.next_step
+    assert "`unifiwifioptimizer trust-host-keys --site branch`" in written.next_step
 
 
-def test_the_step_that_names_the_command_repeats_the_options_of_the_invocation() -> None:
-    options = " --known-hosts='/Volumes/Temp HD/kh'"
-    assert trust_step(K.SEVERAL_STORED_LINES, "default", options) == (
-        "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
-        "`trust-host-keys --site default --known-hosts='/Volumes/Temp HD/kh'`, which handles the key as one not yet "
-        "stored"
-    )
+def test_the_steps_that_name_a_command_repeat_the_options_of_the_invocation() -> None:
+    commands = given(config_file="/etc/uwo/home.yaml", known_hosts="/Volumes/Temp HD/kh")
+    with_options = {
+        K.SEVERAL_STORED_LINES: (
+            "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
+            "`unifiwifioptimizer --config-file=/etc/uwo/home.yaml trust-host-keys --site default "
+            "--known-hosts='/Volumes/Temp HD/kh'`, which handles the key as one not yet stored"
+        ),
+        K.NOT_ON_CONTROLLER_NAMED: (
+            "check the spelling; `unifiwifioptimizer --config-file=/etc/uwo/home.yaml site default` lists the names "
+            "(quote a name with blanks)"
+        ),
+        K.NOT_ON_CONTROLLER_CONFIGURED: (
+            "the name under `sites.default.neighbors` is not on the controller; "
+            "`unifiwifioptimizer --config-file=/etc/uwo/home.yaml site default` lists the names"
+        ),
+    }
     for kind in K:
-        if kind is not K.SEVERAL_STORED_LINES:
-            assert trust_step(kind, "default", options) == EXPECTED_STEPS[kind], kind
+        assert trust_step(kind, "default", commands) == with_options.get(kind, EXPECTED_STEPS[kind]), kind
 
 
 def test_the_options_reach_the_result_of_a_store_that_has_several_lines_through_the_policy() -> None:
     policy = TrustPolicy(
-        assume_yes=False, accept_unverified=False, confirm=lambda p: False, command_options=" --known-hosts=/kh"
+        assume_yes=False, accept_unverified=False, confirm=lambda p: False, commands=given(known_hosts="/kh")
     )
     store = Memory([held(cand(1)), held(cand(2))])
     result = apply_decision(subject(), inspect_access_point(subject(), store, Scans([], [cand(1)])), store, policy)
-    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step
+    assert "`unifiwifioptimizer trust-host-keys --site default --known-hosts=/kh`" in result.next_step
 
 
 def test_the_options_reach_the_step_of_a_store_that_refuses_the_write() -> None:
@@ -357,8 +367,8 @@ def test_the_options_reach_the_step_of_a_store_that_refuses_the_write() -> None:
             raise HostKeyTrustError(K.SEVERAL_STORED_LINES, "2 entries are stored for alias A in /f")
 
     policy = TrustPolicy(
-        assume_yes=False, accept_unverified=False, confirm=lambda p: True, command_options=" --known-hosts=/kh"
+        assume_yes=False, accept_unverified=False, confirm=lambda p: True, commands=given(known_hosts="/kh")
     )
     store = Refusing([held(cand(1))])
     result = apply_decision(subject(), inspect_access_point(subject(), store, Scans([], [cand(2)])), store, policy)
-    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step
+    assert "`unifiwifioptimizer trust-host-keys --site default --known-hosts=/kh`" in result.next_step

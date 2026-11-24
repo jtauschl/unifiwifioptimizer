@@ -12,6 +12,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from tests.unit.printed import PLAIN
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.app.run import RunResult, RunVerdict, SiteOutcome, run_analysis, select_sites
 from unifiwifioptimizer.app.trust import TrustSubject
@@ -164,7 +165,9 @@ def run(
     api = api or FakeApi()
     scanner = scanner or FakeScanner(api=api)
     progress = RecordingProgress()
-    result = run_analysis(cfg, PROFILES, api, lambda: scanner, FixedClock(), lambda s: None, progress, **kwargs)
+    result = run_analysis(
+        cfg, PROFILES, api, lambda: scanner, FixedClock(), lambda s: None, progress, commands=PLAIN, **kwargs
+    )
     return result, api, scanner, progress
 
 
@@ -173,12 +176,12 @@ def run(
 
 def test_sites_are_selected_by_configured_id_and_nothing_else() -> None:
     cfg = loaded({"default": scanning_site(), "site-2": {"wlans": {"SSID-1": "Standard"}}})
-    assert [s.id for s in select_sites(cfg, None)] == ["default", "site-2"]
-    assert [s.id for s in select_sites(cfg, ["site-2", "site-2"])] == ["site-2"]
+    assert [s.id for s in select_sites(cfg, None, PLAIN)] == ["default", "site-2"]
+    assert [s.id for s in select_sites(cfg, ["site-2", "site-2"], PLAIN)] == ["site-2"]
     with pytest.raises(ConfigError, match="not a configured site id"):
-        select_sites(cfg, ["Site-1"])
+        select_sites(cfg, ["Site-1"], PLAIN)
     with pytest.raises(ConfigError, match="no site configured"):
-        select_sites(loaded({}), None)
+        select_sites(loaded({}), None, PLAIN)
 
 
 @pytest.mark.security("T19")

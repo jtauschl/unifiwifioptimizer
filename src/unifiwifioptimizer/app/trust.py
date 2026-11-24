@@ -33,6 +33,7 @@ from unifiwifioptimizer.app.scanning import SSH_PORT, controller_origin, scan_me
 from unifiwifioptimizer.app.use_cases import resolve_site
 from unifiwifioptimizer.config.load import LoadedConfig
 from unifiwifioptimizer.config.schema import SiteConfig, SshAuth
+from unifiwifioptimizer.domain.commands import PrintedCommands
 from unifiwifioptimizer.domain.errors import ConfigError, HostKeyTrustError
 from unifiwifioptimizer.domain.hostkeys import (
     TRUST_ADVICE,
@@ -122,8 +123,7 @@ class TrustPolicy:
     assume_yes: bool
     accept_unverified: bool
     confirm: Confirm
-    # Options of the invocation (`--known-hosts`, quoted) that a step naming `trust-host-keys` repeats.
-    command_options: str = ""
+    commands: PrintedCommands
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -212,10 +212,10 @@ def _same_key(entry: KnownHostEntry, candidate: HostKeyCandidate) -> bool:
     return entry.key_type == candidate.key_type and entry.key_base64 == candidate.key_base64
 
 
-def trust_step(kind: TrustRefusalKind, site_id: str, command_options: str = "") -> str:
-    """The step of a kind; `command_options` are the options of this invocation that `trust-host-keys` needs to act
-    on the same store, already quoted."""
-    return TRUST_ADVICE[kind].format(site=site_id, options=command_options)
+def trust_step(kind: TrustRefusalKind, site_id: str, commands: PrintedCommands) -> str:
+    return TRUST_ADVICE[kind].format(
+        site=site_id, trust=commands.trust_host_keys(site_id), site_command=commands.site(site_id)
+    )
 
 
 def _expectation_refusal(
@@ -343,7 +343,7 @@ def apply_decision(
                 outcome=TrustOutcome.FAILED,
                 basis=basis,
                 detail=reason,
-                next_step=trust_step(kind, subject.site_id, policy.command_options),
+                next_step=trust_step(kind, subject.site_id, policy.commands),
             )
         case AlreadyStored(fingerprint, basis):
             return TrustResult(ap_name=name, outcome=TrustOutcome.ALREADY_STORED, basis=basis, detail=fingerprint)
@@ -417,7 +417,7 @@ def _write(
             outcome=TrustOutcome.FAILED,
             basis=basis,
             detail=str(exc),
-            next_step=trust_step(exc.kind, subject.site_id, policy.command_options),
+            next_step=trust_step(exc.kind, subject.site_id, policy.commands),
         )
     return TrustResult(ap_name=subject.name, outcome=outcome, basis=basis, detail=detail)
 
@@ -449,8 +449,8 @@ def trust_host_keys(
     accept_unverified: bool,
     confirm: Confirm,
     report: Callable[[TrustResult], None],
+    commands: PrintedCommands,
     scan: Keyscan = default_keyscan,
-    command_options: str = "",
 ) -> TrustReport:
     """Every result is reported as it happens, so an interruption later in the loop leaves the record of what was
     already stored; the returned report holds the same results."""
@@ -459,8 +459,7 @@ def trust_host_keys(
     if site_config is None or site_config.ssh is None:
         raise ConfigError(
             f"sites.{site.id}.ssh",
-            f"no ssh section for this site; add `sites.{site.id}.ssh` "
-            f"(`unifiwifioptimizer config {site.id}` prints a skeleton)",
+            f"no ssh section for this site; add `sites.{site.id}.ssh`; {commands.config(site.id)} prints a skeleton",
         )
     devices = api.devices(site.id)
     by_name = {ap.name: ap for ap in devices.access_points}
@@ -476,7 +475,7 @@ def trust_host_keys(
         assume_yes=assume_yes,
         accept_unverified=accept_unverified,
         confirm=confirm,
-        command_options=command_options,
+        commands=commands,
     )
     results: list[TrustResult] = []
     for name in names:
@@ -488,7 +487,7 @@ def trust_host_keys(
                 outcome=TrustOutcome.NOT_ON_CONTROLLER,
                 basis=None,
                 detail="",
-                next_step=trust_step(kind, site.id),
+                next_step=trust_step(kind, site.id, commands),
             )
         else:
             subject = subject_for(site.id, site_config, origin, ap)

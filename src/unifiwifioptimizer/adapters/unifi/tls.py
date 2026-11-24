@@ -20,6 +20,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
+from unifiwifioptimizer.domain.commands import PrintedCommands
 from unifiwifioptimizer.domain.errors import (
     ConfigError,
     ControllerError,
@@ -40,7 +41,7 @@ class TlsMode(StrEnum):
 
 VERIFICATION_STEP: Mapping[TlsMode, str] = {
     TlsMode.SYSTEM_ROOTS: (
-        "compare the output of `unifiwifioptimizer controller-fingerprint` with the certificate view of the "
+        "compare the output of {controller_fingerprint} with the certificate view of the "
         "controller, then set `controller.cert_fingerprint` (or `controller.ca_cert`)"
     ),
     TlsMode.CA_FILE: (
@@ -55,11 +56,11 @@ VALIDITY_ERROR_CODES = frozenset({9, 10})
 VALIDITY_STEP = "renew the controller's certificate, or correct this machine's clock if its date is wrong"
 
 
-def verification_step(mode: TlsMode, verify_code: int) -> str:
+def verification_step(mode: TlsMode, verify_code: int, commands: PrintedCommands) -> str:
     """The next step for a certificate that failed verification; the PIN mode never verifies, so it has none."""
     if verify_code in VALIDITY_ERROR_CODES:
         return VALIDITY_STEP
-    return VERIFICATION_STEP[mode]
+    return VERIFICATION_STEP[mode].format(controller_fingerprint=commands.controller_fingerprint())
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

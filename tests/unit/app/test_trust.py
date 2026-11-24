@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from tests.unit.printed import PLAIN, given
 from unifiwifioptimizer.adapters.ssh.hostkeys import HostKeyCandidate, KnownHostEntry, KnownHostsWriter, TrustBasis
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.app.trust import Prompt, TrustOutcome, TrustReport, TrustResult, trust_host_keys
@@ -40,6 +41,7 @@ FIXTURES = Path(__file__).parents[2] / "fixtures"
 def trust(*args: Any, **kwargs: Any) -> TrustReport:
     """`trust_host_keys` with the reporter most tests do not look at."""
     kwargs.setdefault("report", lambda result: None)
+    kwargs.setdefault("commands", PLAIN)
     return trust_host_keys(*args, **kwargs)
 
 
@@ -438,7 +440,8 @@ def test_the_reporter_sees_every_result_as_it_happens_and_the_report_holds_the_s
     reported: list[TrustResult] = []
     report = trust_host_keys(
         FixtureApi(), cfg, MemoryStore(), "default", [], assume_yes=False, accept_unverified=False,
-        confirm=lambda q: False, report=reported.append, scan=lambda address, port, key_type: [],
+        confirm=lambda q: False, report=reported.append, commands=PLAIN,
+            scan=lambda address, port, key_type: [],
     )  # fmt: skip
     assert [r.ap_name for r in reported] == ["AP-1", "AP-2", "Gone"]
     assert reported == list(report.results)
@@ -475,7 +478,7 @@ def test_the_trust_command_names_the_configuration_to_add_when_it_has_nothing_to
             )  # fmt: skip
         return raised.value
 
-    assert "add `sites.default.ssh` (`unifiwifioptimizer config default` prints a skeleton)" in str(
+    assert "add `sites.default.ssh`; `unifiwifioptimizer config default` prints a skeleton" in str(
         run({"wlans": {"SSID-1": "Standard"}})
     )
     assert "configure `sites.default.neighbors` or name access points with `--ap`" in str(run({"ssh": {}}))
@@ -500,9 +503,9 @@ def test_the_trust_command_passes_the_options_of_the_invocation_to_the_steps_it_
     ]
     report = trust(
         FixtureApi(), loaded({"ssh": {}, "neighbors": {ap.name: []}}), store, "default", [ap.name],
-        assume_yes=False, accept_unverified=False, confirm=lambda q: False, command_options=" --known-hosts=/kh",
+        assume_yes=False, accept_unverified=False, confirm=lambda q: False, commands=given(known_hosts="/kh"),
         scan=lambda address, port, key_type: [key_for(3)],
     )  # fmt: skip
     (result,) = report.results
     assert result.outcome is TrustOutcome.FAILED
-    assert "`trust-host-keys --site default --known-hosts=/kh`" in result.next_step
+    assert "`unifiwifioptimizer trust-host-keys --site default --known-hosts=/kh`" in result.next_step

@@ -7,7 +7,6 @@ tool did not foresee is 1.
 
 import argparse
 import os
-import shlex
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -32,6 +31,7 @@ from unifiwifioptimizer.app.trust import (
 )
 from unifiwifioptimizer.cli.exit_codes import ExitCode
 from unifiwifioptimizer.cli.init_command import run_init
+from unifiwifioptimizer.cli.printed import printed_commands
 from unifiwifioptimizer.cli.progress import StderrProgress
 from unifiwifioptimizer.cli.prompt import can_ask, terminal_confirm
 from unifiwifioptimizer.config.load import LoadedConfig, load_config
@@ -39,8 +39,10 @@ from unifiwifioptimizer.config.loader import expand_user
 from unifiwifioptimizer.config.locations import ConfigLocation, default_config_path, resolve_config_location
 from unifiwifioptimizer.config.profiles import load_profiles, shipped_profiles_text
 from unifiwifioptimizer.config.schema import parse_controller_url
+from unifiwifioptimizer.domain.commands import PROGRAM, PrintedCommands
 from unifiwifioptimizer.domain.errors import (
     MAX_ERROR_CHARS,
+    MAX_PATH_CHARS,
     ConfigError,
     HostKeyTrustError,
     TlsError,
@@ -54,10 +56,6 @@ from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
 from unifiwifioptimizer.report.skeleton import render_skeleton
 from unifiwifioptimizer.report.text import render_overview, render_report, render_site, render_sites
-
-PROG = "unifiwifioptimizer"
-# A path is a user value: long enough for a real one, bounded for a terminal.
-MAX_OPTION_CHARS = 1024
 
 SUBCOMMAND_HELP: dict[str, str] = {
     "run": "analyse every configured site and print recommendations",
@@ -73,27 +71,40 @@ SITE_SUBCOMMANDS = frozenset({"site", "config"})
 Handler = Callable[[argparse.Namespace], ExitCode]
 
 
+def _path_argument(text: str) -> Path:
+    """An empty value is no path: `Path("")` is the working directory, and a printed command that withholds a path
+    ends in an empty value, which must stop before any file is read."""
+    if not text:
+        raise argparse.ArgumentTypeError("needs a value")
+    return Path(text)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog=PROG,
+        prog=PROGRAM,
         description=(
             "RF-tuning and WLAN-baseline recommendations for UniFi access points. It changes no setting on the "
             "controller or an access point; a scan briefly takes each radio off-channel."
         ),
     )
-    parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
+    parser.add_argument("--version", action="version", version=f"{PROGRAM} {__version__}")
+    # `--known-hosts` belongs to two subcommands; every handler builds its printed commands from the same namespace.
+    parser.set_defaults(known_hosts=None)
     parser.add_argument(
         "--config-file",
-        type=Path,
+        type=_path_argument,
         metavar="PATH",
         help="configuration file (default: $XDG_CONFIG_HOME/%(prog)s/config.yaml)",
     )
     parser.add_argument(
-        "--dump-api", type=Path, metavar="DIR", help="write what was read from each endpoint (models, masked) into DIR"
+        "--dump-api",
+        type=_path_argument,
+        metavar="DIR",
+        help="write what was read from each endpoint (models, masked) into DIR",
     )
     parser.add_argument(
         "--profiles-file",
-        type=Path,
+        type=_path_argument,
         metavar="PATH",
         help="WLAN profiles that extend or replace the shipped ones (default: profiles.yaml beside the config file)",
     )
@@ -149,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_known_hosts_option(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "--known-hosts",
-        type=Path,
+        type=_path_argument,
         metavar="PATH",
         help="host-key store (default: $XDG_STATE_HOME/unifiwifioptimizer/known_hosts)",
     )
@@ -159,18 +170,25 @@ def _known_hosts_path(args: argparse.Namespace, environ: Mapping[str, str]) -> P
     return args.known_hosts if args.known_hosts is not None else default_store_path(environ)
 
 
-def _client(loaded: LoadedConfig, args: argparse.Namespace) -> tuple[UnifiClient, DumpWriter | None]:
+def _commands(args: argparse.Namespace) -> PrintedCommands:
+    return printed_commands(args.config_file, args.known_hosts)
+
+
+def _client(
+    loaded: LoadedConfig, args: argparse.Namespace, commands: PrintedCommands
+) -> tuple[UnifiClient, DumpWriter | None]:
     controller = loaded.config.controller
     policy = TlsPolicy.from_options(controller.ca_cert, controller.cert_fingerprint)
     dump = DumpWriter(args.dump_api) if args.dump_api is not None else None
-    client = UnifiClient(controller, policy, observe_unknown_keys=dump.observe_unknown_keys if dump else None)
+    client = UnifiClient(controller, policy, commands, observe_unknown_keys=dump.observe_unknown_keys if dump else None)
     return client, dump
 
 
 def _sites(args: argparse.Namespace) -> ExitCode:
-    loaded = load_config(args.config_file)
+    commands = _commands(args)
+    loaded = load_config(args.config_file, commands)
     _warn_legacy(loaded)
-    client, dump = _client(loaded, args)
+    client, dump = _client(loaded, args, commands)
     overview = use_cases.list_sites(client)
     if dump is not None:
         dump.write("self/sites", overview)
@@ -179,9 +197,10 @@ def _sites(args: argparse.Namespace) -> ExitCode:
 
 
 def _site(args: argparse.Namespace) -> ExitCode:
-    loaded = load_config(args.config_file)
+    commands = _commands(args)
+    loaded = load_config(args.config_file, commands)
     _warn_legacy(loaded)
-    client, dump = _client(loaded, args)
+    client, dump = _client(loaded, args, commands)
     overview = use_cases.show_site(client, args.site)
     if dump is not None:
         dump.write(f"s/{overview.site.id}", overview)
@@ -198,9 +217,10 @@ def _config(args: argparse.Namespace) -> ExitCode:
         return _print_profiles(args.profiles_file, location)
     if args.site is None:
         build_parser().error("config needs a site id, or --profiles")
-    loaded = load_config(args.config_file)
+    commands = _commands(args)
+    loaded = load_config(args.config_file, commands)
     _warn_legacy(loaded)
-    client, dump = _client(loaded, args)
+    client, dump = _client(loaded, args, commands)
     overview = use_cases.show_site(client, args.site, with_mgmt=True)
     if dump is not None:
         dump.write(f"s/{overview.site.id}/config", overview)
@@ -233,7 +253,12 @@ def _init(args: argparse.Namespace) -> ExitCode:
         raise ToolEnvironmentError(
             "init asks for the controller URL and the API key and its input ended first; run it in a terminal"
         ) from None
-    print(f"{PROG}: wrote {path} (mode 0600)", file=sys.stderr)
+    print(
+        f"{PROGRAM}: wrote {safe_text(str(path), max_chars=MAX_PATH_CHARS)} (mode 0600); "
+        f"{_commands(args).config('<site-id>')} prints the skeleton of a site to "
+        "append to it",
+        file=sys.stderr,
+    )
     return ExitCode.OK
 
 
@@ -241,12 +266,12 @@ def _controller_fingerprint(args: argparse.Namespace) -> ExitCode:
     if args.url is not None:
         host, port = parse_controller_url(args.url, "--url")
     else:
-        controller = load_config(args.config_file).config.controller
+        controller = load_config(args.config_file, _commands(args)).config.controller
         host, port = controller.host, controller.port
     digest = observe_fingerprint(host, port)
     print(format_fingerprint(digest))
     print(
-        f"{PROG}: this is what {host}:{port} presented right now (trust on first use); "
+        f"{PROGRAM}: this is what {host}:{port} presented right now (trust on first use); "
         "compare it against the controller's own certificate view before pinning it as controller.cert_fingerprint",
         file=sys.stderr,
     )
@@ -254,21 +279,22 @@ def _controller_fingerprint(args: argparse.Namespace) -> ExitCode:
 
 
 def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
-    loaded = load_config(args.config_file)
+    commands = _commands(args)
+    loaded = load_config(args.config_file, commands)
     _warn_legacy(loaded)
-    client, _ = _client(loaded, args)
+    client, _ = _client(loaded, args, commands)
     writer = KnownHostsWriter(_known_hosts_path(args, os.environ))
     report = trust_host_keys(
         client, loaded, writer, args.site, args.ap,
         assume_yes=args.yes, accept_unverified=args.accept_unverified, confirm=terminal_confirm,
         report=lambda result: print(_result_line(result), flush=True),
-        command_options=_command_options(args),
+        commands=commands,
     )  # fmt: skip
     failed = sum(1 for result in report.results if result.outcome is TrustOutcome.FAILED)
     if failed:
         noun = "access point" if failed == 1 else "access points"
         print(
-            f"{PROG}: exit {int(ExitCode.HOST_KEY)}: site {safe_text(report.site_id)}: {failed} {noun} failed; the "
+            f"{PROGRAM}: exit {int(ExitCode.HOST_KEY)}: site {safe_text(report.site_id)}: {failed} {noun} failed; the "
             "result lines name each reason and its next step",
             file=sys.stderr,
         )
@@ -276,26 +302,30 @@ def _trust_host_keys(args: argparse.Namespace) -> ExitCode:
 
 
 def _result_line(result: TrustResult) -> str:
+    """The step is the end of the line and a command in it must stay whole, so the cut falls on what comes before it:
+    the reason can name a file by its raw path."""
     basis = f" ({result.basis})" if result.basis is not None else ""
     detail = f" {result.detail}" if result.detail else ""
-    step = f"; {result.next_step}" if result.next_step else ""
-    return safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}{step}", max_chars=MAX_ERROR_CHARS)
+    step = safe_text(f"; {result.next_step}" if result.next_step else "", max_chars=MAX_ERROR_CHARS)
+    return safe_text(f"{result.ap_name}: {result.outcome}{basis}{detail}", max_chars=MAX_ERROR_CHARS - len(step)) + step
 
 
-def _host_key_gate(args: argparse.Namespace, environ: Mapping[str, str]) -> Callable[[Sequence[TrustSubject]], None]:
+def _host_key_gate(
+    args: argparse.Namespace, environ: Mapping[str, str], commands: PrintedCommands
+) -> Callable[[Sequence[TrustSubject]], None]:
     """The questions a scanning `run` asks before its first scan; the answers come from the terminal only."""
     writer = KnownHostsWriter(_known_hosts_path(args, environ))
     policy = TrustPolicy(
         assume_yes=False,
         accept_unverified=False,
         confirm=terminal_confirm,
-        command_options=_command_options(args),
+        commands=commands,
     )
 
     def gate(subjects: Sequence[TrustSubject]) -> None:
-        print(f"{PROG}: checking host keys...", file=sys.stderr)
+        print(f"{PROGRAM}: checking host keys...", file=sys.stderr)
         check_host_keys(
-            subjects, writer, policy, lambda result: print(f"{PROG}: {_result_line(result)}", file=sys.stderr)
+            subjects, writer, policy, lambda result: print(f"{PROGRAM}: {_result_line(result)}", file=sys.stderr)
         )
 
     return gate
@@ -308,7 +338,7 @@ def _warn_legacy(loaded: LoadedConfig) -> None:
 def _warn_legacy_location(location: ConfigLocation) -> None:
     if location.legacy:
         print(
-            f"{PROG}: reading the legacy configuration at {location.path}; move it to {default_config_path()} "
+            f"{PROGRAM}: reading the legacy configuration at {location.path}; move it to {default_config_path()} "
             "and keep it private (chmod 600) before you uninstall 0.4.x, whose uninstaller deletes the old directory "
             "(a profiles.yaml in the legacy directory is not read)",
             file=sys.stderr,
@@ -316,10 +346,11 @@ def _warn_legacy_location(location: ConfigLocation) -> None:
 
 
 def _run(args: argparse.Namespace) -> ExitCode:
-    loaded = load_config(args.config_file)
+    commands = _commands(args)
+    loaded = load_config(args.config_file, commands)
     _warn_legacy(loaded)
     profiles = load_profiles(args.profiles_file, loaded.location).profiles
-    client, dump = _client(loaded, args)
+    client, dump = _client(loaded, args, commands)
     # One environment for the version check and the scans, so `ssh -V` judges the `ssh` the scan will run.
     environ = dict(os.environ)
     progress = StderrProgress()
@@ -332,12 +363,13 @@ def _run(args: argparse.Namespace) -> ExitCode:
             SystemClock(),
             time.sleep,
             progress,
+            commands=commands,
             sites=args.site or None,
             with_clients=args.clients,
             skip_scan=args.no_scan,
             extended=args.extended,
             environment_check=lambda: check_openssh_version(environ),
-            host_key_gate=_host_key_gate(args, environ) if _can_ask_host_keys(args) else None,
+            host_key_gate=_host_key_gate(args, environ, commands) if _can_ask_host_keys(args) else None,
         )
     finally:
         progress.finish()
@@ -348,20 +380,20 @@ def _run(args: argparse.Namespace) -> ExitCode:
         print(render_json(result.reports), end="")
     else:
         paint = colourise if wants_colour(sys.stdout, environ) else str
-        steps = TrustStepContext(gate_ran=result.host_key_gate_ran, command_options=_command_options(args))
+        steps = TrustStepContext(gate_ran=result.host_key_gate_ran, commands=commands)
         for report in result.reports:
             text = render_report(report, steps=steps) if args.details else render_overview(report, steps=steps)
             print(paint(text), end="")
     code = exit_code_for_run(result)
     if code is ExitCode.HOST_KEY:
-        for line in host_key_exit_lines(result, _command_options(args)):
+        for line in host_key_exit_lines(result, commands):
             print(line, file=sys.stderr)
     return code
 
 
-def host_key_exit_lines(result: RunResult, command_options: str = "") -> list[str]:
+def host_key_exit_lines(result: RunResult, commands: PrintedCommands) -> list[str]:
     """Exit 5, said in words: per site that had no verifiable access point, the host-key failures with their steps."""
-    context = TrustStepContext(gate_ran=result.host_key_gate_ran, command_options=command_options)
+    context = TrustStepContext(gate_ran=result.host_key_gate_ran, commands=commands)
     lines: list[str] = []
     for outcome in result.outcomes:
         if not outcome.no_verifiable_ap:
@@ -375,22 +407,9 @@ def host_key_exit_lines(result: RunResult, command_options: str = "") -> list[st
             noun = "access point" if count == 1 else "access points"
             lead = f"{count} {noun} with" if not parts else f"{count} with"
             parts.append(f"{lead} {FAILURE_ADVICE[kind].words} ({step})")
-        text = f"{PROG}: exit {int(ExitCode.HOST_KEY)}: site {outcome.site_id}: {', '.join(parts)}"
+        text = f"{PROGRAM}: exit {int(ExitCode.HOST_KEY)}: site {outcome.site_id}: {', '.join(parts)}"
         lines.append(safe_text(text, max_chars=MAX_ERROR_CHARS))
     return lines
-
-
-def _command_options(args: argparse.Namespace) -> str:
-    """The options of this run that `trust-host-keys` needs to act on the same store, as they would be typed."""
-    if args.known_hosts is None:
-        return ""
-    text = str(args.known_hosts)
-    quoted = shlex.quote(text)
-    # Same rule as the creation hint of the configuration: a path the terminal would not show as typed, or too long to
-    # print whole, gets no literal to copy, because the text that reaches the terminal is sanitised and capped.
-    if not text.isprintable() or len(quoted) > MAX_OPTION_CHARS:
-        return " --known-hosts=<the file of this run>"
-    return f" --known-hosts={quoted}"
 
 
 def _can_ask_host_keys(args: argparse.Namespace) -> bool:
@@ -438,8 +457,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(HANDLERS[args.subcommand](args))
     except UwoError as exc:
         # Error texts carry user and controller strings; the terminal gets them only through safe_text.
-        print(f"{PROG}: error: {safe_text(str(exc), max_chars=MAX_ERROR_CHARS)}", file=sys.stderr)
+        print(f"{PROGRAM}: error: {safe_text(str(exc), max_chars=MAX_ERROR_CHARS)}", file=sys.stderr)
         return int(_exit_code_for(exc))
     except KeyboardInterrupt:
-        print(f"{PROG}: interrupted", file=sys.stderr)
+        print(f"{PROGRAM}: interrupted", file=sys.stderr)
         return int(ExitCode.INTERRUPTED)

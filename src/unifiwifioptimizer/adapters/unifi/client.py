@@ -23,6 +23,7 @@ from unifiwifioptimizer.adapters.unifi.tls import (
 )
 from unifiwifioptimizer.adapters.unifi.validate import Fields, Json, walk_depth
 from unifiwifioptimizer.config.schema import ControllerConfig
+from unifiwifioptimizer.domain.commands import PrintedCommands
 from unifiwifioptimizer.domain.errors import (
     ControllerError,
     ResponseTooLargeError,
@@ -111,6 +112,7 @@ class UnifiClient:
         self,
         controller: ControllerConfig,
         policy: TlsPolicy,
+        commands: PrintedCommands,
         options: ClientOptions | None = None,
         sleep: Sleep = time.sleep,
         observe_unknown_keys: UnknownKeyObserver | None = None,
@@ -119,6 +121,7 @@ class UnifiClient:
     ) -> None:
         self._controller = controller
         self._policy = policy
+        self._commands = commands
         self._options = options or ClientOptions(read_timeout_s=float(controller.timeout_s))
         self._sleep = sleep
         self._watchdog = watchdog
@@ -204,7 +207,7 @@ class UnifiClient:
             except TlsVerificationError as exc:
                 if expired.is_set():
                     raise deadline_error() from None
-                step = verification_step(self._policy.mode, exc.verify_code)
+                step = verification_step(self._policy.mode, exc.verify_code, self._commands)
                 raise TlsVerificationError(f"{exc}; {step}", exc.verify_code, exc.verify_message) from None
             except (OSError, TlsError) as exc:
                 if expired.is_set():

@@ -18,6 +18,8 @@ def test_initial_config_text_is_accepted_by_the_strict_loader_and_schema() -> No
     assert config.controller.port == 8443 and config.controller.api_key.reveal() == 'key"with\\quotes'
     assert config.controller.cert_fingerprint is not None and config.sites == {}
     assert "cert_fingerprint" not in initial_config_text("https://u", "k", None)
+    comment = "# Sites go under this key; the skeleton the config subcommand prints is indented to sit under it."
+    assert comment in initial_config_text("https://u", "k", None).splitlines()
 
 
 def test_init_text_plus_config_skeleton_round_trips_through_the_loader() -> None:

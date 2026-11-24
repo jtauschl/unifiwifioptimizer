@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.printed import PLAIN, given
 from unifiwifioptimizer.adapters.unifi import client as client_module
 from unifiwifioptimizer.adapters.unifi.client import ClientOptions, UnifiClient, UnknownKeyObserver, decode_json
 from unifiwifioptimizer.adapters.unifi.tls import AbortableHTTPSConnection, TlsMode, TlsPolicy
@@ -153,6 +154,7 @@ def make_client(
     client = UnifiClient(
         CONTROLLER,
         POLICY,
+        PLAIN,
         options,
         sleep=sleeps.append,
         observe_unknown_keys=observe,
@@ -258,7 +260,7 @@ def test_tls_errors_propagate_untouched() -> None:
 
         return Refusing(iter(()), [])  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory)
     with pytest.raises(TlsError, match="handshake failed"):
         client.get("/x")
 
@@ -271,7 +273,7 @@ def test_other_os_errors_at_connect_are_controller_errors() -> None:
 
         return Refusing(iter(()), [])  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory)
     with pytest.raises(ControllerError, match="cannot connect"):
         client.get("/x")
 
@@ -348,7 +350,7 @@ def test_a_stalled_header_phase_reads_as_the_deadline() -> None:
     def factory_headers(policy: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
         return HeadersStall(iter([ok({"data": []})]), [])  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory_headers, watchdog=watchdog)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory_headers, watchdog=watchdog)
     with pytest.raises(ControllerError, match="response deadline of 15 s exceeded"):
         client.get("/x")
     assert watchdog.cancelled == 1
@@ -366,7 +368,7 @@ def test_a_gateway_status_that_arrives_after_the_deadline_is_not_retried() -> No
         return LateGateway(iter([status(503)] * 4), [])  # type: ignore[return-value]
 
     sleeps: list[float] = []
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory, watchdog=watchdog, sleep=sleeps.append)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory, watchdog=watchdog, sleep=sleeps.append)
     with pytest.raises(ControllerError, match="response deadline of 15 s exceeded"):
         client.get("/x")
     assert sleeps == [] and watchdog.cancelled == 1
@@ -383,7 +385,7 @@ def test_a_deadline_that_fires_during_a_successful_connect_still_ends_the_exchan
     def factory(policy: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
         return ConnectsLate(iter([ok({"data": []})]), [])  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory, watchdog=watchdog)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory, watchdog=watchdog)
     with pytest.raises(ControllerError, match="response deadline of 15 s exceeded"):
         client.get("/x")
 
@@ -400,7 +402,7 @@ def test_a_handshake_that_outlives_the_deadline_is_not_retried() -> None:
         return HandshakeTimesOut(iter(()), [])  # type: ignore[return-value]
 
     sleeps: list[float] = []
-    client = UnifiClient(CONTROLLER, POLICY, connection_factory=factory, watchdog=watchdog, sleep=sleeps.append)
+    client = UnifiClient(CONTROLLER, POLICY, PLAIN, connection_factory=factory, watchdog=watchdog, sleep=sleeps.append)
     with pytest.raises(ControllerError, match="response deadline of 15 s exceeded"):
         client.get("/x")
     assert sleeps == [] and watchdog.cancelled == 1
@@ -494,7 +496,11 @@ def test_endpoints_map_onto_the_parsers_and_report_unread_keys() -> None:
         return connection  # type: ignore[return-value]
 
     client = UnifiClient(
-        CONTROLLER, POLICY, connection_factory=factory, observe_unknown_keys=lambda e, p, n: observed.append((e, p, n))
+        CONTROLLER,
+        POLICY,
+        PLAIN,
+        connection_factory=factory,
+        observe_unknown_keys=lambda e, p, n: observed.append((e, p, n)),
     )
     assert [s.id for s in client.sites().items] == ["default", "site-2"]
     assert len(client.devices("default").access_points) == 4
@@ -561,11 +567,31 @@ def test_a_verification_failure_names_the_next_step_of_the_mode_in_use(policy: T
     def factory(_: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
         return FakeConnection(script, log)  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, policy, connection_factory=factory, watchdog=FakeWatchdog(log))
+    client = UnifiClient(CONTROLLER, policy, PLAIN, connection_factory=factory, watchdog=FakeWatchdog(log))
     with pytest.raises(TlsVerificationError) as raised:
         client.sites()
     assert str(raised.value) == (
         "certificate verification failed for unifi.example: unable to get local issuer certificate; " + step
+    )
+
+
+def test_a_verification_failure_repeats_the_configuration_file_of_the_run_in_the_command_it_names() -> None:
+    log: list[str] = []
+    script = iter([ConnectFails(verification_failure())])
+
+    def factory(_: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
+        return FakeConnection(script, log)  # type: ignore[return-value]
+
+    commands = given(config_file="/etc/uwo/home.yaml")
+    client = UnifiClient(
+        CONTROLLER, TlsPolicy.from_options(None, None), commands, connection_factory=factory,
+        watchdog=FakeWatchdog(log),
+    )  # fmt: skip
+    with pytest.raises(TlsVerificationError) as raised:
+        client.sites()
+    assert (
+        "compare the output of `unifiwifioptimizer --config-file=/etc/uwo/home.yaml controller-fingerprint` with"
+        in (str(raised.value))
     )
     assert raised.value.verify_code == 20
 
@@ -586,7 +612,7 @@ def test_an_expired_or_not_yet_valid_certificate_names_the_certificate_dates_and
     def factory(_: TlsPolicy, host: str, port: int, timeout: float) -> AbortableHTTPSConnection:
         return FakeConnection(script, log)  # type: ignore[return-value]
 
-    client = UnifiClient(CONTROLLER, policy, connection_factory=factory, watchdog=FakeWatchdog(log))
+    client = UnifiClient(CONTROLLER, policy, PLAIN, connection_factory=factory, watchdog=FakeWatchdog(log))
     with pytest.raises(TlsVerificationError) as raised:
         client.sites()
     assert str(raised.value) == (

@@ -64,8 +64,10 @@ def test_a_missing_directory_is_created_private(tmp_path: Path) -> None:
 def test_the_cli_dump_never_contains_the_controller_managed_ssh_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
-    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(
+        cli, "UnifiClient", lambda controller, policy, commands, observe_unknown_keys=None: FixtureApi()
+    )
     directory = tmp_path / "dump"
     assert cli.main(["--dump-api", str(directory), "config", "default"]) == ExitCode.OK
     written = directory / "s_default_config.json"
@@ -81,8 +83,10 @@ def test_the_cli_dump_never_contains_the_controller_managed_ssh_password(
 
 @pytest.mark.security("T10")
 def test_the_cli_run_dump_writes_the_site_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(
+        cli, "UnifiClient", lambda controller, policy, commands, observe_unknown_keys=None: FixtureApi()
+    )
     directory = tmp_path / "dump"
     assert cli.main(["--dump-api", str(directory), "run", "--no-scan"]) == ExitCode.OK
     document = json.loads((directory / "s_default_run.json").read_text())
@@ -107,8 +111,10 @@ def test_the_sites_and_site_dumps_never_pull_in_the_settings_model(
     # The settings model (`mgmt`) is the only one that carries a secret; `config` is the one command that
     # reads it. The other dumps stay free of it by construction, and this pins that construction: a site
     # dump that started to include the settings would show up here before any redaction question arises.
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
-    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(
+        cli, "UnifiClient", lambda controller, policy, commands, observe_unknown_keys=None: FixtureApi()
+    )
     directory = tmp_path / "dump"
     assert cli.main(["--dump-api", str(directory), "sites"]) == ExitCode.OK
     assert cli.main(["--dump-api", str(directory), "site", "default"]) == ExitCode.OK

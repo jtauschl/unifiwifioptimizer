@@ -32,7 +32,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - The tool states that it changes no setting; a scan takes a radio off-channel briefly, and `run` says so when it starts a scan.
 - A failed scan names its cause in words and the next step once per kind; the progress line adds the access point's cause.
 - Exit code 5 prints one stderr line per site without a verifiable access point, naming each host-key failure and its next step.
-- A host-key step names the `--known-hosts` store of the run, and the report points to the gate's lines after the check.
+- The report points to the gate's lines after the host-key check. Every command the tool prints starts with the program name and repeats the run's `--config-file` (and `--known-hosts` on `trust-host-keys`).
 - A certificate failure names the next step for the TLS mode in use; a pin mismatch says to compare before the pin changes.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).

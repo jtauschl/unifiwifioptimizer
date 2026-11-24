@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from tests.unit.printed import PLAIN_STEPS
 from unifiwifioptimizer.analysis.channel_plan import _foreign, extended_channel_plan
 from unifiwifioptimizer.analysis.neighbors import reduce_band_passes
 from unifiwifioptimizer.analysis.site_analyzer import analyze_site
@@ -211,7 +212,7 @@ def test_foreign_bssid_is_median_deduplicated_and_frequency_tie_is_counted_witho
 def test_extended_output_is_additive_and_hides_bssid_and_ssid() -> None:
     inp = golden_input()
     report = analyze_site(replace(inp, extended=True))
-    text, encoded = render_report(report), render_json([report])
+    text, encoded = render_report(report, steps=PLAIN_STEPS), render_json([report])
     data = json.loads(encoded)["sites"][0]["extended_channel_plan"]
     assert "Extended channel plan" in text
     assert data["bands"][0]["status"] == "unavailable"
@@ -239,7 +240,7 @@ def test_a_populated_plan_carries_foreign_counts_but_neither_bssid_nor_ssid() ->
     )
     plan = next(b for b in report.extended_channel_plan.bands if b.band is Band.GHZ_2)  # type: ignore[union-attr]
     assert plan.status == "recommended" and plan.foreign_overlaps_before == 2
-    exposed = render_report(report) + render_json([report])
+    exposed = render_report(report, steps=PLAIN_STEPS) + render_json([report])
     for secret in (neighbour.bssid, "Neighbour-Secret-Net"):
         assert secret not in exposed
 
@@ -254,7 +255,7 @@ def test_ap_setup_groups_actions_and_defers_every_radio_on_a_changed_band() -> N
         extended=True,
     )
     report = analyze_site(inp)
-    text = render_report(report, width=None)
+    text = render_report(report, width=None, steps=PLAIN_STEPS)
     setup = text.split("  AP setup — current snapshot", 1)[1].split("  WLAN       ", 1)[0]
     assert text.index("  AP setup — current snapshot") < text.index("  WLAN       ")
     assert "Apply the complete site-wide candidate channel assignment for 2.4 GHz" in setup
@@ -296,7 +297,7 @@ def test_5g_channel_move_defers_roaming_advice_with_or_without_client_power_over
     )
     assert report.extended_channel_plan is not None
     assert next(b for b in report.extended_channel_plan.bands if b.band is Band.GHZ_5).has_changes
-    text = render_report(report, width=None)
+    text = render_report(report, width=None, steps=PLAIN_STEPS)
     assert "re-run before using TX, Minimum RSSI or WLAN Roaming Assistant advice on those bands" in text
 
 
@@ -312,13 +313,21 @@ def test_ap_setup_pins_an_unchanged_auto_radio_in_the_candidate_plan() -> None:
             extended=True,
         )
     )
-    setup = render_report(report, width=None).split("  AP setup — current snapshot", 1)[1].split("  WLAN       ", 1)[0]
+    setup = (
+        render_report(report, width=None, steps=PLAIN_STEPS)
+        .split("  AP setup — current snapshot", 1)[1]
+        .split("  WLAN       ", 1)[0]
+    )
     assert "ch 6/20 MHz (auto); set fixed ch 6 to keep the site-wide plan" in setup
 
 
 def test_ap_setup_preserves_unavailable_states_and_tx_sequence() -> None:
     report = analyze_site(replace(golden_input(), extended=True))
-    setup = render_report(report, width=None).split("  AP setup — current snapshot", 1)[1].split("  WLAN       ", 1)[0]
+    setup = (
+        render_report(report, width=None, steps=PLAIN_STEPS)
+        .split("  AP setup — current snapshot", 1)[1]
+        .split("  WLAN       ", 1)[0]
+    )
     assert "2.4 GHz channel plan unavailable: Channel AI manages an automatic radio" in setup
     assert "5 GHz channel plan unavailable: Channel AI manages an automatic radio" in setup
     assert "After a TX change, re-run before setting Minimum RSSI" in setup
@@ -349,7 +358,11 @@ def test_ap_setup_does_not_turn_no_improvement_or_offline_data_into_actions() ->
         aps=(report.aps[0], offline),
         extended_channel_plan=replace(report.extended_channel_plan, bands=(fake_assignment, second)),
     )
-    setup = render_report(report, width=None).split("  AP setup — current snapshot", 1)[1].split("  WLAN       ", 1)[0]
+    setup = (
+        render_report(report, width=None, steps=PLAIN_STEPS)
+        .split("  AP setup — current snapshot", 1)[1]
+        .split("  WLAN       ", 1)[0]
+    )
     assert "2.4 GHz: no measured own-AP channel improvement" in setup
     assert "no channel change proposed" in setup
     assert "offline — no radio statistics\n    no evaluated radios" in setup
@@ -398,7 +411,7 @@ def test_extended_text_sanitises_external_ap_names() -> None:
         for name, peers in inp.neighbours.items()
     }
     report = analyze_site(replace(inp, snapshot=renamed, neighbours=neighbours, extended=True))
-    text = render_report(report)
+    text = render_report(report, steps=PLAIN_STEPS)
     assert "Extended channel plan" in text and "\x1b" not in text and chr(0x202E) not in text
     assert chr(0x202E) not in render_json([report])
 

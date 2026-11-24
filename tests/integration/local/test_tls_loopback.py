@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import pytest
 
+from tests.unit.printed import PLAIN
 from unifiwifioptimizer.adapters.unifi.client import ClientOptions, UnifiClient
 from unifiwifioptimizer.adapters.unifi.dump import DumpWriter
 from unifiwifioptimizer.adapters.unifi.tls import (
@@ -146,7 +147,7 @@ def test_pin_mode_accepts_the_right_certificate_and_sends_the_api_key(
     server: tuple[str, int], certificate: Certificate
 ) -> None:
     policy = TlsPolicy.from_options(None, certificate.fingerprint)
-    client = UnifiClient(controller(server[1], cert_fingerprint=certificate.fingerprint), policy)
+    client = UnifiClient(controller(server[1], cert_fingerprint=certificate.fingerprint), policy, PLAIN)
     sites = client.sites()
     assert [s.id for s in sites.items] == ["default", "site-2"]
     assert Handler.seen_headers[-1]["X-API-KEY"] == "k" and Handler.seen_headers[-1]["Accept-Encoding"] == "identity"
@@ -155,7 +156,7 @@ def test_pin_mode_accepts_the_right_certificate_and_sends_the_api_key(
 @pytest.mark.security("T3")
 def test_pin_mismatch_closes_before_any_request(server: tuple[str, int]) -> None:
     policy = TlsPolicy.from_options(None, bytes(32))
-    client = UnifiClient(controller(server[1]), policy)
+    client = UnifiClient(controller(server[1]), policy, PLAIN)
     with pytest.raises(TlsPinMismatchError):
         client.sites()
     assert Handler.seen_headers == []
@@ -163,7 +164,7 @@ def test_pin_mismatch_closes_before_any_request(server: tuple[str, int]) -> None
 
 @pytest.mark.security("T1")
 def test_system_roots_reject_the_self_signed_certificate(server: tuple[str, int]) -> None:
-    client = UnifiClient(controller(server[1]), TlsPolicy.from_options(None, None))
+    client = UnifiClient(controller(server[1]), TlsPolicy.from_options(None, None), PLAIN)
     with pytest.raises(TlsError, match=r"certificate verification failed.*`unifiwifioptimizer controller-fingerprint`"):
         client.sites()
     assert Handler.seen_headers == []
@@ -172,9 +173,9 @@ def test_system_roots_reject_the_self_signed_certificate(server: tuple[str, int]
 @pytest.mark.security("T2")
 def test_ca_file_mode_verifies_chain_and_hostname(server: tuple[str, int], certificate: Certificate) -> None:
     policy = TlsPolicy.from_options(certificate.cert, None)
-    client = UnifiClient(controller(server[1]), policy)
+    client = UnifiClient(controller(server[1]), policy, PLAIN)
     assert len(client.sites().items) == 2
-    also_named = UnifiClient(controller(server[1], host="localhost"), policy)
+    also_named = UnifiClient(controller(server[1], host="localhost"), policy, PLAIN)
     assert len(also_named.sites().items) == 2
     with pytest.raises(ControllerError, match=r"127\.0\.0\.1:1: cannot connect"):
         observe_fingerprint("127.0.0.1", 1)
@@ -185,13 +186,13 @@ def test_ca_file_mode_rejects_a_certificate_that_does_not_name_the_host(
     dns_only_server: tuple[str, int], dns_only_certificate: Certificate
 ) -> None:
     policy = TlsPolicy.from_options(dns_only_certificate.cert, None)
-    client = UnifiClient(controller(dns_only_server[1]), policy)
+    client = UnifiClient(controller(dns_only_server[1]), policy, PLAIN)
     with pytest.raises(
         TlsError, match=r"certificate verification failed for 127\.0\.0\.1.*`controller\.ca_cert` signed"
     ):
         client.sites()
     assert Handler.seen_headers == []
-    assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy).sites().items) == 2
+    assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy, PLAIN).sites().items) == 2
 
 
 @pytest.mark.security("T4", "T5")
@@ -200,7 +201,7 @@ def test_redirect_encoding_and_body_cap_over_the_wire(server: tuple[str, int], c
     Handler.routes["/redirect"] = (302, {"Location": "https://evil.example/"}, b"")
     Handler.routes["/gzip"] = (200, {"Content-Encoding": "gzip"}, b"{}")
     Handler.routes["/big"] = (200, {}, b"[" + b"1," * 100 + b"1]")
-    client = UnifiClient(controller(server[1]), policy, ClientOptions(max_body_bytes=100))
+    client = UnifiClient(controller(server[1]), policy, PLAIN, ClientOptions(max_body_bytes=100))
     with pytest.raises(ControllerError, match="redirect refused"):
         client.get("/redirect")
     with pytest.raises(ControllerError, match="Content-Encoding"):
@@ -213,7 +214,7 @@ def test_gateway_errors_are_retried_over_the_wire(server: tuple[str, int], certi
     policy = TlsPolicy.from_options(None, certificate.fingerprint)
     Handler.routes["/flaky"] = (503, {}, b"")
     sleeps: list[float] = []
-    client = UnifiClient(controller(server[1]), policy, sleep=sleeps.append)
+    client = UnifiClient(controller(server[1]), policy, PLAIN, sleep=sleeps.append)
     with pytest.raises(ControllerError, match="gateway status 503"):
         client.get("/flaky")
     assert sleeps == [0.5, 1.0, 2.0] and len(Handler.seen_headers) == 4
@@ -293,7 +294,7 @@ def test_a_server_that_trickles_bytes_is_cut_off_at_the_exchange_deadline(
     policy = TlsPolicy.from_options(None, certificate.fingerprint)
     budget = 1
     for host, port in trickle_server(certificate, raw, delay_s=0.05, at_once=at_once):
-        client = UnifiClient(controller(port, host=host, timeout_s=budget), policy)
+        client = UnifiClient(controller(port, host=host, timeout_s=budget), policy, PLAIN)
         started = time.monotonic()
         with pytest.raises(ControllerError, match=f"response deadline of {budget} s exceeded"):
             client.sites()
@@ -347,7 +348,7 @@ def test_a_stalled_handshake_ends_at_the_deadline_without_a_retry(certificate: C
     sleeps: list[float] = []
     for host, port in trickle_server(certificate, b"", delay_s=0, handshake=False):
         options = ClientOptions(read_timeout_s=budget, connect_timeout_s=30)
-        client = UnifiClient(controller(port, host=host, timeout_s=budget), policy, options, sleep=sleeps.append)
+        client = UnifiClient(controller(port, host=host, timeout_s=budget), policy, PLAIN, options, sleep=sleeps.append)
         started = time.monotonic()
         with pytest.raises(ControllerError, match=f"response deadline of {budget} s exceeded"):
             client.sites()
@@ -363,7 +364,7 @@ def test_dump_writer_writes_masked_models_and_unknown_counts(
     Handler.routes["/proxy/network/api/s/default/rest/setting"] = (200, {}, payload("rest_setting.json"))
     dump = DumpWriter(tmp_path / "dump")
     policy = TlsPolicy.from_options(None, certificate.fingerprint)
-    client = UnifiClient(controller(server[1]), policy, observe_unknown_keys=dump.observe_unknown_keys)
+    client = UnifiClient(controller(server[1]), policy, PLAIN, observe_unknown_keys=dump.observe_unknown_keys)
     result = client.settings("default")
     written = dump.write("s/default/settings", result)
     document = json.loads(written.read_text())
@@ -390,17 +391,17 @@ def test_system_roots_accept_a_chain_the_platform_store_trusts_and_still_check_t
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     policy = TlsPolicy.from_options(None, None)
     monkeypatch.setenv("SSL_CERT_FILE", str(certificate.cert))
-    assert len(UnifiClient(controller(server[1]), policy).sites().items) == 2
+    assert len(UnifiClient(controller(server[1]), policy, PLAIN).sites().items) == 2
     # Trusted chain, wrong name: the hostname check is what rejects, not the chain.
     monkeypatch.setenv("SSL_CERT_FILE", str(dns_only_certificate.cert))
     with pytest.raises(
         TlsError, match=r"verification failed for 127\.0\.0\.1: .*(IP address mismatch|Hostname mismatch)"
     ):
-        UnifiClient(controller(dns_only_server[1]), policy).sites()
-    assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy).sites().items) == 2
+        UnifiClient(controller(dns_only_server[1]), policy, PLAIN).sites()
+    assert len(UnifiClient(controller(dns_only_server[1], host="localhost"), policy, PLAIN).sites().items) == 2
     # Right name, untrusted chain: the chain check rejects.
     with pytest.raises(TlsError, match=r"verification failed for localhost: .*self.signed"):
-        UnifiClient(controller(server[1], host="localhost"), policy).sites()
+        UnifiClient(controller(server[1], host="localhost"), policy, PLAIN).sites()
 
 
 @pytest.mark.security("T3")
@@ -458,7 +459,7 @@ def eof_recording_server(
 @pytest.mark.security("T3")
 def test_a_pin_mismatch_closes_the_connection_at_once_with_zero_request_bytes(certificate: Certificate) -> None:
     with eof_recording_server(certificate) as ((_host, port), seen, done):
-        client = UnifiClient(controller(port), TlsPolicy.from_options(None, bytes(32)))
+        client = UnifiClient(controller(port), TlsPolicy.from_options(None, bytes(32)), PLAIN)
         with pytest.raises(TlsPinMismatchError):
             client.sites()
         assert done.wait(1.0), "the server never saw the client close"
@@ -507,7 +508,7 @@ def test_the_streamed_cap_stops_a_body_that_never_ends(certificate: Certificate)
     with endless_body_server(certificate) as ((_host, port), outcome):
         policy = TlsPolicy.from_options(None, certificate.fingerprint)
         options = ClientOptions(max_body_bytes=200_000, read_timeout_s=2.0)
-        client = UnifiClient(controller(port), policy, options)
+        client = UnifiClient(controller(port), policy, PLAIN, options)
         started = time.monotonic()
         with pytest.raises(ResponseTooLargeError, match="exceeds 200000 bytes"):
             client.get("/endless")

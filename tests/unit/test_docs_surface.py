@@ -75,8 +75,8 @@ def run_cli(argv: list[str]) -> str:
         env_ssh_password=None,
     )
     with (
-        mock.patch.object(cli, "load_config", lambda explicit=None: loaded),
-        mock.patch.object(cli, "_client", lambda loaded_config, args: (FixtureApi(), None)),
+        mock.patch.object(cli, "load_config", lambda explicit=None, commands=None: loaded),
+        mock.patch.object(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None)),
         contextlib.redirect_stdout(out),
         contextlib.redirect_stderr(io.StringIO()),
     ):

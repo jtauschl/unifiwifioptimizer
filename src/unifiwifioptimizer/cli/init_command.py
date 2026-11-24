@@ -19,8 +19,7 @@ def initial_config_text(url: str, api_key: str, fingerprint: str | None) -> str:
         lines.append(f"  cert_fingerprint: {yaml_scalar(fingerprint)}")
     lines += [
         "",
-        "# Add sites with `unifiwifioptimizer config <site-id> >> <this file>` once the connection works;",
-        "# the skeleton that command prints is indented to sit under this key.",
+        "# Sites go under this key; the skeleton the config subcommand prints is indented to sit under it.",
         "sites:",
         "",
     ]

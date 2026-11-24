@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from tests.unit.app.test_trust_decision import Memory, Scans, cand, subject
+from tests.unit.printed import PLAIN, given
 from tests.unit.test_cli_commands import SCANNING_SITE, FixtureApi, configured, loaded
 from unifiwifioptimizer.adapters.ssh.hostkeys import HostKeyCandidate, KnownHostsWriter, TrustBasis
 from unifiwifioptimizer.app.run import RunResult
@@ -23,8 +24,8 @@ from unifiwifioptimizer.domain.hostkeys import TrustRefusalKind
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, object]]:
     seen: dict[str, object] = {}
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
 
     def fake_trust(
         api: object, cfg: object, store: object, selector: str, only: list[str], **kwargs: object
@@ -98,7 +99,7 @@ def test_trust_host_keys_requires_the_site_option() -> None:
 
 
 def test_a_trust_error_exits_5(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    def failing(explicit: Path | None = None) -> None:
+    def failing(explicit: Path | None = None, commands: object = None) -> None:
         raise HostKeyTrustError(
             TrustRefusalKind.SOURCES_DISAGREE,
             "the configured host-key pin and the fingerprint the controller reports differ",
@@ -119,8 +120,8 @@ def test_trust_host_keys_exits_7_when_ssh_keyscan_is_missing(
 ) -> None:
     # Through the real trust flow and the real keyscan runner: only the spawn is replaced, so the mapping of a
     # missing binary onto the environment exit code is what this test exercises.
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
 
     def missing(argv: list[str], **kwargs: object) -> None:
         raise FileNotFoundError(argv[0])
@@ -160,8 +161,8 @@ def gate_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         seen["gate"] = kwargs.get("host_key_gate")
         return RunResult(reports=(), outcomes=(), host_key_gate_ran=False)
 
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setattr(cli, "run_analysis", record)
     return seen
 
@@ -218,7 +219,8 @@ def test_the_chain_from_the_decision_to_the_terminal_declines_with_the_warning_a
     store = Memory()
     results: list[TrustResult] = []
     check_host_keys(
-        [subject()], store, TrustPolicy(assume_yes=False, accept_unverified=False, confirm=terminal_confirm),
+        [subject()], store,
+        TrustPolicy(assume_yes=False, accept_unverified=False, confirm=terminal_confirm, commands=PLAIN),
         results.append, Scans([], [cand(1)]),
     )  # fmt: skip
     assert [str(r.outcome) for r in results] == ["declined"] and store.rows == []
@@ -249,8 +251,8 @@ def test_the_closing_line_counts_failures_only_and_pluralises(
     def fake_trust(*args: object, **kwargs: object) -> TrustReport:
         return TrustReport(site_id="default", results=results)
 
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setattr(cli, "trust_host_keys", fake_trust)
     assert cli.main(["trust-host-keys", "--site", "default", "--known-hosts", "/state/kh"]) == ExitCode.HOST_KEY
     assert capsys.readouterr().err == (
@@ -297,8 +299,8 @@ def real_trust(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[tupl
             else [HostKeyCandidate("ssh-ed25519", key_for(2).key_base64, fingerprint, fingerprint)]
         )
     config = trust_loaded({"ssh": {}, "neighbors": {ordered[0]: ordered[1:]}})
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: config)
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (TrustApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: config)
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (TrustApi(), None))
     monkeypatch.setattr(trust_module, "keyscan", lambda address, port, key_type=None: offered[names_by_ip[address]])
     yield handled, unverified
 
@@ -364,7 +366,7 @@ def test_the_run_gate_prints_the_step_of_a_refusal_on_stderr_through_the_real_ch
     from unifiwifioptimizer.app import trust as trust_module
 
     monkeypatch.setattr(trust_module, "keyscan", lambda address, port, key_type=None: [cand(1)])
-    gate = cli._host_key_gate(argparse.Namespace(known_hosts=tmp_path / "kh"), {})
+    gate = cli._host_key_gate(argparse.Namespace(config_file=None, known_hosts=tmp_path / "kh"), {}, PLAIN)
     gate([dataclasses.replace(subject(), controller_fingerprint=cand(2).sha256.text)])
     assert capsys.readouterr().err.splitlines() == [
         "unifiwifioptimizer: checking host keys...",
@@ -377,8 +379,8 @@ def test_the_closing_line_passes_the_site_id_through_safe_text(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     failed = TrustResult(ap_name="A", outcome=TrustOutcome.FAILED, basis=None, detail="x")
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setattr(
         cli, "trust_host_keys", lambda *args, **kwargs: TrustReport(site_id="x\x1b[2J", results=(failed,))
     )
@@ -405,15 +407,25 @@ def test_the_trust_command_and_the_gate_repeat_the_store_in_the_step_they_print(
         "".join(f"{KnownHostEntry(alias, 'ssh-ed25519', key_for(seed).key_base64).line}\n" for seed in (1, 2))
     )
     store_path.chmod(0o600)
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: trust_loaded({"ssh": {}, "neighbors": {ap.name: []}}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (TrustApi(), None))
+    monkeypatch.setattr(
+        cli, "load_config", lambda explicit=None, commands=None: trust_loaded({"ssh": {}, "neighbors": {ap.name: []}})
+    )
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (TrustApi(), None))
     monkeypatch.setattr(trust_module, "keyscan", lambda address, port, key_type=None: [key_for(3)])
-    expected = f"`trust-host-keys --site default --known-hosts='{store_path}'`"
+    expected = (
+        "`unifiwifioptimizer --config-file=/etc/uwo/home.yaml trust-host-keys --site default "
+        f"--known-hosts='{store_path}'`"
+    )
+    argv = ["--config-file", "/etc/uwo/home.yaml", "trust-host-keys", "--site", "default", "--known-hosts"]
 
-    assert cli.main(["trust-host-keys", "--site", "default", "--known-hosts", str(store_path)]) == ExitCode.HOST_KEY
+    assert cli.main([*argv, str(store_path)]) == ExitCode.HOST_KEY
     assert expected in capsys.readouterr().out
 
-    gate = cli._host_key_gate(argparse.Namespace(known_hosts=store_path), {})
+    gate = cli._host_key_gate(
+        argparse.Namespace(config_file=Path("/etc/uwo/home.yaml"), known_hosts=store_path),
+        {},
+        given(config_file="/etc/uwo/home.yaml", known_hosts=str(store_path)),
+    )
     import dataclasses
 
     from tests.unit.app.test_trust_decision import subject

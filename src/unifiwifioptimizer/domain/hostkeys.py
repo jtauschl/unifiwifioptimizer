@@ -100,8 +100,9 @@ class TrustRefusalKind(StrEnum):
 _REPORT_WITH_FIRMWARE = "report it with the access point's firmware version"
 _COMPARE_ELSEWHERE = "from a source other than this tool"
 
-# The next step per kind; `{site}` is the controller's site id. A step that the scan side has too is read from
-# `FAILURE_ADVICE`, not copied.
+# The next step per kind; `{site}` is the controller's site id, `{trust}` and `{site_command}` the printed commands that
+# store the site's host keys and list its names. A step that the scan side has too is read from `FAILURE_ADVICE`, not
+# copied.
 TRUST_ADVICE: Mapping[TrustRefusalKind, str] = MappingProxyType(
     {
         TrustRefusalKind.ADDRESS_NOT_USED: FAILURE_ADVICE[ScanFailureKind.ADDRESS_REFUSED].next_step,
@@ -140,18 +141,17 @@ TRUST_ADVICE: Mapping[TrustRefusalKind, str] = MappingProxyType(
         TrustRefusalKind.UNUSABLE_KEYS: _REPORT_WITH_FIRMWARE,
         TrustRefusalKind.SEVERAL_STORED_LINES: (
             "delete every line of that alias from that file (OpenSSH trusts any of them), then run "
-            "`trust-host-keys --site {site}{options}`, which handles the key as one not yet stored"
+            "{trust}, which handles the key as one not yet stored"
         ),
         TrustRefusalKind.STORE_CHANGED: (
             "the store changed while this access point was being handled (another run of the tool, or an edit by "
             "hand); run again"
         ),
         TrustRefusalKind.NOT_ON_CONTROLLER_NAMED: (
-            "check the spelling; `unifiwifioptimizer site {site}` lists the names (quote a name with blanks)"
+            "check the spelling; {site_command} lists the names (quote a name with blanks)"
         ),
         TrustRefusalKind.NOT_ON_CONTROLLER_CONFIGURED: (
-            "the name under `sites.{site}.neighbors` is not on the controller; `unifiwifioptimizer site {site}` lists "
-            "the names"
+            "the name under `sites.{site}.neighbors` is not on the controller; {site_command} lists the names"
         ),
     }
 )

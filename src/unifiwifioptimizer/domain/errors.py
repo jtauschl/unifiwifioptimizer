@@ -23,6 +23,9 @@ class SchemaError(UwoError):
 
 # The most of an error text that the command line prints (`main` caps it there).
 MAX_ERROR_CHARS = 2048
+# A path a printed line shows whole: a longer one is cut, or withheld from a command, so that the line keeps its
+# commands and the step beside them within `MAX_ERROR_CHARS`.
+MAX_PATH_CHARS = 300
 
 
 class ConfigError(UwoError):

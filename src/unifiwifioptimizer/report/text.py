@@ -19,6 +19,7 @@ from unifiwifioptimizer.domain.analysis import (
     RoamingCap,
     WlanRoamingStatus,
 )
+from unifiwifioptimizer.domain.commands import PROGRAM
 from unifiwifioptimizer.domain.models import Band, DeviceState, FieldProblem, TxPowerMode
 from unifiwifioptimizer.domain.report import (
     BEACON_EVIDENCE_GAP,
@@ -46,7 +47,6 @@ from unifiwifioptimizer.domain.report import (
 )
 from unifiwifioptimizer.domain.scan import (
     FAILURE_ADVICE,
-    NO_TRUST_CONTEXT,
     ScanFailureKind,
     TrustStepContext,
     failure_step,
@@ -1177,9 +1177,7 @@ def _overview_footer(report: SiteReport) -> list[str]:
     return lines
 
 
-def render_overview(
-    report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext = NO_TRUST_CONTEXT
-) -> str:
+def render_overview(report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext) -> str:
     """The default text report: the WLANs and the access points laid out like the controller UI, then what the
     scan found and how complete the data is. `--details` prints the complete report instead."""
     label = _Labels(report)
@@ -1201,7 +1199,7 @@ def render_overview(
     return "\n".join(_fold(line, width) for line in lines) + "\n"
 
 
-def render_report(report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext = NO_TRUST_CONTEXT) -> str:
+def render_report(report: SiteReport, width: int | None = WIDTH, *, steps: TrustStepContext) -> str:
     """The text report; `width` folds longer lines (None keeps every line whole)."""
     lines: list[str] = [""]
     lines += _header(
@@ -1236,7 +1234,7 @@ def render_report(report: SiteReport, width: int | None = WIDTH, *, steps: Trust
 
 
 _VALUE_COLUMN = re.compile(r"  +(?=\S)")
-_COMMAND_SPAN = re.compile(r"`(?:trust-host-keys|unifiwifioptimizer) [^`]*`")
+_COMMAND_SPAN = re.compile(rf"`{re.escape(PROGRAM)} [^`]*`")
 
 
 def _glue_marks(line: str) -> tuple[str, list[str]]:
@@ -1244,7 +1242,7 @@ def _glue_marks(line: str) -> tuple[str, list[str]]:
     continuation line exactly like a check line. Every blank run whose first visible character (blanks,
     invisible leaders and combining marks skipped, as in `safe_line_start`) is a mark becomes NUL for the
     wrap — NUL never survives `safe_text` — and `_unglue` restores the original blanks afterwards. A command the
-    report prints for a person to paste (a span in backticks that starts with the program or `trust-host-keys`) is
+    report prints for a person to paste (a span in backticks that starts with the program) is
     never folded: a line break inside a quoted path would name another file."""
     glued: list[str] = []
     blanks: list[str] = []

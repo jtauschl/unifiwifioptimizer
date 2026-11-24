@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 
+from tests.unit.printed import PLAIN
 from unifiwifioptimizer.adapters.unifi import parse
 from unifiwifioptimizer.app.run import RunResult, SiteOutcome
 from unifiwifioptimizer.cli import main as cli
@@ -100,12 +101,12 @@ def loaded(legacy: bool = False) -> LoadedConfig:
 def faked(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Path | None]]:
     config_files: list[Path | None] = []
 
-    def fake_load(explicit: Path | None = None) -> LoadedConfig:
+    def fake_load(explicit: Path | None = None, commands: object = None) -> LoadedConfig:
         config_files.append(explicit)
         return loaded()
 
     monkeypatch.setattr(cli, "load_config", fake_load)
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     yield config_files
 
 
@@ -161,8 +162,8 @@ def test_unknown_site_is_a_configuration_error(faked: list[Path | None], capsys:
 def test_legacy_location_is_announced_on_stderr(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded(legacy=True))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded(legacy=True))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setenv("XDG_CONFIG_HOME", "/xdg-config")
     assert cli.main(["sites"]) == ExitCode.OK
     err = capsys.readouterr().err
@@ -217,7 +218,7 @@ def test_every_domain_error_has_a_decided_exit_code() -> None:
 def test_exit_codes_follow_the_error_class(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], error: UwoError, code: ExitCode
 ) -> None:
-    def failing(explicit: Path | None = None) -> LoadedConfig:
+    def failing(explicit: Path | None = None, commands: object = None) -> LoadedConfig:
         raise error
 
     monkeypatch.setattr(cli, "load_config", failing)
@@ -229,7 +230,7 @@ def test_dump_api_writes_one_file_per_endpoint(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     directory = Path("/dump")
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
     captured: dict[str, object] = {}
 
     class RecordingDump:
@@ -245,7 +246,9 @@ def test_dump_api_writes_one_file_per_endpoint(
             return Path("/dev/null")
 
     monkeypatch.setattr(cli, "DumpWriter", RecordingDump)
-    monkeypatch.setattr(cli, "UnifiClient", lambda controller, policy, observe_unknown_keys=None: FixtureApi())
+    monkeypatch.setattr(
+        cli, "UnifiClient", lambda controller, policy, commands, observe_unknown_keys=None: FixtureApi()
+    )
     endpoints: list[object] = []
     assert cli.main(["--dump-api", str(directory), "site", "default"]) == ExitCode.OK
     endpoints.append(captured["endpoint"])
@@ -346,7 +349,7 @@ def test_an_api_key_with_a_control_character_is_refused_through_the_real_loader(
 def test_controller_fingerprint_falls_back_to_the_configuration(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: loaded())
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: loaded())
     seen: list[tuple[str, int]] = []
 
     def observe(host: str, port: int) -> bytes:
@@ -433,10 +436,10 @@ def test_site_subcommands_require_a_site_argument() -> None:
 
 def test_client_factory_wires_the_tls_policy_and_the_dump_observer() -> None:
     args = argparse.Namespace(dump_api=None)
-    client, dump = cli._client(loaded(), args)
+    client, dump = cli._client(loaded(), args, PLAIN)
     assert dump is None and client._policy.pin is None and client._policy.ca_file is None
     with mock.patch.object(cli, "DumpWriter") as writer:
-        client, dump = cli._client(loaded(), argparse.Namespace(dump_api=Path("/dump")))
+        client, dump = cli._client(loaded(), argparse.Namespace(dump_api=Path("/dump")), PLAIN)
     assert dump is not None
     assert dump is writer.return_value
     assert client._observe_unknown_keys == writer.return_value.observe_unknown_keys
@@ -461,8 +464,8 @@ SCANNING_SITE = {
 
 @pytest.fixture
 def run_faked(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     # Not reached under --no-scan; a loud failure proves it.
     monkeypatch.setattr(cli, "check_openssh_version", lambda **kw: (_ for _ in ()).throw(AssertionError("ssh -V ran")))
 
@@ -529,8 +532,8 @@ def scanner_wiring(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         factory()
         return RunResult(reports=(), outcomes=(), host_key_gate_ran=False)
 
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setattr(cli, "OpenSshScanner", RecordingScanner)
     monkeypatch.setattr(cli, "run_analysis", record)
     return seen
@@ -591,8 +594,8 @@ def test_run_exits_7_on_an_old_openssh_before_touching_the_controller_or_the_pas
         def __getattr__(self, name: str) -> object:
             raise AssertionError(f"the controller was contacted ({name}) before the environment check")
 
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (Untouchable(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (Untouchable(), None))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.setattr(
         subprocess,
@@ -660,7 +663,7 @@ def test_run_leaves_the_terminal_output_plain_for_no_color_and_for_json(
 def test_a_defect_that_is_no_domain_error_surfaces_instead_of_becoming_an_exit_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def defective(explicit: Path | None = None) -> LoadedConfig:
+    def defective(explicit: Path | None = None, commands: object = None) -> LoadedConfig:
         raise RuntimeError("defect")
 
     monkeypatch.setattr(cli, "load_config", defective)
@@ -692,7 +695,7 @@ def test_run_exits_with_the_verdict_of_the_analysis_through_the_real_entry(
     }  # fmt: skip
     values.update(overrides)
     result = RunResult(reports=(), outcomes=(SiteOutcome(**values),), host_key_gate_ran=False)  # type: ignore[arg-type]
-    monkeypatch.setattr(cli, "load_config", lambda explicit=None: configured({"default": SCANNING_SITE}))
-    monkeypatch.setattr(cli, "_client", lambda loaded_config, args: (FixtureApi(), None))
+    monkeypatch.setattr(cli, "load_config", lambda explicit=None, commands=None: configured({"default": SCANNING_SITE}))
+    monkeypatch.setattr(cli, "_client", lambda loaded_config, args, commands: (FixtureApi(), None))
     monkeypatch.setattr(cli, "run_analysis", lambda *args, **kwargs: result)
     assert cli.main(["run"]) == code
