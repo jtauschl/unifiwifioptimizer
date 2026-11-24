@@ -33,13 +33,13 @@ trap cleanup_temp_paths EXIT
 # array append would never reach the shell the EXIT trap runs in.
 new_temp_file() {
   local f
-  f="$(mktemp)" || fail "mktemp failed"
+  f="$(mktemp "${TMPDIR:-/tmp}/uwo.XXXXXX")" || fail "mktemp failed"
   TEMP_PATHS+=("$f")
   printf -v "$1" '%s' "$f"
 }
 new_temp_dir() {
   local d
-  d="$(mktemp -d)" || fail "mktemp -d failed"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/uwo.XXXXXX")" || fail "mktemp -d failed"
   TEMP_PATHS+=("$d")
   printf -v "$1" '%s' "$d"
 }
@@ -252,23 +252,26 @@ cmd_lock_check() {
   step "lock-check — uv.lock up to date"
   require_uv
   uv lock --check || fail "uv.lock is stale (run uv lock)"
-  step "lock-check — build-constraints.txt matches build-constraints.in and pyproject.toml"
+  step "lock-check — build-constraints.txt reproduces from build-constraints.in at its committed versions"
   uv run --locked --no-sync python scripts/check_build_constraints.py pyproject.toml build-constraints.in ||
     fail "build-constraints.in does not match [build-system].requires"
   local pins recompiled
   new_temp_file pins
   new_temp_file recompiled
-  # The committed versions constrain the recompilation, so the verdict changes only with build-constraints.in,
-  # pyproject.toml or a hash, never with a newer upstream release; the hashes are regenerated for exactly those versions,
-  # so a tampered hash differs. The "# via" annotations (which would name the constraints file) are left out of the
-  # comparison. Not fully hermetic: uv still reads the index, so a wheel uploaded later for a pinned version, or a
-  # yanked pin, can change the result.
-  sed -n 's/^\([A-Za-z0-9_.-]*==[^ ]*\).*/\1/p' build-constraints.txt >"$pins" || fail "could not read the pins of build-constraints.txt"
-  uv pip compile build-constraints.in --constraint "$pins" --generate-hashes --universal --python-version 3.11 --no-header --quiet -o "$recompiled" ||
-    fail "could not recompile build-constraints.in"
+  # The committed versions (with their environment markers: a package that --universal forks into two marker blocks
+  # keeps both) constrain the recompilation, so the verdict changes only with build-constraints.in, pyproject.toml or
+  # a hash, never with a newer upstream release; the hashes are regenerated for exactly those versions, so a tampered
+  # hash differs. The "# via" annotations (which would name the constraints file) are left out of the comparison.
+  # It does not catch a self-consistent older resolution (every pin still satisfies the .in), and a pre-release pin is
+  # accepted. It is not fully hermetic: uv still reads the index, so a wheel uploaded later for a pinned version, or a
+  # yanked pin, can change the result. The pins go over a descriptor: uv splits the value of --constraint at blanks,
+  # and a TMPDIR with a blank in it would break the path.
+  sed -n 's/^\([A-Za-z0-9_.-]*==[^\\]*[^\\ ]\) *\\\{0,1\}$/\1/p' build-constraints.txt >"$pins" || fail "could not read the pins of build-constraints.txt"
+  uv pip compile build-constraints.in --constraint /dev/fd/3 --generate-hashes --universal --python-version 3.11 --no-header --quiet -o "$recompiled" 3<"$pins" ||
+    fail "could not recompile build-constraints.in at the committed versions"
   diff -u <(grep -v '^[[:space:]]*#' build-constraints.txt) <(grep -v '^[[:space:]]*#' "$recompiled") ||
-    fail "build-constraints.txt is stale (recompile with ./dev lock-refresh)"
-  ok "lock-check — lockfile and build constraints are current"
+    fail "build-constraints.txt differs from its recompilation at the committed versions (change build-constraints.in or a hash? ./dev lock-refresh rewrites it)"
+  ok "lock-check — uv.lock and build-constraints.txt reproduce at their committed versions"
 }
 
 cmd_lock_refresh() {
@@ -561,7 +564,7 @@ cmd_help() {
   printf "  %-20s %s\n" "coverage" "unit tests with the hard coverage floor"
   printf "  %-20s %s\n" "coverage-layers" "per-layer soft targets over the unit + integration data"
   printf "  %-20s %s\n" "lower-bound" "resolve direct dependencies at their floor on a throwaway copy of the working tree (git checkout)"
-  printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt are current"
+  printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt reproduce at their committed versions"
   printf "  %-20s %s\n" "lock-refresh" "recompile build-constraints.txt with hashes"
   printf "  %-20s %s\n" "licenses" "runtime dependency licenses against the allowlist"
   printf "  %-20s %s\n" "build" "uv build with hashed build constraints, then smoke"
