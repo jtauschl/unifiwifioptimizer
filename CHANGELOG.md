@@ -32,7 +32,9 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - The tool states that it changes no setting; a scan takes a radio off-channel briefly, and `run` says so when it starts a scan.
 - A failed scan names its cause in words and the next step once per kind; the progress line adds the access point's cause.
 - Exit code 5 prints one stderr line per site without a verifiable access point, naming each host-key failure and its next step.
-- The report points to the gate's lines after the host-key check. Every command the tool prints starts with the program name and repeats the run's `--config-file` (and `--known-hosts` on `trust-host-keys`).
+- The report points to the gate's lines after the host-key check.
+- Every printed command starts with the program name and repeats the run's `--config-file`, and `--known-hosts` on `trust-host-keys`.
+- `init` refuses a controller URL the tool would not take before it asks for the key, and its fingerprint question names `controller-fingerprint --url`.
 - A certificate failure names the next step for the TLS mode in use; a pin mismatch says to compare before the pin changes.
 - `run --extended` groups channel, power and Minimum RSSI guidance by access point in `--details` and tells an Auto radio to be pinned until a fresh run.
 - The scan script reads the serving PHY's channel-power limits on both bands on every scan (read-only queries; see `SECURITY.md`).
@@ -105,7 +107,7 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - `docs/ALGORITHM.md` notes that neighbour RSSI is an AP-to-AP beacon reading, not a client link-budget proxy.
 
 ### Fixed
-- A `--known-hosts` path that names no file (`.`, `..`, `/`), or an existing entry that is no regular file (a directory, a link), is refused with exit code 3 before anything is contacted, and leaves no lock file behind.
+- A `--known-hosts` path that is no file (`.`, `/`, a directory, a link) is refused with exit code 3, before any contact and without lock file.
 - WPA3 Enterprise WLANs no longer have SAE Anti-clogging/Sync Time checked against the profile; Enterprise has no SAE handshake.
 - `Standard`: `sae_anti_clogging` corrected from 10 to 5, matching the controller default the other profiles use.
 - A non-compliant 6 GHz DTIM period gets a UI-path hint like its 2.4/5 GHz counterparts.

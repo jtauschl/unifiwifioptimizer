@@ -51,3 +51,9 @@ class PrintedCommands:
 
     def init(self) -> str:
         return self._span("init")
+
+
+def controller_fingerprint_for(url: str) -> str:
+    """The command that prints the fingerprint of a URL typed a moment ago, valid as `parse_controller_url` takes it
+    (so it needs no quoting). With `--url` it reads no file, so it repeats no option of the run."""
+    return f"`{PROGRAM} controller-fingerprint --url={url}`"

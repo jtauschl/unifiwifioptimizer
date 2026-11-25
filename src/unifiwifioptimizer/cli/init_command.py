@@ -5,7 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from unifiwifioptimizer.config.loader import parse_yaml, write_new_private_file
-from unifiwifioptimizer.config.schema import Config
+from unifiwifioptimizer.config.schema import Config, parse_controller_url
+from unifiwifioptimizer.domain.commands import controller_fingerprint_for
 from unifiwifioptimizer.domain.errors import ConfigError
 from unifiwifioptimizer.report.skeleton import yaml_scalar
 
@@ -37,8 +38,11 @@ def run_init(path: Path, prompt: Prompt = input, secret_prompt: Prompt = getpass
     else:
         raise ConfigError(str(path), "already exists; remove it first or edit it in place")
     url = prompt("Controller URL (https://host[:port]): ").strip()
+    parse_controller_url(url, "controller.url")
     api_key = secret_prompt("API key (input hidden): ").strip()
-    fingerprint = prompt("Certificate fingerprint from `controller-fingerprint` (empty for CA verification): ").strip()
+    fingerprint = prompt(
+        f"Certificate fingerprint ({controller_fingerprint_for(url)} prints it; empty for CA verification): "
+    ).strip()
     text = initial_config_text(url, api_key, fingerprint or None)
     Config.from_mapping(parse_yaml(text, "init"))
     write_new_private_file(path, text)

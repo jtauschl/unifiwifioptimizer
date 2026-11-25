@@ -111,3 +111,63 @@ def test_init_whose_input_ends_at_a_later_question_gets_the_same_answer(
     monkeypatch.setattr(cli, "run_init", ended)
     assert cli.main(["--config-file", "/tmp/never.yaml", "init"]) == ExitCode.ENVIRONMENT
     assert "run it in a terminal" in capsys.readouterr().err
+
+
+FINGERPRINT_PROMPT = "Certificate fingerprint ({command} prints it; empty for CA verification): "
+
+
+def asked_by_init(url: str, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The questions `run_init` asks for a typed URL; the write is stubbed."""
+    monkeypatch.setattr(init_command, "write_new_private_file", lambda path, text: None)
+    asked: list[str] = []
+    answers = iter([url, ""])
+
+    def prompt(text: str) -> str:
+        asked.append(text)
+        return next(answers)
+
+    run_init(Path("/cfg/config.yaml"), prompt=prompt, secret_prompt=lambda _p: "key")
+    return asked
+
+
+@pytest.mark.parametrize("url", ["https://unifi.example", "https://unifi.example:8443", "https://10.0.0.1:8443"])
+def test_the_fingerprint_question_names_the_command_for_the_url_just_typed(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    command = f"`unifiwifioptimizer controller-fingerprint --url={url}`"
+    assert asked_by_init(url, monkeypatch)[1] == FINGERPRINT_PROMPT.format(command=command)
+
+
+@pytest.mark.parametrize("url", ["unifi.example", "http://unifi.example", "", "https://u/path", "https://my host"])
+def test_a_url_the_tool_would_refuse_stops_init_before_the_key_and_the_fingerprint_are_asked(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+    monkeypatch.setattr(init_command, "write_new_private_file", lambda path, text: pytest.fail("written"))
+
+    def prompt(text: str) -> str:
+        asked.append(text)
+        return url
+
+    with pytest.raises(ConfigError, match=r"controller\.url"):
+        run_init(Path("/cfg/config.yaml"), prompt=prompt, secret_prompt=lambda _p: pytest.fail("the key was asked"))
+    assert asked == ["Controller URL (https://host[:port]): "]
+
+
+def test_init_through_main_asks_for_the_fingerprint_of_the_url_it_was_given_whatever_file_it_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked: list[str] = []
+    answers = iter(["https://unifi.example", ""])
+
+    def prompt(text: str) -> str:
+        asked.append(text)
+        return next(answers)
+
+    real = run_init
+    monkeypatch.setattr(cli, "run_init", lambda path: real(path, prompt=prompt, secret_prompt=lambda _p: "key"))
+    target = tmp_path / "home`config.yaml"
+    assert cli.main(["--config-file", str(target), "init"]) == ExitCode.OK
+    assert asked[1] == FINGERPRINT_PROMPT.format(
+        command="`unifiwifioptimizer controller-fingerprint --url=https://unifi.example`"
+    )
