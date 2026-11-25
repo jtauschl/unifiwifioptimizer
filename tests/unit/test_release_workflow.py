@@ -242,8 +242,36 @@ def test_no_run_block_can_swallow_a_failure(release: Document) -> None:
 def test_the_toolchain_action_downloads_into_the_runner_temp_directory_not_the_workspace() -> None:
     composite = load(ROOT / ".github" / "actions" / "toolchain" / "action.yml")
     text = run_text(composite["runs"])
-    assert 'curl -sSL -o "$RUNNER_TEMP/' in text and 'cd "$RUNNER_TEMP"' in text
+    assert 'curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/' in text and 'cd "$RUNNER_TEMP"' in text
     assert not re.search(r"curl[^\n]* -o (?!\"\$RUNNER_TEMP/)", text)
+
+
+def all_run_blocks() -> list[tuple[str, str]]:
+    """Every `run:` block of every workflow and composite action, with the file it is in."""
+    found: list[tuple[str, str]] = []
+    for path in sorted([*WORKFLOWS.glob("*.yml"), *(ROOT / ".github" / "actions").glob("*/action.yml")]):
+        document = load(path)
+        steps = (
+            [step for job in document["jobs"].values() for step in steps_of(job)]
+            if "jobs" in document
+            else document["runs"]["steps"]
+        )
+        found.extend((path.name, str(step["run"])) for step in steps if "run" in step)
+    return found
+
+
+def test_a_download_in_a_gate_fails_with_its_status_and_retries_a_transient_error() -> None:
+    """Without --fail an HTTP error page lands in the file and the integrity check that follows names no cause."""
+    downloads = [
+        (name, line.strip())
+        for name, block in all_run_blocks()
+        for line in block.splitlines()
+        if re.search(r"(^|\s)curl\s", line)
+    ]
+    assert downloads, "the gate downloads gitleaks; a download that is gone needs this test revisited"
+    for name, line in downloads:
+        assert re.search(r"curl\s+-\w*f\w*\s", line), (name, line)
+        assert "--retry " in line and "--retry-all-errors" in line, (name, line)
 
 
 def test_artifact_directories_are_checked_for_exact_membership_not_just_for_intact_files(release: Document) -> None:
