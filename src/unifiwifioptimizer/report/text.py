@@ -69,7 +69,9 @@ def render_sites(overview: SitesOverview) -> str:
         count = str(summary.access_point_count)
         if summary.unparsable_count:
             count += f" (+{summary.unparsable_count} unparsable)"
-        lines.append(f"  {safe_text(summary.site.id, 20):<20}  {safe_text(summary.site.description, 24):<24}  {count}")
+        site_id = safe_text(summary.site.id, SITE_ID_COLUMN)
+        description = safe_text(summary.site.description, SITE_NAME_COLUMN)
+        lines.append(f"  {site_id:<{SITE_ID_COLUMN}}  {description:<{SITE_NAME_COLUMN}}  {count}")
     if not overview.sites:
         lines.append("  No UniFi sites were returned by the controller.")
     lines.append("")
@@ -96,7 +98,7 @@ def render_site(overview: SiteOverview) -> str:
         lines.append(f"    {safe_text(ap.name)} ({model}, {ap.mac}) {radios}")
     for device in overview.unparsable_devices:
         label = safe_text(device.name) if device.name is not None else (device.mac or "unknown device")
-        lines.append(f"    {label}: not usable ({safe_text(device.reason, 120)})")
+        lines.append(f"    {label}: not usable ({safe_text(device.reason, SENTENCE_MAX)})")
     if not aps and not overview.unparsable_devices:
         lines.append("    none")
     lines.append("")
@@ -107,7 +109,7 @@ def render_problems(problems: tuple[FieldProblem, ...]) -> str:
     if not problems:
         return ""
     lines = [f"  Note: {len(problems)} controller field(s) could not be used:"]
-    lines += [f"    {safe_text(p.path, 100)}: {safe_text(p.message, 80)}" for p in problems[:20]]
+    lines += [f"    {safe_text(p.path, SENTENCE_MAX)}: {safe_text(p.message, SENTENCE_MAX)}" for p in problems[:20]]
     if len(problems) > 20:
         lines.append(f"    ... and {len(problems) - 20} more")
     return "\n".join(lines) + "\n\n"
@@ -156,7 +158,11 @@ LABEL = 34
 # The WLAN check rows carry the controller UI's own labels, the longest of which is wider.
 WLAN_ROW_LABEL = 36
 NAME = 24
-LINE_MAX = 160
+SITE_ID_COLUMN = 20
+SITE_NAME_COLUMN = 24
+# What a tool sentence may hold before the sanitiser stops it: a sentence composed from parser-bounded names and
+# `listed` names stays below it, so only text a hostile controller shaped reaches it.
+SENTENCE_MAX = 1024
 NOT_SENT_VALUE = "not sent by the controller"
 # The report is read in terminals and pasted into tickets; a sentence longer than this is folded with a
 # hanging indent so that a value column or a bullet stays recognisable as the start of its line.
@@ -261,9 +267,9 @@ def _check_line(check: CheckResult, *, hints_only: bool = False, more_reasons: i
     elif check.status is CheckStatus.NOT_PRESCRIBED:
         value = f"{NOT_SENT_VALUE} ({_UNJUDGED_WORDS[check.status]}: {check.detail})"
     more = f" (+{more_reasons} more: --details)" if more_reasons else ""
-    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', LINE_MAX)}{more}"]
+    lines = [f"    {mark} {check_label(check.code):<{WLAN_ROW_LABEL}} {safe_text(value or '', SENTENCE_MAX)}{more}"]
     if check.status is CheckStatus.FAILED and check.detail:
-        lines.append(f"        {safe_text(check.detail, 100)}")
+        lines.append(f"        {safe_text(check.detail, SENTENCE_MAX)}")
     if check.deferred_by is not None:
         lines.append(f"        {_WAITS_FOR[check.deferred_by]}")
         return lines
@@ -276,7 +282,7 @@ def _check_line(check: CheckResult, *, hints_only: bool = False, more_reasons: i
 def _finding_line(finding: Finding, indent: str = "    ", with_subject: bool = False) -> str:
     subject = f"{name(finding.subject)}: " if with_subject else ""
     peers = f" [{', '.join(name(p) for p in finding.peers)}]" if finding.peers else ""
-    return f"{indent}{SEVERITY_MARK[finding.severity]} {subject}{safe_text(finding.message, LINE_MAX)}{peers}"
+    return f"{indent}{SEVERITY_MARK[finding.severity]} {subject}{safe_text(finding.message, SENTENCE_MAX)}{peers}"
 
 
 def _wlan_title(evaluation: WlanEvaluation) -> str:
@@ -350,7 +356,7 @@ def _roaming_detail(summary: WlanRoamingSummary | None, report: SiteReport, show
             f"{summary.threshold_dbm} dBm"
         )
     if summary.status is WlanRoamingStatus.INCOMPLETE:
-        lines += [f"        {safe_line_start(reason, LINE_MAX)}" for reason in summary.reasons[shown:]]
+        lines += [f"        {safe_line_start(reason, SENTENCE_MAX)}" for reason in summary.reasons[shown:]]
     if summary.tx_change_pending:
         lines.append(
             f"        Note: {report.pending_5g_tx_changes_of(summary.broadcasting)} pending 5 GHz transmit-power "
@@ -394,7 +400,7 @@ def _tx_value(rec: Recommendation, antenna_gain_dbi: int | None) -> str:
         return f"{rec.current} dBm" + (
             f" (mode {mode.value})" if mode is not None and mode is not TxPowerMode.CUSTOM else ""
         )
-    return f"{rec.current} dBm, no change: {safe_text(rec.reason, 100)}"
+    return f"{rec.current} dBm, no change: {safe_text(rec.reason, SENTENCE_MAX)}"
 
 
 def _channel_text(band: BandReport) -> str:
@@ -618,7 +624,7 @@ def _setup_band(band: BandReport, plan: BandChannelPlan, assignment: ChannelAssi
     elif tx_rec.kind is RecommendationKind.CONFIRMED:
         tx_value = f"{current_tx}; keep current"
     else:
-        tx_value = f"{current_tx}; no change: {safe_text(tx_rec.reason, 100)}"
+        tx_value = f"{current_tx}; no change: {safe_text(tx_rec.reason, SENTENCE_MAX)}"
     current_min = _min_rssi_state_text(band.min_rssi)
     if min_rec is None:
         min_value = f"{current_min}; {_min_rssi_missing(band)}"
@@ -666,7 +672,7 @@ def _ap_setup(report: SiteReport) -> list[str]:
         lines.append("")
     for item in plan.bands:
         if item.status is ChannelPlanStatus.UNAVAILABLE:
-            lines.append(f"  {item.band.label} channel plan unavailable: {safe_text(item.reason or '', LINE_MAX)}")
+            lines.append(f"  {item.band.label} channel plan unavailable: {safe_text(item.reason or '', SENTENCE_MAX)}")
         elif item.status is ChannelPlanStatus.NO_IMPROVEMENT:
             lines.append(f"  {item.band.label}: no measured own-AP channel improvement")
     if any(item.status is not ChannelPlanStatus.RECOMMENDED for item in plan.bands):
@@ -688,7 +694,7 @@ def _ap_setup(report: SiteReport) -> list[str]:
         lines.append("")
     for device in report.unparsable:
         label = name(device.name) if device.name is not None else (device.mac or "unknown device")
-        lines.append(f"  {label}: setup unavailable ({safe_text(device.reason, 120)})")
+        lines.append(f"  {label}: setup unavailable ({safe_text(device.reason, SENTENCE_MAX)})")
     if report.unparsable:
         lines.append("")
     return lines
@@ -707,7 +713,7 @@ def _groups(report: SiteReport) -> list[str]:
                 MissDirection.A_TO_B: f"{name(pair.a)} is not heard by {name(pair.b)}",
                 MissDirection.B_TO_A: f"{name(pair.b)} is not heard by {name(pair.a)}",
             }[pair.direction]
-            reasons = f" ({'; '.join(safe_text(r, 60) for r in pair.reasons)})" if pair.reasons else ""
+            reasons = f" ({'; '.join(safe_text(r, SENTENCE_MAX) for r in pair.reasons)})" if pair.reasons else ""
             lines.append(f"  ! {pair.band.label}: {direction}{reasons}")
         for band, a, b in group.overlapping:
             lines.append(f"  ! {band.label}: {name(a)} and {name(b)} overlap in channel")
@@ -760,7 +766,7 @@ def _channel_plan(report: SiteReport) -> list[str]:
     ]
     for band in plan.bands:
         if band.status is ChannelPlanStatus.UNAVAILABLE:
-            lines += [f"  {band.band.label}: unavailable — {safe_text(band.reason or '', LINE_MAX)}", ""]
+            lines += [f"  {band.band.label}: unavailable — {safe_text(band.reason or '', SENTENCE_MAX)}", ""]
             continue
         label = (
             "candidate recommendation"
@@ -801,7 +807,7 @@ def _channel_plan(report: SiteReport) -> list[str]:
         if band.power_opportunities:
             lines.append("    Trial only: AP TX does not improve client uplink; verify both directions after a change.")
         for gap in band.data_gaps:
-            lines.append(f"    Note: {safe_text(gap, LINE_MAX)}")
+            lines.append(f"    Note: {safe_text(gap, SENTENCE_MAX)}")
         lines.append("")
     lines.append("  Re-run after a channel change; DFS moves and channel-specific power limits can change the result.")
     lines.append("")
@@ -925,14 +931,14 @@ def _summary_findings(report: SiteReport, label: Callable[[str], str]) -> list[s
             lines.append(f"{mark} {band.label} channel overlap: {members}.")
     for band in sorted(reuse, key=lambda value: value.value):
         finding = reuse[band]
-        lines.append(f"{SEVERITY_MARK[finding.severity]} {band.label}: {safe_text(finding.message, 4 * LINE_MAX)}")
+        lines.append(f"{SEVERITY_MARK[finding.severity]} {band.label}: {safe_text(finding.message, SENTENCE_MAX)}")
     other.sort(key=lambda finding: _SEVERITY_ORDER[finding.severity])
     for finding in other[:6]:
         band_label = f" {finding.band.label}" if finding.band is not None else ""
         peers = f" [{', '.join(label(peer) for peer in finding.peers)}]" if finding.peers else ""
         lines.append(
             f"{SEVERITY_MARK[finding.severity]} {label(finding.subject)}{band_label}: "
-            f"{safe_text(finding.message, LINE_MAX)}{peers}"
+            f"{safe_text(finding.message, SENTENCE_MAX)}{peers}"
         )
     if len(other) > 6:
         lines.append(f"· {len(other) - 6} further findings: run with --details.")
@@ -983,13 +989,13 @@ def _summary_evidence(report: SiteReport, label: Callable[[str], str], steps: Tr
         gaps = {
             gap for plan in report.extended_channel_plan.bands for gap in plan.data_gaps if gap != BEACON_EVIDENCE_GAP
         }
-        lines.extend(safe_text(gap, LINE_MAX) for gap in sorted(gaps))
+        lines.extend(safe_text(gap, SENTENCE_MAX) for gap in sorted(gaps))
         unavailable: dict[str, list[str]] = {}
         for plan in report.extended_channel_plan.bands:
             if plan.status is ChannelPlanStatus.UNAVAILABLE:
                 unavailable.setdefault(plan.reason or "unknown reason", []).append(plan.band.label)
         lines.extend(
-            f"Channel plan unavailable ({', '.join(bands)}): {safe_text(reason, LINE_MAX)}"
+            f"Channel plan unavailable ({', '.join(bands)}): {safe_text(reason, SENTENCE_MAX)}"
             for reason, bands in unavailable.items()
         )
     if report.scan.state is ScanState.SCANNED and report.scan.scanned:
@@ -1088,7 +1094,7 @@ def _overview_band(band: BandReport, plan: BandChannelPlan | None, assignment: C
     elif tx_rec.kind is RecommendationKind.CONFIRMED:
         tx_value = set_tx
     else:
-        tx_value = f"{set_tx}; no change: {safe_text(tx_rec.reason, 100)}"
+        tx_value = f"{set_tx}; no change: {safe_text(tx_rec.reason, SENTENCE_MAX)}"
     if min_rec is None:
         min_value = f"{_min_rssi_state_text(band.min_rssi)}; {_min_rssi_missing(band)}"
     else:
@@ -1131,7 +1137,7 @@ def _overview_aps(report: SiteReport) -> list[str]:
                 lines += [f"    {finding.band.label} detected, not evaluated", ""]
     for device in report.unparsable:
         ref = name(device.name) if device.name is not None else (device.mac or "unknown device")
-        lines += [f"  {ref}: setup unavailable ({safe_text(device.reason, 120)})", ""]
+        lines += [f"  {ref}: setup unavailable ({safe_text(device.reason, SENTENCE_MAX)})", ""]
     return lines
 
 
@@ -1221,7 +1227,7 @@ def render_report(report: SiteReport, width: int | None = WIDTH, *, steps: Trust
     if report.unparsable:
         for device in report.unparsable:
             label = safe_text(device.name) if device.name is not None else (device.mac or "unknown device")
-            lines.append(f"  ✗ {label}: not usable ({safe_text(device.reason, 120)})")
+            lines.append(f"  ✗ {label}: not usable ({safe_text(device.reason, SENTENCE_MAX)})")
         lines.append("")
     # One problem per line: the block is split before folding, or the fold would run it into a paragraph.
     lines += render_problems(report.field_problems).rstrip("\n").splitlines()
@@ -1285,8 +1291,10 @@ def _fold(line: str, width: int) -> str:
     padded to a column, as in the check, recommendation and environment lines) or, without one, two
     columns past its leading whitespace, i.e. past a one-character bullet — so the continuation can never
     be mistaken for a new item. Width counts code points, not terminal cells: a line overruns the width on
-    screen by up to one column for every East Asian wide character on it. A double space inside a name is taken
-    for the value column; the `width // 2` guard keeps such a continuation in the left half."""
+    screen by up to one column for every East Asian wide character on it. A word longer than the width (a name
+    of 128 characters) stays whole, so its line overruns: the reader pastes a name back into a command. A double
+    space inside a name is taken for the value column; the `width // 2` guard keeps such a continuation in the
+    left half."""
     if len(line) <= width:
         return line
     indent = len(line) - len(line.lstrip(" "))

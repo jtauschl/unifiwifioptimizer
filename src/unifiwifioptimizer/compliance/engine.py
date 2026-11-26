@@ -80,7 +80,7 @@ def evaluate_site(
                 Finding(
                     severity=Severity.ERROR,
                     code="profile_unknown",
-                    message=f"profile {profile_name!r} is not defined{_retired_hint(profile_name)}",
+                    message=f"profile '{profile_name}' is not defined{_retired_hint(profile_name)}",
                     subject=name,
                 )
             )

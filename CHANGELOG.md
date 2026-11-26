@@ -107,6 +107,8 @@ Give UniFi operators verified, actionable RF and WLAN-profile recommendations on
 - `docs/ALGORITHM.md` notes that neighbour RSSI is an AP-to-AP beacon reading, not a client link-budget proxy.
 
 ### Fixed
+- The report prints each note and its advice whole instead of cutting it at 160 characters.
+- A list of access point names shows the first five and ends in "and N more", also in the JSON `message`.
 - A `--known-hosts` path that is no file (`.`, `/`, a directory, a link) is refused with exit code 3, before any contact and without lock file.
 - WPA3 Enterprise WLANs no longer have SAE Anti-clogging/Sync Time checked against the profile; Enterprise has no SAE handshake.
 - `Standard`: `sae_anti_clogging` corrected from 10 to 5, matching the controller default the other profiles use.

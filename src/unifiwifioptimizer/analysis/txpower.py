@@ -11,6 +11,7 @@ configured value is stale.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from unifiwifioptimizer.analysis.listing import listed
 from unifiwifioptimizer.analysis.neighbors import PeerReading
 from unifiwifioptimizer.domain.analysis import BandTxOutcome, MaxReason, MaxSource, NeighbourMarker
 from unifiwifioptimizer.domain.models import DFS_WAIT_STATE, AccessPoint, Band, TxPowerMode
@@ -134,7 +135,41 @@ def _names(cells: Sequence[PeerReading]) -> list[str]:
 
 
 def _reason_text(cells: Sequence[PeerReading]) -> str:
-    return ", ".join(f"{c.peer}: {c.why.words}" for c in cells)
+    return listed([f"{c.peer}: {c.why.words}" for c in cells])
+
+
+def _coverage_gap_text(at_maximum: str, names: Sequence[str]) -> str:
+    return (
+        f"at {at_maximum} and unsighted by {listed(names)} both ways: no reading supports a hand-off; "
+        "verify with clients, then reposition or add an access point"
+    )
+
+
+def _no_sighting_reason(ap_name: str, names: Sequence[str]) -> str:
+    return f"no sighting in either direction between {ap_name} and {listed(names)}"
+
+
+def _too_strong_text(min_tx: int, above: Sequence[str], ap_name: str, excess: int) -> str:
+    return (
+        f"even at the minimum {min_tx} dBm, {listed(above)} would still hear {ap_name} {excess} dB above "
+        "the corridor: reposition, disable the band on a middle access point, or accept the overlap"
+    )
+
+
+def _not_sent_text(missing: Sequence[str]) -> str:
+    return f"the controller did not send {', '.join(missing)}"
+
+
+def _no_neighbour_evaluable_text(cells: Sequence[PeerReading]) -> str:
+    return f"no configured neighbour could be evaluated ({_reason_text(cells)})"
+
+
+def _reduction_blocked_text(cells: Sequence[PeerReading]) -> str:
+    return f"a reduction waits until every configured neighbour is evaluated ({_reason_text(cells)})"
+
+
+def _not_evaluated_text(cells: Sequence[PeerReading]) -> str:
+    return f"{len(cells)} configured neighbour(s) could not be evaluated ({_reason_text(cells)})"
 
 
 def _peers_not_evaluated(ap: AccessPoint, band: Band, blocking: Sequence[PeerReading]) -> Finding:
@@ -143,7 +178,7 @@ def _peers_not_evaluated(ap: AccessPoint, band: Band, blocking: Sequence[PeerRea
         "peers_not_evaluated",
         ap,
         band,
-        f"{len(blocking)} configured neighbour(s) could not be evaluated ({_reason_text(blocking)})",
+        _not_evaluated_text(blocking),
         _names(blocking),
     )
 
@@ -217,11 +252,7 @@ def analyse_band_tx(
         ]
         return result(
             BandTxOutcome.NOT_EVALUABLE,
-            findings=[
-                _finding(
-                    Severity.WARNING, "tx_not_evaluable", ap, band, f"the controller did not send {', '.join(missing)}"
-                )
-            ],
+            findings=[_finding(Severity.WARNING, "tx_not_evaluable", ap, band, _not_sent_text(missing))],
         )
     if not min_tx <= current <= max_tx:
         radio = ap.radio(band)
@@ -258,8 +289,7 @@ def analyse_band_tx(
                 "coverage_gap",
                 ap,
                 band,
-                f"at {_at_maximum(cap)} and unsighted by {', '.join(names)} both ways: no reading supports a hand-off; "
-                "verify with clients, then reposition or add an access point",
+                _coverage_gap_text(_at_maximum(cap), names),
                 names,
             )
             held = _recommendation(
@@ -274,7 +304,7 @@ def analyse_band_tx(
             return result(BandTxOutcome.NO_SIGHTING, held, [warning, *extra], structural=True)
         change = _recommendation(
             ap, band, summary, current, eff_max, RecommendationKind.CHANGE,
-            f"no sighting in either direction between {ap.name} and {', '.join(names)}", unverified=not cap.verified,
+            _no_sighting_reason(ap.name, names), unverified=not cap.verified,
         )  # fmt: skip
         return result(BandTxOutcome.NO_SIGHTING, change, extra)
     # Row 7: nothing to compare against.
@@ -284,7 +314,7 @@ def analyse_band_tx(
             "peers_not_evaluated",
             ap,
             band,
-            f"no configured neighbour could be evaluated ({_reason_text(cells)})",
+            _no_neighbour_evaluable_text(cells),
             _names(cells),
         )
         return result(BandTxOutcome.NO_EVALUABLE_NEIGHBOUR, None, [warning])
@@ -360,7 +390,7 @@ def analyse_band_tx(
                     "reduction_blocked",
                     ap,
                     band,
-                    f"a reduction waits until every configured neighbour is evaluated ({_reason_text(blocking)})",
+                    _reduction_blocked_text(blocking),
                     _names(blocking),
                 )
                 return result(BandTxOutcome.REDUCTION_BLOCKED, held, [blocked])
@@ -375,8 +405,7 @@ def analyse_band_tx(
             "too_strong_at_minimum",
             ap,
             band,
-            f"even at the minimum {min_tx} dBm, {', '.join(above)} would still hear {ap.name} {excess} dB above "
-            "the corridor: reposition, disable the band on a middle access point, or accept the overlap",
+            _too_strong_text(min_tx, above, ap.name, excess),
             above,
         )
         kind = RecommendationKind.CHANGE if reduces else RecommendationKind.HELD
@@ -393,7 +422,7 @@ def analyse_band_tx(
             "reduction_blocked",
             ap,
             band,
-            f"a reduction waits until every configured neighbour is evaluated ({_reason_text(blocking)})",
+            _reduction_blocked_text(blocking),
             _names(blocking),
         )
         return result(BandTxOutcome.REDUCTION_BLOCKED, held, [blocked])

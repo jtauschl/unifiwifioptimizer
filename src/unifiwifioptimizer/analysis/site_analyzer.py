@@ -16,6 +16,7 @@ from unifiwifioptimizer.analysis.clients import clients_of, unassignable, unassi
 from unifiwifioptimizer.analysis.deferral import apply_deferrals
 from unifiwifioptimizer.analysis.groups import group_reports
 from unifiwifioptimizer.analysis.inputs import SiteAnalysisInput
+from unifiwifioptimizer.analysis.listing import listed
 from unifiwifioptimizer.analysis.minrssi import (
     min_rssi_before_roaming,
     min_rssi_state,
@@ -486,13 +487,16 @@ def _without_shared_names(
                 Severity.ERROR,
                 "ap_name_duplicate",
                 name,
-                f"{len(macs)} access points share this name ({', '.join(macs)}); none of them is analysed — "
-                "rename them",
+                _shared_name_text(macs),
             )
         )
     if not shared:
         return snapshot, shared
     return replace(snapshot, access_points=tuple(ap for ap in snapshot.access_points if ap.name not in shared)), shared
+
+
+def _shared_name_text(macs: Sequence[str]) -> str:
+    return f"{len(macs)} access points share this name ({listed(macs)}); none of them is analysed — rename them"
 
 
 def analyze_site(inp: SiteAnalysisInput) -> SiteReport:

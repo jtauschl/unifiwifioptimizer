@@ -713,6 +713,72 @@ def check_command_text_has_one_home(tree: ast.Module, relpath: str) -> list[str]
     return found
 
 
+SENTENCE_BOUNDS = frozenset({"NAME", "SENTENCE_MAX", "SITE_ID_COLUMN", "SITE_NAME_COLUMN"})
+
+
+def check_report_bounds_are_named(tree: ast.Module, relpath: str) -> list[str]:
+    """A call of `safe_text` or `safe_line_start` in `report/` takes no bound or one of the named bounds: a number
+    or an expression there is a bound nobody can ask the meaning of, and a tool sentence cut by one loses its advice.
+    A literal gate over the spelling of the bound: only the four constant names pass, so a variable of another name
+    is reported even when it holds one of them; an alias of the function, a rebinding of one of the four names and
+    arguments passed as `*args` are not seen. Which named bound a site takes is judged by the output test of whole
+    sentences."""
+    if layer_of(relpath) != "report" or relpath == "report/safe_text.py":
+        return []
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+        if callee not in {"safe_text", "safe_line_start"}:
+            continue
+        bounds = [*node.args[1:2], *(k.value for k in node.keywords if k.arg == "max_chars")]
+        found.extend(
+            f"{callee} takes the bound {ast.unparse(bound)}"
+            for bound in bounds
+            if not (isinstance(bound, ast.Name) and bound.id in SENTENCE_BOUNDS)
+        )
+    return found
+
+
+# The functions of `analysis/` that join with a comma. A list of names enters a sentence through `listed`, which
+# bounds it by count; the others join values of a fixed vocabulary (channel numbers, the three power fields).
+COMMA_JOIN_ALLOWED = frozenset(
+    {
+        ("analysis/listing.py", "listed"),
+        ("analysis/channels.py", "_free_hint"),
+        ("analysis/txpower.py", "_not_sent_text"),
+    }
+)
+
+
+def check_names_are_listed_by_count(tree: ast.Module, relpath: str) -> list[str]:
+    """In `analysis/` only the functions of `COMMA_JOIN_ALLOWED` call `", ".join(...)`: a sentence that joins the
+    names it holds has no length of its own, and the advice after the list is what a bound then cuts. A literal
+    gate: another separator, `str.join` called through a variable and a join built by hand are not seen."""
+    if layer_of(relpath) != "analysis":
+        return []
+    found: list[str] = []
+
+    def visit(node: ast.AST, function: str | None) -> None:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            function = node.name
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join"
+            and isinstance(node.func.value, ast.Constant)
+            and node.func.value.value == ", "
+            and (relpath, function) not in COMMA_JOIN_ALLOWED
+        ):
+            found.append(f'joins with ", " in {function or "the module"}, which is not a listing function')
+        for child in ast.iter_child_nodes(node):
+            visit(child, function)
+
+    visit(tree, None)
+    return found
+
+
 CHECKERS: dict[str, Checker] = {
     "core-imports": check_core_imports,
     "dynamic-imports": check_dynamic_imports,
@@ -728,6 +794,8 @@ CHECKERS: dict[str, Checker] = {
     "run-values-have-no-default": check_run_values_have_no_default,
     "run-values-have-one-maker": check_run_values_have_one_maker,
     "command-text-has-one-home": check_command_text_has_one_home,
+    "report-bounds-are-named": check_report_bounds_are_named,
+    "names-are-listed-by-count": check_names_are_listed_by_count,
 }
 
 
@@ -1080,6 +1148,13 @@ BAD_SNIPPETS += [
     ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROG} site {site}` first'\n"),
     ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROGRAM}{opt} site {site}` first'\n"),
     ("command-text-has-one-home", "cli/x.py", "msg = f'run `{PROGRAM}`'\nx = f'`{PROGRAM}{opt}'\n"),
+    ("report-bounds-are-named", "report/x.py", "t = safe_text(m, 160)\n"),
+    ("report-bounds-are-named", "report/x.py", "t = safe_text(m, 4 * SENTENCE_MAX)\n"),
+    ("report-bounds-are-named", "report/x.py", "t = safe_line_start(m, LINE_MAX)\n"),
+    ("report-bounds-are-named", "report/x.py", "t = text.safe_text(m, max_chars=80)\n"),
+    ("names-are-listed-by-count", "analysis/x.py", "def f(names):\n    return ', '.join(names)\n"),
+    ("names-are-listed-by-count", "analysis/channels.py", "def _overlap(peers):\n    return f'{\", \".join(peers)}'\n"),
+    ("names-are-listed-by-count", "analysis/x.py", "x = ', '.join(names)\n"),
 ]
 
 
@@ -1266,6 +1341,18 @@ GOOD_SNIPPETS += [
     ("run-values-have-one-maker", "cli/main.py", "s = TrustStepContext(gate_ran=False, commands=c)\n"),
     ("run-values-have-one-maker", "app/x.py", "def f(commands: PrintedCommands) -> None:\n    commands.site('d')\n"),
     ("command-text-has-one-home", "cli/x.py", "msg = f'{PROGRAM}: error {x}'\nv = f'{PROGRAM} {__version__}'\n"),
+    (
+        "report-bounds-are-named",
+        "report/x.py",
+        (
+            "a = safe_text(m)\nb = safe_text(m, NAME)\nc = safe_line_start(m, SENTENCE_MAX)\n"
+            "d = safe_text(m, max_chars=SITE_ID_COLUMN)\n"
+        ),
+    ),
+    ("report-bounds-are-named", "cli/x.py", "t = safe_text(m, 64)\n"),
+    ("names-are-listed-by-count", "analysis/listing.py", "def listed(names):\n    return ', '.join(names)\n"),
+    ("names-are-listed-by-count", "analysis/x.py", "def f(a):\n    return '; '.join(a)\n"),
+    ("names-are-listed-by-count", "cli/x.py", "def f(a):\n    return ', '.join(a)\n"),
 ]
 
 

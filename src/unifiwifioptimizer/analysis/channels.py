@@ -8,9 +8,10 @@ Channel AI run would overwrite channel advice.
 """
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from unifiwifioptimizer.analysis.listing import listed
 from unifiwifioptimizer.analysis.neighbors import (
     EVALUATED_BANDS,
     heard_graph_edges,
@@ -140,6 +141,39 @@ def colour_count(band: Band, candidates: frozenset[int], width_mhz: int) -> int:
     return len(blocks)
 
 
+def _overlap_under_ai_text(channel: int, peers: Sequence[str]) -> str:
+    return (
+        f"channel {channel} overlaps {listed(peers)} under Channel AI; "
+        "if this persists across runs, pin channels or add exclusions"
+    )
+
+
+def _auto_overlap_text(peers: Sequence[str]) -> str:
+    return f"channel auto without Channel AI overlaps {listed(peers)}; nothing manages this layout: pin channels"
+
+
+def _free_hint(free: Sequence[int]) -> str:
+    return f"; free candidates: {', '.join(str(c) for c in free)}" if free else "; no free candidate at this width"
+
+
+def _configured_overlap_text(channel: int, width_mhz: int, overlapping: Sequence[str], hint: str) -> str:
+    return f"channel {channel}/{width_mhz} MHz overlaps the configured neighbour(s) {listed(overlapping)}{hint}"
+
+
+def _heard_cochannel_text(heard_only: Sequence[str], hint: str) -> str:
+    return (
+        f"heard co-channel at or above {CCA_PREAMBLE_DETECT_DBM} dBm by {listed(heard_only)}: "
+        f"both defer to each other{hint}"
+    )
+
+
+def _reuse_infeasible_text(members: Sequence[str], supply: str, needed: int, remedy: str) -> str:
+    return (
+        f"{len(members)} access points that hear each other ({listed(members)}) cannot all get "
+        f"distinct channels: {supply}, {needed} would be needed; {remedy}"
+    )
+
+
 def _reuse_supply(band: Band, colours: int, width_mhz: int) -> str:
     if band is Band.GHZ_2:
         return f"only {colours} of the 1/6/11 channels {'is' if colours == 1 else 'are'} usable"
@@ -260,8 +294,7 @@ def analyse_channels(
                 findings.append(
                     _finding(
                         Severity.INFO, "channel_ai_overlap", name, band,
-                        f"channel {geometry.channel} overlaps {', '.join(peers)} under Channel AI; if this persists "
-                        "across runs, pin channels or add exclusions",
+                        _overlap_under_ai_text(geometry.channel, peers),
                         peers,
                     )
                 )  # fmt: skip
@@ -269,8 +302,7 @@ def analyse_channels(
                 findings.append(
                     _finding(
                         Severity.ADVISORY, "pin_channels", name, band,
-                        f"channel auto without Channel AI overlaps {', '.join(peers)}; nothing manages this layout: "
-                        "pin channels",
+                        _auto_overlap_text(peers),
                         peers,
                     )
                 )  # fmt: skip
@@ -281,17 +313,12 @@ def analyse_channels(
                     hint = ""
                 else:
                     free = free_candidates(band, taken, candidates, geometry.width_mhz)
-                    hint = (
-                        f"; free candidates: {', '.join(str(c) for c in free)}"
-                        if free
-                        else "; no free candidate at this width"
-                    )
+                    hint = _free_hint(free)
                 if overlapping:
                     findings.append(
                         _finding(
                             Severity.ADVISORY, "channel_overlap", name, band,
-                            f"channel {geometry.channel}/{geometry.width_mhz} MHz overlaps the configured "
-                            f"neighbour(s) {', '.join(overlapping)}{hint}",
+                            _configured_overlap_text(geometry.channel, geometry.width_mhz, overlapping, hint),
                             overlapping,
                         )
                     )  # fmt: skip
@@ -300,8 +327,7 @@ def analyse_channels(
                     findings.append(
                         _finding(
                             Severity.ADVISORY, "cochannel_heard", name, band,
-                            f"heard co-channel at or above {CCA_PREAMBLE_DETECT_DBM} dBm by {', '.join(heard_only)}: "
-                            f"both defer to each other{hint}",
+                            _heard_cochannel_text(heard_only, hint),
                             heard_only,
                         )
                     )  # fmt: skip
@@ -347,9 +373,9 @@ def analyse_channels(
                 findings.append(
                     _finding(
                         Severity.ADVISORY, "channel_reuse_infeasible", members[0], band,
-                        f"{len(members)} access points that hear each other ({', '.join(members)}) cannot all get "
-                        f"distinct channels: {_reuse_supply(band, colours, widest)}, "
-                        f"{needed} would be needed; {_reuse_remedy(band)}",
+                        _reuse_infeasible_text(
+                            members, _reuse_supply(band, colours, widest), needed, _reuse_remedy(band)
+                        ),
                         members,
                     )
                 )  # fmt: skip

@@ -42,7 +42,7 @@ from unifiwifioptimizer.domain.scan import (
 )
 from unifiwifioptimizer.report.json import render_json
 from unifiwifioptimizer.report.safe_text import safe_text
-from unifiwifioptimizer.report.text import LINE_MAX, render_overview, render_report
+from unifiwifioptimizer.report.text import render_overview, render_report
 
 # The sentences, written out once more on purpose: swapping two table entries must fail a test.
 EXPECTED: dict[ScanFailureKind, tuple[str, str]] = {
@@ -131,8 +131,6 @@ def test_every_reader_prints_the_words_and_the_step_once_and_never_the_enum_valu
     for text in (overview, details):
         assert kind.value not in text
         assert text.count(f"{words}: {step}") == 1, (kind, text.count(f"{words}: {step}"))
-    # The finding is clipped at `LINE_MAX`; it carries the words only, so no kind loses its end.
-    assert len(finding) < LINE_MAX
 
 
 def test_two_access_points_with_the_same_kind_share_one_step() -> None:
