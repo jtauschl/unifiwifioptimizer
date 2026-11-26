@@ -499,6 +499,7 @@ cmd_ci() {
   run_check "lower-bound" cmd_lower_bound
   run_check "lock-check" cmd_lock_check
   run_check "licenses" cmd_licenses
+  run_check "audit" cmd_audit
   run_check "build" cmd_build
 
   if [ "$failures" -gt 0 ]; then
@@ -567,6 +568,7 @@ cmd_help() {
   printf "  %-20s %s\n" "lock-check" "uv.lock and build-constraints.txt reproduce at their committed versions"
   printf "  %-20s %s\n" "lock-refresh" "recompile build-constraints.txt with hashes"
   printf "  %-20s %s\n" "licenses" "runtime dependency licenses against the allowlist"
+  printf "  %-20s %s\n" "audit" "pip-audit over the locked graph and the build backend (live advisory database)"
   printf "  %-20s %s\n" "build" "uv build with hashed build constraints, then smoke"
   printf "  %-20s %s\n" "smoke" "install dist/*.whl into a throwaway venv and run it"
   echo ""
@@ -578,7 +580,6 @@ cmd_help() {
   echo "${BOLD}CI floor (run by the hosted workflow, not part of ci):${RESET}"
   printf "  %-20s %s\n" "sast" "semgrep scan --config=p/python --config=p/secrets --config=p/security-audit"
   printf "  %-20s %s\n" "sbom" "CycloneDX SBOM of the runtime graph with the project version"
-  printf "  %-20s %s\n" "audit" "pip-audit over the locked graph and the build backend"
   echo ""
   echo "${BOLD}CI:${RESET}"
   printf "  %-20s %s\n" "ci" "the full local gate — run before every push"

@@ -198,6 +198,14 @@ def test_the_uv_version_is_one_value_across_workflows_and_the_dev_wrapper(releas
     assert len(set(versions.values())) == 1, versions
 
 
+def test_the_local_gate_runs_the_dependency_scan_beside_the_build() -> None:
+    dev = (ROOT / "dev").read_text(encoding="utf-8")
+    body = re.search(r"^cmd_ci\(\) \{\n(.*?)^\}$", dev, re.MULTILINE | re.DOTALL)
+    assert body is not None
+    checks = re.findall(r'^  run_check "([^"]+)" (\w+)$', body.group(1), re.MULTILINE)
+    assert ("audit", "cmd_audit") in checks, checks
+
+
 def test_the_pull_request_gate_installs_its_tools_through_the_shared_action() -> None:
     ci = load(WORKFLOWS / "ci.yml")
     gate_steps = ci["jobs"]["local-gate"]["steps"]
